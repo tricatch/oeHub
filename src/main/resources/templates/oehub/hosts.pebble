@@ -1,0 +1,1397 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}oeHosts{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/hosts.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js"></script>
+<script src="/js/ace-init.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="hosts-app" id="hostsApp">
+<script>if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('hostsApp').classList.add('expanded');</script>
+
+  <!-- Sidebar -->
+  <div class="hosts-sidebar">
+    <div class="hosts-sidebar-header">
+      <span>{{ msg['hosts.sidebar.header'] }}</span>
+      <button class="oe-nav-action-btn oe-nav-action-add" id="btnAdd" title="{{ msg['tooltip.new.profile'] }}">
+        <span class="oe-icon oe-icon-new" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnImportLink" title="{{ msg['tooltip.import.link'] }}">
+        <span class="oe-icon oe-icon-import" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnSearchToggle" title="{{ msg['tooltip.search'] }}">
+        <span class="oe-icon oe-icon-search" style="width:15px;height:15px"></span>
+      </button>
+    </div>
+
+    <!-- Search panel -->
+    <div class="oe-search-panel d-none" id="searchPanel">
+      <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="{{ msg['hosts.search.placeholder'] }}" autocomplete="off">
+      <div class="oe-search-results" id="searchResults"></div>
+    </div>
+
+    <div class="hosts-profile-list" id="profileList"></div>
+    <div class="oe-sidebar-meta" id="profileCount"></div>
+  </div>
+
+  <!-- Editor -->
+  <div class="hosts-editor">
+    <div class="oe-editor-header">
+      <div class="oe-hdr-left">
+        <span class="oe-editor-title" id="editorTitle">{{ msg['editor.select.profile'] }}</span>
+      </div>
+      <button class="oe-nav-action-btn" id="btnShare" title="{{ msg['tooltip.share.oelink'] }}" disabled>
+        <span class="oe-icon oe-icon-share" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnCopyShareLink" title="{{ msg['tooltip.open.plain'] }}" disabled>
+        <span class="oe-icon oe-icon-content" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnDownload" title="{{ msg['tooltip.export'] }}" disabled>
+        <span class="oe-icon oe-icon-download" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.profile'] }}" disabled>
+        <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
+      </button>
+      <span class="oe-visibility-wrap d-none" id="visibilityWrap">
+        <select class="oe-visibility-select" id="visibilitySelect">
+          <option value="public">{{ msg['visibility.public'] }}</option>
+          <option value="private">{{ msg['visibility.private'] }}</option>
+          <option value="collabo">{{ msg['visibility.collabo'] }}</option>
+        </select>
+      </span>
+    </div>
+    <span class="oe-save-status" id="saveStatus"></span>
+
+    <div class="hosts-empty d-none" id="emptyState">{{ msg['hosts.empty'] }}</div>
+    <div class="hosts-editor-body" id="hostsEditorBody" style="display:none">
+      <div id="cmHostsEditor"></div>
+    </div>
+    <div class="hosts-merged-preview d-none" id="mergedPreviewSection">
+      <div class="hosts-right-label-row">
+        <span class="oe-icon oe-icon-merge" style="width:12px;height:12px"></span>
+        <div class="hosts-right-label hosts-merged-preview-label" id="mergedPreviewLabel"></div>
+      </div>
+      <div class="hosts-scheme-preview" id="mergedPreviewBody"></div>
+    </div>
+    <div class="oe-editor-meta" id="editorMeta">
+      <span><span id="metaUpdated"></span> / <span id="metaCreator"></span></span>
+      <span class="oe-myip-badge oe-editor-meta-ip">PROXY_SVR: {{ proxyIp }}</span>
+    </div>
+  </div>
+
+  <div class="oe-resize-handle" id="hostsResizeHandle"></div>
+
+  <!-- Browser panel -->
+  <div class="hosts-browser-panel">
+    <div class="hosts-panel-header">
+      <span>{{ msg['hosts.chrome.launcher'] }}</span>
+      <button class="oe-nav-action-btn" data-bs-toggle="modal" data-bs-target="#oelinkInstallModal" title="{{ msg['tooltip.install.guide'] }}">
+        <span class="oe-icon oe-icon-help" style="width:15px;height:15px"></span>
+      </button>
+    </div>
+
+    <div class="hosts-browser-options">
+      <div class="hosts-browser-option">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleOelink" role="switch" checked disabled>
+        </div>
+        <span>--oelink</span>
+      </div>
+      <div class="hosts-browser-option">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleDevTools" role="switch">
+        </div>
+        <span>--auto-open-devtools-for-tabs</span>
+      </div>
+
+      <div class="hosts-browser-option">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleIncognito" role="switch">
+        </div>
+        <span>--incognito</span>
+      </div>
+
+      <div class="hosts-browser-option hosts-browser-option-url">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleUserAgent" role="switch">
+        </div>
+        <span>{{ msg['hosts.ua.label'] }}</span>
+        <div class="ua-input-wrap">
+          <input type="text" class="form-control form-control-sm" id="userAgent" placeholder="{{ msg['hosts.ua.placeholder'] }}" disabled>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-oe-secondary ua-preset-btn" id="btnUaPreset" type="button"
+                    data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="{{ msg['hosts.ua.preset.btn'] }}" disabled>
+              <span class="oe-icon oe-icon-list" style="width:15px;height:15px"></span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end ua-preset-menu" id="uaPresetMenu"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="hosts-browser-option hosts-browser-option-url">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleUserDataDir" role="switch">
+        </div>
+        <span>--user-data-dir</span>
+        <code class="udd-display" id="userDataDir"></code>
+      </div>
+      <div class="hosts-browser-option hosts-browser-option-extra">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleExtraArgs" role="switch">
+        </div>
+        <span>extraArgs</span>
+        <input type="text" class="form-control form-control-sm extra-args-input" id="extraArgsInput" readonly disabled placeholder="—">
+        <textarea class="form-control form-control-sm extra-args-textarea" id="extraArgs" rows="5" style="display:none"></textarea>
+      </div>
+      <div class="hosts-browser-option hosts-browser-option-url">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleOpenUrl" role="switch" checked>
+        </div>
+        <span>{{ msg['hosts.chrome.open.label'] }}</span>
+        <div class="ua-input-wrap">
+          <input type="text" class="form-control form-control-sm" id="loadingUrl" placeholder="{{ msg['hosts.url.placeholder'] }}">
+          <div class="dropdown">
+            <button class="btn btn-sm btn-oe-secondary ua-preset-btn" id="btnUrlPreset" type="button"
+                    data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="{{ msg['hosts.url.preset.btn'] }}">
+              <span class="oe-icon oe-icon-list" style="width:15px;height:15px"></span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end ua-preset-menu" id="urlPresetMenu"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hosts-right-section">
+      <div class="hosts-browser-option" style="padding-left:0; border-top:none;">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleHostResolverRules" role="switch" checked>
+        </div>
+        <span>--host-resolver-rules</span>
+        <button type="button" class="hosts-info-btn" id="btnResolverRulesInfo" aria-label="{{ msg['tooltip.host.resolver.rules'] }}">
+          <span class="oe-icon oe-icon-info" style="width:12px;height:12px"></span>
+        </button>
+        <div class="hosts-info-pop d-none" id="resolverRulesInfoPop">{{ msg['hosts.resolver.rules.info'] }}</div>
+      </div>
+      <div class="hosts-chrome-btn-row">
+        <button class="hosts-chrome-launch-btn" id="btnChrome" type="button">
+          <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
+          oelink://chrome
+        </button>
+        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.url'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>oelink
+        </button>
+        <button class="hosts-chrome-cmd-btn" id="btnCopyWinChrome" type="button" title="{{ msg['tooltip.copy.win.chrome'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>Win
+        </button>
+        <button class="hosts-chrome-cmd-btn" id="btnCopyMacChrome" type="button" title="{{ msg['tooltip.copy.mac.chrome'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>Mac
+        </button>
+      </div>
+    </div>
+    <div class="hosts-right-section hosts-args-section">
+      <div class="hosts-right-label">{{ msg['hosts.chrome.args'] }}</div>
+      <div class="hosts-scheme-preview hosts-args-preview" id="oelinkArgsPreview"></div>
+    </div>
+    <div class="hosts-right-section hosts-rules-section">
+      <div class="hosts-right-label">--host-resolver-rules</div>
+      <div class="hosts-scheme-preview is-empty" id="schemePreview">{{ msg['hosts.scheme.preview.empty'] }}</div>
+    </div>
+    <div class="hosts-launcher-status">
+      <span>Hosts: <span id="resolverHostCount">0</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- oelink install modal -->
+<div class="modal fade" id="oelinkInstallModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.install.oelink'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">{{ msg['hosts.install.desc'] }}</p>
+        <div class="mb-3">
+          <div class="hosts-right-label mb-2">{{ msg['hosts.install.steps.title'] }}</div>
+          <ol class="small text-muted ps-3" style="line-height:1.9">
+            <li>{{ msg['hosts.install.step1'] }}</li>
+            <li>{{ msg['hosts.install.step2'] }}</li>
+            <li>{{ msg['hosts.install.step3'] | raw }}</li>
+            <li>{{ msg['hosts.install.step4'] }}</li>
+          </ol>
+        </div>
+        <div class="d-grid gap-2" id="oelinkDownloadButtons">
+          <!-- populated by JS -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="form-check me-auto">
+          <input class="form-check-input" type="checkbox" id="oelinkGuideNoShow">
+          <label class="form-check-label small text-muted" for="oelinkGuideNoShow">{{ msg['hosts.install.no.show'] }}</label>
+        </div>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% set importLinkPlaceholder = msg['import.placeholder.hosts'] %}
+{% set importLinkTitle = "oeHosts" %}
+{% include "templates/oehub/_import-link-modal.pebble" %}
+
+<!-- Collabo confirm modal -->
+<div class="modal fade" id="collaboConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.collabo.confirm.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-0">{{ msg['modal.collabo.confirm.body'] }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-primary" id="btnCollaboConfirm">{{ msg['btn.confirm'] }}</button>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- User-data-dir warning modal -->
+<div class="modal fade" id="uddWarnModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.udd.warn.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-0">{{ msg['hosts.udd.warn'] | raw }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-primary" id="btnUddConfirm">{{ msg['btn.confirm'] }}</button>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Incognito info modal -->
+<div class="modal fade" id="incognitoInfoModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.udd.warn.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-0">{{ msg['hosts.incognito.warn'] | raw }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="importFileHidden" accept=".json" style="display:none">
+
+<script>
+const PROXY_SVR = '{{ proxyIp }}';
+
+(function() {
+  let profiles = [];
+  let activeHostId = null;
+  let isReadonly = false;
+  let saveTimer = null;
+  let savedCrc = 0;
+  let defaultUserDataDir = '';
+  const isWin = navigator.userAgent.includes('Win');
+  const isMac = navigator.userAgent.includes('Mac');
+
+  // Ace editor
+  const editor = initAceEditor('cmHostsEditor', 'ace/mode/text');
+  editor.session.on('change', () => {
+    if (!isReadonly && activeHostId) {
+      scheduleSave();
+      updateShareButtons();
+    }
+  });
+
+  // DOM refs
+  const profileList   = document.getElementById('profileList');
+  const editorTitle   = document.getElementById('editorTitle');
+  const hostsEditorBody = document.getElementById('hostsEditorBody');
+  const saveStatus    = document.getElementById('saveStatus');
+  const schemePreview  = document.getElementById('schemePreview');
+  const oelinkArgsPreview = document.getElementById('oelinkArgsPreview');
+  const btnDelete        = document.getElementById('btnDelete');
+  const btnShare         = document.getElementById('btnShare');
+  const btnCopyShareLink = document.getElementById('btnCopyShareLink');
+  const btnDownload      = document.getElementById('btnDownload');
+  const emptyState    = document.getElementById('emptyState');
+  const loadingUrlInput  = document.getElementById('loadingUrl');
+  const userDataDirInput = document.getElementById('userDataDir');
+  const userAgentInput   = document.getElementById('userAgent');
+  let uaPresets = [];
+  let urlPresets = [];
+  const visibilityWrap   = document.getElementById('visibilityWrap');
+  const visibilitySelect = document.getElementById('visibilitySelect');
+
+  // ── Render sidebar ─────────────────────────────────────────
+  function renderProfiles() {
+    profileList.innerHTML = '';
+    document.getElementById('profileCount').textContent = MSG['hosts.sidebar.count'].replace('{0}', profiles.length);
+    const empty = document.getElementById('emptyState');
+    if (profiles.length === 0) {
+      empty.classList.remove('d-none');
+      hostsEditorBody.style.display = 'none';
+    } else {
+      empty.classList.add('d-none');
+      if (hostsEditorBody.style.display === 'none') {
+        hostsEditorBody.style.display = '';
+        editor.resize();
+      }
+    }
+    profiles.forEach(p => {
+      const item = document.createElement('div');
+      item.className = 'oe-list-item' + (p.hostsId === activeHostId ? ' active' : '');
+      item.dataset.hostsId = p.hostsId;
+      item.draggable = true;
+      item.innerHTML = `
+        <span class="oe-list-drag${p.visibility === 'private' ? ' private' : p.visibility === 'collabo' ? ' collabo' : ''}">&#9776;</span>
+        <span class="oe-list-name${p.visibility === 'private' ? ' private' : p.visibility === 'collabo' ? ' collabo' : ''}" data-hostsid="${p.hostsId}">${escHtml(p.hostsProfile)}</span>
+        <div class="form-check form-switch mb-0 oe-list-toggle">
+          <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${p.selected ? 'checked' : ''}>
+        </div>`;
+
+      // Click to activate
+      item.addEventListener('click', e => {
+        if (e.target.type === 'checkbox') return;
+        activateProfile(p.hostsId, false);
+      });
+
+      // Checkbox toggle
+      item.querySelector('.oe-list-check').addEventListener('change', () => toggleSelected(p.hostsId));
+
+      // Double-click to rename
+      if (!p.parentId) item.querySelector('.oe-list-name').addEventListener('dblclick', e => startRename(e.target, p));
+
+      // Drag & Drop
+      item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', p.hostsId); });
+      item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+      item.addEventListener('drop', e => {
+        e.preventDefault();
+        item.classList.remove('drag-over');
+        const srcId = e.dataTransfer.getData('text/plain');
+        reorder(srcId, p.hostsId);
+      });
+
+      profileList.appendChild(item);
+    });
+    updateSchemePreview();
+  }
+
+
+  // ── Activate profile ───────────────────────────────────────
+  function activateProfile(hostsId, readonly) {
+    flushPendingSave();
+    activeHostId = hostsId;
+    isReadonly = readonly;
+    const p = profiles.find(x => x.hostsId === hostsId);
+    if (!p) return;
+    editorTitle.textContent = p.hostsProfile;
+    editor.setValue(p.hostsContent, -1);
+    editor.setReadOnly(readonly);
+    document.getElementById('cmHostsEditor').classList.toggle('readonly', readonly);
+    btnDelete.disabled = readonly;
+    visibilityWrap.classList.toggle('d-none', readonly);
+    visibilitySelect.value = p.visibility || 'public';
+    visibilitySelect.disabled = !!p.parentId;
+    applyVisibilityStyle();
+    updateShareButtons();
+    btnDownload.disabled = false;
+    saveStatus.textContent = '';
+    document.querySelectorAll('.oe-list-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.hostsId === String(hostsId));
+    });
+    savedCrc = crc32(p.hostsContent);
+    updateEditorMeta(p);
+  }
+
+  function activateSearchResult(result) {
+    flushPendingSave();
+    activeHostId = result.hostsId;
+    isReadonly = true;
+    emptyState.classList.add('d-none');
+    if (hostsEditorBody.style.display === 'none') {
+      hostsEditorBody.style.display = '';
+      editor.resize();
+    }
+    editorTitle.textContent = result.hostsProfile + ' (' + result.userId + ')';
+    editor.setValue('', -1);
+    editor.setReadOnly(true);
+    document.getElementById('cmHostsEditor').classList.add('readonly');
+    btnDelete.disabled = true;
+    btnShare.disabled = false;
+    btnCopyShareLink.disabled = false;
+    btnDownload.disabled = false;
+    visibilityWrap.classList.add('d-none');
+    saveStatus.textContent = '';
+    updateEditorMeta(null);
+    document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
+    fetch('/share/' + result.hostsId + '/text').then(r => {
+      if (!r.ok) throw new Error('load failed');
+      return r.text();
+    }).then(raw => {
+      const sep = raw.indexOf('\n\n');
+      editor.setValue(sep >= 0 ? raw.slice(sep + 2) : raw, -1);
+      editor.resize(true);
+    }).catch(() => showToast(MSG['toast.load.failed']));
+  }
+
+  // ── Auto-save ──────────────────────────────────────────────
+  function scheduleSave() {
+    if (!activeHostId || isReadonly) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveContent, 2000);
+  }
+
+  // Cancel the pending debounce and, if there's an unsaved edit, save it immediately.
+  // Call this before switching away from the currently active profile so a quick
+  // switch within the 3s debounce window doesn't silently discard the edit.
+  function flushPendingSave() {
+    clearTimeout(saveTimer);
+    if (activeHostId && !isReadonly) flushSaveFor(activeHostId, editor.getValue());
+  }
+
+  async function saveContent() {
+    if (!activeHostId || isReadonly) return;
+    await flushSaveFor(activeHostId, editor.getValue());
+  }
+
+  async function flushSaveFor(hostId, content) {
+    if (crc32(content) === savedCrc) return;
+    try {
+      const res = await fetch('/api/hosts/' + hostId + '/content', {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content})
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const p = profiles.find(x => x.hostsId === hostId);
+        if (p) { p.hostsContent = content; p.updatedAt = updated.updatedAt; }
+        updateSchemePreview();
+        if (hostId === activeHostId) {
+          savedCrc = crc32(content);
+          updateEditorMeta(p);
+          saveStatus.textContent = MSG['status.saved'];
+          setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+        }
+      } else if (hostId === activeHostId) {
+        saveStatus.textContent = MSG['status.save.failed'];
+        saveStatus.style.color = '#dc3545';
+        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
+      }
+    } catch (e) {
+      if (hostId === activeHostId) {
+        saveStatus.textContent = MSG['status.save.failed'];
+        saveStatus.style.color = '#dc3545';
+        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
+      }
+    }
+  }
+
+  // ── Add profile ────────────────────────────────────────────
+  document.getElementById('btnAdd').addEventListener('click', async () => {
+    const res = await fetch('/api/hosts', {method: 'POST'});
+    if (res.ok) {
+      const p = await res.json();
+      profiles.push(p);
+      renderProfiles();
+      activateProfile(p.hostsId, false);
+    }
+  });
+
+  // ── Delete profile ─────────────────────────────────────────
+  document.getElementById('btnDelete').addEventListener('click', async () => {
+    if (!activeHostId || !confirm(MSG['confirm.delete.profile'])) return;
+    clearTimeout(saveTimer);
+    await fetch('/api/hosts/' + activeHostId, {method: 'DELETE'});
+    profiles = profiles.filter(p => p.hostsId !== activeHostId);
+    activeHostId = null;
+    editorTitle.textContent = MSG['editor.select.profile'];
+    editor.setValue('', -1);
+    btnDelete.disabled = true;
+    btnShare.disabled = true;
+    btnCopyShareLink.disabled = true;
+    btnDownload.disabled = true;
+    visibilityWrap.classList.add('d-none');
+    updateEditorMeta(null);
+    renderProfiles();
+  });
+
+  // ── Toggle selected ────────────────────────────────────────
+  async function toggleSelected(hostsId) {
+    const res = await fetch('/api/hosts/' + hostsId + '/selected', {method: 'PATCH'});
+    if (res.ok) {
+      const updated = await res.json();
+      const p = profiles.find(x => x.hostsId === hostsId);
+      if (p) p.selected = updated.selected;
+      updateSchemePreview();
+    }
+  }
+
+  // ── Rename ──────────────────────────────────────────────────
+  function startRename(el, p) {
+    el.contentEditable = 'true';
+    el.classList.add('editing');
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+
+    let cancelled = false;
+
+    const commit = async () => {
+      if (cancelled) return;
+      el.contentEditable = 'false';
+      el.classList.remove('editing');
+      const newName = el.textContent.trim();
+      if (!newName || newName === p.hostsProfile) { el.textContent = p.hostsProfile; return; }
+      const res = await fetch('/api/hosts/' + p.hostsId + '/name', {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: newName})
+      });
+      if (res.ok) {
+        p.hostsProfile = newName;
+        if (activeHostId === p.hostsId) editorTitle.textContent = newName;
+      } else {
+        el.textContent = p.hostsProfile;
+      }
+    };
+
+    const onKeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); el.removeEventListener('keydown', onKeydown); el.blur(); }
+      if (e.key === 'Escape') { cancelled = true; el.removeEventListener('keydown', onKeydown); el.textContent = p.hostsProfile; el.contentEditable = 'false'; el.classList.remove('editing'); el.blur(); }
+    };
+
+    el.addEventListener('blur', commit, {once: true});
+    el.addEventListener('keydown', onKeydown);
+  }
+
+  // ── Reorder ────────────────────────────────────────────────
+  async function reorder(srcId, targetId) {
+    const srcIdx = profiles.findIndex(p => p.hostsId === srcId);
+    const tgtIdx = profiles.findIndex(p => p.hostsId === targetId);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+    const [moved] = profiles.splice(srcIdx, 1);
+    profiles.splice(tgtIdx, 0, moved);
+    renderProfiles();
+    await fetch('/api/hosts/order', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(profiles.map(p => p.hostsId))
+    });
+  }
+
+  // ── Share ──────────────────────────────────────────────────
+  document.getElementById('btnShare').addEventListener('click', () => {
+    if (!activeHostId) return;
+    const args = {
+      oelink:          document.getElementById('toggleOelink').checked,
+      devTools:        document.getElementById('toggleDevTools').checked,
+      incognito:       document.getElementById('toggleIncognito').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgs:        document.getElementById('extraArgs').value,
+      hrr:              document.getElementById('toggleHostResolverRules').checked,
+      uddEnabled:      document.getElementById('toggleUserDataDir').checked,
+      udd:             defaultUserDataDir,
+      urlEnabled:      document.getElementById('toggleOpenUrl').checked,
+      url:             loadingUrlInput.value.trim(),
+      uaEnabled:       document.getElementById('toggleUserAgent').checked,
+      ua:              userAgentInput.value.trim()
+    };
+    window.open('/share/' + activeHostId + '/oelink?chromeArgs=' + toBase64Url(JSON.stringify(args)), '_blank');
+  });
+
+  document.getElementById('btnCopyShareLink').addEventListener('click', () => {
+    if (!activeHostId) return;
+    window.open('/share/' + activeHostId + '/text', '_blank');
+  });
+
+  // ── Download ───────────────────────────────────────────────
+  document.getElementById('btnDownload').addEventListener('click', () => {
+    const p = profiles.find(x => x.hostsId === activeHostId);
+    if (!p) { showToast(MSG['toast.select.profile']); return; }
+    const blob = new Blob([editor.getValue()], {type: 'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = p.hostsProfile.replace(/[^a-z0-9]/gi, '_') + '.txt';
+    a.click();
+  });
+
+  // ── Search ─────────────────────────────────────────────────
+  const btnSearchToggle = document.getElementById('btnSearchToggle');
+  const searchPanelEl   = document.getElementById('searchPanel');
+  const searchInputEl   = document.getElementById('searchInput');
+
+  btnSearchToggle.addEventListener('click', () => {
+    if (searchPanelEl.classList.contains('d-none')) {
+      searchPanelEl.classList.remove('d-none');
+      searchInputEl.focus();
+    } else {
+      closeSearch();
+    }
+  });
+
+  function closeSearch() {
+    searchPanelEl.classList.add('d-none');
+    clearSearch();
+  }
+
+  let searchTimer;
+  searchInputEl.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(doSearch, 300);
+  });
+
+  document.addEventListener('click', e => {
+    if (!searchPanelEl.contains(e.target) && !btnSearchToggle.contains(e.target))
+      closeSearch();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeSearch();
+  });
+
+  async function doSearch() {
+    const q = searchInputEl.value.trim();
+    const container = document.getElementById('searchResults');
+    if (!q) { container.innerHTML = ''; return; }
+    const res = await fetch('/api/hosts/search?q=' + encodeURIComponent(q));
+    const results = await res.json();
+    container.innerHTML = '';
+    if (results.length === 0) {
+      container.innerHTML = '<div class="oe-search-empty">'+MSG['ui.no.results']+'</div>';
+      return;
+    }
+    results.forEach(r => {
+      const el = document.createElement('div');
+      el.className = 'oe-search-item';
+      const isCollabo = r.userNo < 0;
+      el.innerHTML = `
+        <div class="search-item-info">
+          <div class="search-profile">${escHtml(r.hostsProfile)}</div>
+          <div class="search-meta"><span>${escHtml(r.userId)}</span><span>${fmtDateTime(r.updatedAt)}</span></div>
+        </div>
+        <button class="search-copy-btn" title="{{ msg['tooltip.copy.to.mine'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+        </button>`;
+      el.querySelector('.search-item-info').addEventListener('click', () => activateSearchResult(r));
+      el.querySelector('.search-copy-btn').addEventListener('click', async e => {
+        e.stopPropagation();
+        const url = isCollabo ? '/api/hosts/' + r.hostsId + '/register' : '/api/hosts/' + r.hostsId + '/copy';
+        const res = await fetch(url, {method: 'POST'});
+        if (res.ok) {
+          const p = await res.json();
+          profiles.push(p);
+          renderProfiles();
+          activateProfile(p.hostsId, false);
+          showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+        }
+      });
+      container.appendChild(el);
+    });
+  }
+
+  // ── Import from share link ─────────────────────────────────
+  document.getElementById('btnImportLink').addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('importLinkModal')).show();
+  });
+
+  document.getElementById('btnImportLinkConfirm').addEventListener('click', async () => {
+    const val = document.getElementById('shareLinkInput').value.trim();
+    const match = val.match(/\/share\/([^\/]+)/);
+    const hostId = match ? match[1] : val;
+    if (!hostId) return;
+    const { feedback, btn, IDLE_HTML, BUSY_HTML } = window._importLinkModal;
+    btn.disabled = true;
+    btn.innerHTML = BUSY_HTML;
+    feedback.style.display = 'none';
+    const res = await fetch('/api/hosts/' + hostId + '/copy', {method: 'POST'});
+    if (res.ok) {
+      const p = await res.json();
+      profiles.push(p);
+      renderProfiles();
+      activateProfile(p.hostsId, false);
+      bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
+      showToast(MSG['toast.imported']);
+    } else {
+      feedback.textContent = MSG['feedback.profile.not.found'];
+      feedback.style.display = 'block';
+      btn.disabled = false;
+      btn.innerHTML = IDLE_HTML;
+    }
+  });
+
+  // ── Scheme / Browser launch ────────────────────────────────
+
+  function buildResolverRules() {
+    const seen = {};
+    const allEntries = [];
+    profiles.filter(p => p.selected).forEach(p => {
+      const map = parseHostsToMap(p.hostsContent.replace(/\$\{PROXY_SVR\}/g, PROXY_SVR));
+      Object.entries(map).forEach(([host, ip]) => {
+        const active = seen[host] === undefined;
+        if (active) seen[host] = ip;
+        allEntries.push({host, ip, active});
+      });
+    });
+    const rules = {};
+    allEntries.filter(e => e.active).forEach(e => rules[e.host] = e.ip);
+    return {rules, allEntries};
+  }
+
+  function buildArgsLines() {
+    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
+    const incognito        = document.getElementById('toggleIncognito').checked;
+    const devTools         = document.getElementById('toggleDevTools').checked;
+    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
+    const extraArgsVal     = document.getElementById('extraArgs').value;
+    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
+    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const url = loadingUrlInput.value.trim();
+    const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
+    const userAgent   = userAgentInput.value.trim();
+    const lines = [];
+    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
+    const {rules}          = buildResolverRules();
+    const hasRules         = Object.keys(rules).length > 0;
+    if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
+    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
+    if (hrrEnabled && hasRules)    lines.push('--host-resolver-rules "MAP ..."');
+    if (incognito)                 lines.push('--incognito');
+    if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
+    if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
+    lines.sort();
+    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
+    if (oelinkEnabled)             lines.unshift(`--oelink=${oelinkValue}`);
+    if (urlEnabled && url)         lines.push('  ' + url);
+
+    return lines;
+  }
+
+  function updateSchemePreview() {
+    const hrrEnabled = document.getElementById('toggleHostResolverRules').checked;
+    const {rules, allEntries} = buildResolverRules();
+
+    document.getElementById('resolverHostCount').textContent = hrrEnabled ? Object.keys(rules).length : 0;
+
+    if (!hrrEnabled) {
+      schemePreview.textContent = MSG['hosts.scheme.disabled'];
+      schemePreview.classList.add('is-empty');
+    } else if (allEntries.length === 0) {
+      schemePreview.textContent = MSG['hosts.scheme.preview.empty'];
+      schemePreview.classList.add('is-empty');
+    } else {
+      schemePreview.innerHTML = allEntries.map(({host, ip, active}) => {
+        const line = escHtml(`MAP ${host} ${ip}`);
+        return active ? line : `<span class="dup">${line}</span>`;
+      }).join('<br>');
+      schemePreview.classList.remove('is-empty');
+    }
+
+    const incognito = document.getElementById('toggleIncognito').checked;
+    const devTools  = document.getElementById('toggleDevTools').checked;
+    const url       = loadingUrlInput.value.trim();
+    const uddEnabled     = document.getElementById('toggleUserDataDir').checked;
+    const argsLines = buildArgsLines();
+    oelinkArgsPreview.textContent = argsLines.length ? argsLines.join('\n') : '';
+
+    updateMergedPreview();
+  }
+
+  function updateMergedPreview() {
+    const section = document.getElementById('mergedPreviewSection');
+    const selectedProfiles = profiles.filter(p => p.selected);
+    if (selectedProfiles.length < 2) {
+      section.classList.add('d-none');
+      return;
+    }
+    section.classList.remove('d-none');
+    document.getElementById('mergedPreviewLabel').textContent = selectedProfiles.map(p => p.hostsProfile).join(', ');
+    const { allEntries } = buildResolverRules();
+    const body = document.getElementById('mergedPreviewBody');
+    if (allEntries.length === 0) {
+      body.textContent = MSG['hosts.scheme.preview.empty'];
+      body.classList.add('is-empty');
+    } else {
+      body.innerHTML = allEntries.map(({host, ip, active}) => {
+        const line = escHtml(`${ip} ${host}`);
+        return active ? line : `<span class="dup">${line}</span>`;
+      }).join('<br>');
+      body.classList.remove('is-empty');
+    }
+  }
+
+  function buildSchemeArgs(browser) {
+    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
+    const incognito        = document.getElementById('toggleIncognito').checked;
+    const devTools         = document.getElementById('toggleDevTools').checked;
+    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
+    const extraArgsVal     = document.getElementById('extraArgs').value;
+    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const url = loadingUrlInput.value.trim();
+    const {rules} = buildResolverRules();
+    const rulesStr = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
+    const uddEnabled  = document.getElementById('toggleUserDataDir').checked;
+    const uaEnabled   = document.getElementById('toggleUserAgent').checked;
+    const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
+    const userAgent   = userAgentInput.value.trim();
+    const parts = [];
+    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
+    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
+    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
+    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
+    if (incognito)                 parts.push('--incognito');
+    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
+    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
+    parts.sort();
+    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
+    if (oelinkEnabled)             parts.unshift(`--oelink=${oelinkValue}`);
+    if (urlEnabled && url) {
+      const wrapped = wrapDelayedUrl(url);
+      parts.push(isWin ? wrapped : macArgQuote(wrapped));
+    }
+    return parts.join(' ');
+  }
+
+  document.getElementById('btnChrome').addEventListener('click', () => {
+    window.location.href = 'oelink://chrome?' + toBase64Url(buildSchemeArgs('chrome'));
+  });
+
+  document.getElementById('btnCopyScheme').addEventListener('click', () => {
+    const scheme = 'oelink://chrome?' + toBase64Url(buildSchemeArgs('chrome'));
+    copyToClipboard(scheme).then(() => showToast(MSG['toast.scheme.copied']));
+  });
+
+  function buildDirectChromeCmd(os) {
+    const incognito        = document.getElementById('toggleIncognito').checked;
+    const devTools         = document.getElementById('toggleDevTools').checked;
+    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
+    const extraArgsVal     = document.getElementById('extraArgs').value;
+    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const url              = loadingUrlInput.value.trim();
+    const {rules}          = buildResolverRules();
+    const rulesStr         = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
+    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
+    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
+    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const userDataDir = resolveUDD(defaultUserDataDir, os);
+    const userAgent   = userAgentInput.value.trim();
+    const parts = [];
+    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
+    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
+    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
+    if (incognito)                 parts.push('--incognito');
+    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
+    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
+    parts.sort();
+    if (urlEnabled && url)         parts.push(wrapDelayedUrl(url));
+    if (os === 'win') {
+      const argList = parts.map(winArgQuote).join(', ');
+      return parts.length > 0
+        ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
+        : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
+    } else {
+      return parts.length > 0
+        ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
+        : 'open -na "Google Chrome"';
+    }
+  }
+
+  document.getElementById('btnCopyWinChrome').addEventListener('click', () => {
+    copyToClipboard(buildDirectChromeCmd('win')).then(() => showToast(MSG['toast.chrome.cmd.copied']));
+  });
+
+  document.getElementById('btnCopyMacChrome').addEventListener('click', () => {
+    copyToClipboard(buildDirectChromeCmd('mac')).then(() => showToast(MSG['toast.chrome.cmd.copied']));
+  });
+
+  // ── host-resolver-rules info popover ────────────────────────
+  document.getElementById('btnResolverRulesInfo').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('resolverRulesInfoPop').classList.toggle('d-none');
+  });
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('resolverRulesInfoPop');
+    if (!pop.classList.contains('d-none') && !pop.contains(e.target) && !e.target.closest('#btnResolverRulesInfo')) {
+      pop.classList.add('d-none');
+    }
+  });
+
+  // ── oelink help popover ─────────────────────────────────────
+  window.addEventListener('load', () => {
+    // ── oelink download buttons by OS ───────────────────────────
+    const ua = navigator.userAgent;
+    const isWin  = ua.includes('Win');
+    const isMac  = ua.includes('Mac');
+    const downloads = isWin ? [
+      { label: MSG['hosts.download.windows'], file: '/oelink/install_windows_oelink_scheme.zip' }
+    ] : isMac ? [
+      { label: MSG['hosts.download.macos'], file: '/oelink/install_macos_oelink_scheme.sh.tar.gz' }
+    ] : null;
+
+    const dlContainer = document.getElementById('oelinkDownloadButtons');
+    (downloads || []).forEach(d => {
+      const a = document.createElement('a');
+      a.href = d.file;
+      a.download = '';
+      a.className = 'oe-modal-btn justify-content-center';
+      a.innerHTML = `<span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>${d.label}`;
+      dlContainer.appendChild(a);
+    });
+  });
+
+
+
+  function updateEditorMeta(p) {
+    document.getElementById('metaCreator').textContent = p ? (p.userId || '—') : '—';
+    document.getElementById('metaUpdated').textContent = p ? (fmtDateTime(p.updatedAt) || '—') : '—';
+  }
+
+  function applyVisibilityStyle() {
+    visibilitySelect.style.color = visibilitySelect.value === 'private' ? '#CC7722' : visibilitySelect.value === 'collabo' ? '#3b7dd8' : '';
+  }
+
+  function updateShareButtons() {
+    const p = profiles.find(x => x.hostsId === activeHostId);
+    if (!p) return;
+    const disabled = p.visibility === 'private';
+    btnShare.disabled = disabled;
+    btnCopyShareLink.disabled = disabled;
+  }
+
+  // ── Visibility select ──────────────────────────────────────
+  let _pendingCollabo = false;
+  let _prevVisibility = null;
+
+  async function doUpdateVisibility(visibility) {
+    const res = await fetch('/api/hosts/' + activeHostId + '/visibility', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({visibility})
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      const p = profiles.find(x => x.hostsId === activeHostId);
+      if (p) { p.visibility = updated.visibility; p.parentId = updated.parentId; }
+      const updatedP = profiles.find(x => x.hostsId === activeHostId);
+      visibilitySelect.disabled = !!(updatedP && updatedP.parentId);
+      applyVisibilityStyle();
+      updateShareButtons();
+      renderProfiles();
+      document.querySelectorAll('.oe-list-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.hostsId === String(activeHostId));
+      });
+    }
+  }
+
+  visibilitySelect.addEventListener('change', e => {
+    if (!activeHostId) return;
+    if (e.target.value === 'collabo') {
+      _prevVisibility = profiles.find(x => x.hostsId === activeHostId)?.visibility || 'public';
+      _pendingCollabo = true;
+      new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
+      return;
+    }
+    doUpdateVisibility(e.target.value);
+  });
+
+  document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
+    bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
+    if (_pendingCollabo && activeHostId) {
+      _pendingCollabo = false;
+      await doUpdateVisibility('collabo');
+    }
+  });
+
+  document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
+    if (_pendingCollabo) {
+      visibilitySelect.value = _prevVisibility;
+      applyVisibilityStyle();
+      _pendingCollabo = false;
+    }
+  });
+
+  document.getElementById('toggleOelink').addEventListener('change', () => {
+    updateSchemePreview();
+  });
+
+  document.getElementById('toggleIncognito').addEventListener('change', e => {
+    fetch('/api/hosts/conf/incognito', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({value: String(e.target.checked)}) });
+    if (e.target.checked) {
+      new bootstrap.Modal(document.getElementById('incognitoInfoModal')).show();
+    }
+    updateSchemePreview();
+  });
+
+  document.getElementById('toggleDevTools').addEventListener('change', () => {
+    updateSchemePreview();
+  });
+
+  function updateExtraArgsPreview() {
+    const lines = document.getElementById('extraArgs').value.split('\n').map(l => l.trim()).filter(l => l);
+    document.getElementById('extraArgsInput').value = lines.join('  ');
+  }
+
+  document.getElementById('toggleExtraArgs').addEventListener('change', e => {
+    const enabled = e.target.checked;
+    document.getElementById('extraArgsInput').style.display = enabled ? 'none' : '';
+    document.getElementById('extraArgsInput').disabled = !enabled;
+    document.getElementById('extraArgs').style.display = enabled ? '' : 'none';
+    fetch('/api/hosts/conf/extra_chrome_args_enabled', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: String(enabled)})
+    });
+    updateSchemePreview();
+  });
+
+  let extraArgsTimer;
+  document.getElementById('extraArgs').addEventListener('input', () => {
+    updateSchemePreview();
+    clearTimeout(extraArgsTimer);
+    extraArgsTimer = setTimeout(() => {
+      fetch('/api/hosts/conf/extra_chrome_args', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: document.getElementById('extraArgs').value})
+      });
+    }, 800);
+  });
+
+  document.getElementById('toggleHostResolverRules').addEventListener('change', e => {
+    fetch('/api/hosts/conf/host_resolver_rules_enabled', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: String(e.target.checked)})
+    });
+    updateSchemePreview();
+  });
+
+
+  // ── Loading URL save ───────────────────────────────────────
+  let loadingUrlTimer;
+  loadingUrlInput.addEventListener('input', () => {
+    updateSchemePreview();
+    clearTimeout(loadingUrlTimer);
+    loadingUrlTimer = setTimeout(() => {
+      fetch('/api/hosts/conf/open_url', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: loadingUrlInput.value})
+      });
+    }, 800);
+  });
+
+  let _pendingUdd = false;
+
+  function applyUserDataDir(enabled) {
+    userDataDirInput.classList.toggle('disabled', !enabled);
+    fetch('/api/hosts/conf/user_data_dir_enabled', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: String(enabled)})
+    });
+    updateSchemePreview();
+  }
+
+  document.getElementById('toggleUserDataDir').addEventListener('change', e => {
+    if (e.target.checked) {
+      _pendingUdd = true;
+      new bootstrap.Modal(document.getElementById('uddWarnModal')).show();
+      return;
+    }
+    applyUserDataDir(false);
+  });
+
+  document.getElementById('btnUddConfirm').addEventListener('click', () => {
+    bootstrap.Modal.getInstance(document.getElementById('uddWarnModal')).hide();
+    if (_pendingUdd) {
+      _pendingUdd = false;
+      applyUserDataDir(true);
+    }
+  });
+
+  document.getElementById('uddWarnModal').addEventListener('hidden.bs.modal', () => {
+    if (_pendingUdd) {
+      document.getElementById('toggleUserDataDir').checked = false;
+      _pendingUdd = false;
+    }
+  });
+
+  document.getElementById('toggleOpenUrl').addEventListener('change', e => {
+    loadingUrlInput.disabled = !e.target.checked;
+    document.getElementById('btnUrlPreset').disabled = !e.target.checked;
+    fetch('/api/hosts/conf/open_url_enabled', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: String(e.target.checked)})
+    });
+    updateSchemePreview();
+  });
+
+  // ── User-Agent save ────────────────────────────────────────
+  let userAgentTimer;
+  userAgentInput.addEventListener('input', () => {
+    updateSchemePreview();
+    clearTimeout(userAgentTimer);
+    userAgentTimer = setTimeout(() => {
+      fetch('/api/hosts/conf/user_agent', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: userAgentInput.value})
+      });
+    }, 800);
+  });
+
+  document.getElementById('toggleUserAgent').addEventListener('change', e => {
+    userAgentInput.disabled = !e.target.checked;
+    document.getElementById('btnUaPreset').disabled = !e.target.checked;
+    fetch('/api/hosts/conf/user_agent_enabled', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: String(e.target.checked)})
+    });
+    updateSchemePreview();
+  });
+
+  // ── UA Preset dropdown ─────────────────────────────────────
+  function renderUaPresetMenu() {
+    const menu = document.getElementById('uaPresetMenu');
+    const dropdown = bootstrap.Dropdown.getOrCreateInstance(document.getElementById('btnUaPreset'));
+    menu.innerHTML = '';
+
+    const mine   = uaPresets.filter(p => p.mine);
+    const global = uaPresets.filter(p => !p.mine);
+
+    function selectPreset(p) {
+      userAgentInput.value = p.uaValue;
+      fetch('/api/hosts/conf/user_agent', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: p.uaValue})
+      });
+      updateSchemePreview();
+      dropdown.hide();
+    }
+
+    function mkItem(p) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.className = 'dropdown-item';
+      a.href = '#';
+      a.title = p.uaValue;
+      const name = document.createElement('span');
+      name.className = 'ua-preset-item-name';
+      name.textContent = p.uaName;
+      a.appendChild(name);
+      if (!p.mine) {
+        const icon = document.createElement('span');
+        icon.className = 'oe-icon oe-icon-admin ua-preset-item-icon';
+        a.appendChild(icon);
+      }
+      a.addEventListener('click', e => { e.preventDefault(); selectPreset(p); });
+      li.appendChild(a);
+      return li;
+    }
+
+    global.forEach(p => menu.appendChild(mkItem(p)));
+    mine.forEach(p => menu.appendChild(mkItem(p)));
+
+    // ── Empty state ─────────────────────────────────────────
+    if (mine.length === 0 && global.length === 0) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="dropdown-item-text text-muted small">${MSG['hosts.ua.preset.empty']}</span>`;
+      menu.appendChild(li);
+    }
+  }
+
+  document.getElementById('btnUaPreset').addEventListener('show.bs.dropdown', renderUaPresetMenu);
+
+  // ── URL Preset dropdown ─────────────────────────────────────
+  function renderUrlPresetMenu() {
+    const menu = document.getElementById('urlPresetMenu');
+    const dropdown = bootstrap.Dropdown.getOrCreateInstance(document.getElementById('btnUrlPreset'));
+    menu.innerHTML = '';
+
+    const mine   = urlPresets.filter(p => p.mine);
+    const global = urlPresets.filter(p => !p.mine);
+
+    function selectPreset(p) {
+      loadingUrlInput.value = p.urlValue;
+      fetch('/api/hosts/conf/open_url', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: p.urlValue})
+      });
+      updateSchemePreview();
+      dropdown.hide();
+    }
+
+    function mkItem(p) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.className = 'dropdown-item';
+      a.href = '#';
+      a.title = p.urlValue;
+      const name = document.createElement('span');
+      name.className = 'ua-preset-item-name';
+      name.textContent = p.urlName;
+      a.appendChild(name);
+      if (!p.mine) {
+        const icon = document.createElement('span');
+        icon.className = 'oe-icon oe-icon-admin ua-preset-item-icon';
+        a.appendChild(icon);
+      }
+      a.addEventListener('click', e => { e.preventDefault(); selectPreset(p); });
+      li.appendChild(a);
+      return li;
+    }
+
+    global.forEach(p => menu.appendChild(mkItem(p)));
+    mine.forEach(p => menu.appendChild(mkItem(p)));
+
+    // ── Empty state ─────────────────────────────────────────
+    if (mine.length === 0 && global.length === 0) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="dropdown-item-text text-muted small">${MSG['hosts.url.preset.empty']}</span>`;
+      menu.appendChild(li);
+    }
+  }
+
+  document.getElementById('btnUrlPreset').addEventListener('show.bs.dropdown', renderUrlPresetMenu);
+
+  // ── Width toggle ───────────────────────────────────────────
+  initWidthToggle(
+    document.getElementById('hostsApp'),
+    document.getElementById('btnToggleWidth'),
+    () => { editor.resize(); }
+  );
+
+  // ── Panel resize ───────────────────────────────────────────
+  (function() {
+    const handle       = document.getElementById('hostsResizeHandle');
+    const editorPanel  = document.querySelector('.hosts-editor');
+    const browserPanel = document.querySelector('.hosts-browser-panel');
+    let dragging = false, startX, startEditorW, startBrowserW;
+
+    function applyWidth(ew) {
+      editorPanel.style.flex   = `0 0 ${ew}px`;
+      editorPanel.style.width  = `${ew}px`;
+      browserPanel.style.flex  = '';
+      browserPanel.style.width = '';
+      editor.resize();
+    }
+
+    handle.addEventListener('mousedown', e => {
+      dragging      = true;
+      startX        = e.clientX;
+      startEditorW  = editorPanel.getBoundingClientRect().width;
+      startBrowserW = browserPanel.getBoundingClientRect().width;
+      handle.classList.add('resizing');
+      document.body.style.cursor     = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const total = startEditorW + startBrowserW;
+      let ew = startEditorW + (e.clientX - startX);
+      let bw = total - ew;
+      if (ew < 200) { ew = 200; bw = total - 200; }
+      if (bw < 200) { ew = total - 200; }
+      applyWidth(ew);
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('resizing');
+      document.body.style.cursor     = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem('hostsPanelWidth', editorPanel.getBoundingClientRect().width);
+    });
+
+    const saved = localStorage.getItem('hostsPanelWidth');
+    if (saved && !document.getElementById('hostsApp').classList.contains('expanded')) applyWidth(Number(saved));
+  })();
+
+  const DEFAULT_EXTRA_ARGS = '--disable-background-networking\n--disable-sync\n--disk-cache-size=1\n--media-cache-size=1\n--no-first-run';
+
+  // ── Init ───────────────────────────────────────────────────
+  (async () => {
+    const [profilesRes, luRes, ipRes, uddRes, uddeRes, oueRes, hrrRes, uaRes, uaeRes, presetsRes, urlPresetsRes, exaRes, exaeRes] = await Promise.all([
+      fetch('/api/hosts'),
+      fetch('/api/hosts/conf/open_url'),
+      fetch('/api/hosts/conf/incognito'),
+      fetch('/api/hosts/conf/user_data_dir'),
+      fetch('/api/hosts/conf/user_data_dir_enabled'),
+      fetch('/api/hosts/conf/open_url_enabled'),
+      fetch('/api/hosts/conf/host_resolver_rules_enabled'),
+      fetch('/api/hosts/conf/user_agent'),
+      fetch('/api/hosts/conf/user_agent_enabled'),
+      fetch('/api/hosts/ua/presets'),
+      fetch('/api/hosts/url/presets'),
+      fetch('/api/hosts/conf/extra_chrome_args'),
+      fetch('/api/hosts/conf/extra_chrome_args_enabled')
+    ]);
+    profiles = await profilesRes.json();
+    const lu   = await luRes.json();
+    const ip   = await ipRes.json();
+    const udd  = await uddRes.json();
+    const udde = await uddeRes.json();
+    const oue  = await oueRes.json();
+    const hrre = await hrrRes.json();
+    const ua   = await uaRes.json();
+    const uae  = await uaeRes.json();
+    uaPresets  = await presetsRes.json();
+    urlPresets = await urlPresetsRes.json();
+    const exa  = await exaRes.json();
+    const exae = await exaeRes.json();
+    defaultUserDataDir = '${USERHOME}/oe-chrome';
+    loadingUrlInput.value = lu.value || '';
+    userDataDirInput.textContent = defaultUserDataDir;
+    const uddEnabledVal = udde.value === 'true';
+    document.getElementById('toggleUserDataDir').checked = uddEnabledVal;
+    userDataDirInput.classList.toggle('disabled', !uddEnabledVal);
+    const oueEnabledVal = oue.value !== 'false';
+    document.getElementById('toggleOpenUrl').checked = oueEnabledVal;
+    loadingUrlInput.disabled = !oueEnabledVal;
+    document.getElementById('btnUrlPreset').disabled = !oueEnabledVal;
+    document.getElementById('toggleHostResolverRules').checked = hrre.value !== 'false';
+    document.getElementById('toggleIncognito').checked = ip.value === 'true';
+    userAgentInput.value = ua.value || '';
+    const uaeEnabledVal = uae.value === 'true';
+    document.getElementById('toggleUserAgent').checked = uaeEnabledVal;
+    userAgentInput.disabled = !uaeEnabledVal;
+    document.getElementById('btnUaPreset').disabled = !uaeEnabledVal;
+    document.getElementById('extraArgs').value = exa.value || DEFAULT_EXTRA_ARGS;
+    const exaeEnabledVal = exae.value === 'true';
+    document.getElementById('toggleExtraArgs').checked = exaeEnabledVal;
+    document.getElementById('extraArgsInput').disabled = !exaeEnabledVal;
+    document.getElementById('extraArgsInput').style.display = exaeEnabledVal ? 'none' : '';
+    document.getElementById('extraArgs').style.display = exaeEnabledVal ? '' : 'none';
+    updateExtraArgsPreview();
+    renderUaPresetMenu();
+    renderUrlPresetMenu();
+    renderProfiles();
+    if (profiles.length > 0) {
+      const initial = profiles.find(p => p.selected) || profiles[0];
+      activateProfile(initial.hostsId, false);
+    }
+
+    // ── Guide auto-show ──────────────────────────────────────
+    initGuideModal('oelinkInstallModal', 'oelinkGuideNoShow', 'hostsGuideHidden');
+  })();
+})();
+</script>
+{% endblock %}

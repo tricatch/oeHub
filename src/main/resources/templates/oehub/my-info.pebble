@@ -1,0 +1,40 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['my.info.title'] }} — oeHub{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="myInfoApp">
+<script>
+  (function() {
+    if (localStorage.getItem('oeWidthExpanded') === 'true') {
+      document.getElementById('myInfoApp').classList.add('expanded');
+      document.body.classList.add('oe-expanded');
+    }
+  })();
+</script>
+
+  <div class="info-page-main">
+    <h5>{{ msg['my.info.title'] }}</h5>
+
+    <div class="oe-info-section">
+      <table class="oe-info-table">
+        <colgroup><col style="width:140px;"><col></colgroup>
+        <thead><tr><th colspan="2">{{ msg['my.info.section.account'] }}</th></tr></thead>
+        <tbody>
+          <tr><td class="oe-info-label">ID</td><td>{{ user.userId }}</td></tr>
+          <tr><td class="oe-info-label">OID</td><td>{{ user.oid }} <span class="text-muted">({{ msg['my.info.oid.desc'] }})</span></td></tr>
+          <tr><td class="oe-info-label">{{ msg['users.col.created'] }}</td><td>{{ createAt }}</td></tr>
+          <tr><td class="oe-info-label">{{ msg['users.col.last.login'] }}</td><td>{{ lastLoginAt }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<script>initWidthToggle(document.getElementById('myInfoApp'), document.getElementById('btnToggleWidth'));</script>
+{% endblock %}

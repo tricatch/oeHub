@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="{{ currentLocale }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ msg['setup.title'] }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/brand.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/icon.css">
+  <link rel="stylesheet" href="/css/info-page.css">
+  <link rel="stylesheet" href="/css/settings.css">
+  <link rel="stylesheet" href="/css/auth.css">
+</head>
+<body class="bg-light">
+<div class="d-flex align-items-center min-vh-100">
+  <div class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-12 auth-col">
+
+        <div class="text-center mb-4">
+          <h1 class="oe-brand-title">oeHub</h1>
+          <img src="/icon/oe_logo_original.svg" alt="oeHub Logo" class="oe-brand-logo">
+        </div>
+
+        {# ── Step 1: Admin Account ── #}
+        <div class="oe-info-section">
+          <table class="oe-info-table mb-0">
+            <colgroup><col style="width:110px;"><col></colgroup>
+            <thead>
+              <tr>
+                <th colspan="2">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <span>{{ msg['setup.admin.title'] }}</span>
+                    {% if adminConfigured %}
+                    <span class="badge bg-success">{{ msg['setup.configured'] }}</span>
+                    {% endif %}
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            {% if adminConfigured %}
+            <tbody>
+              <tr>
+                <td class="oe-info-label">{{ msg['auth.userid'] }}</td>
+                <td>{{ adminUserId }}</td>
+              </tr>
+            </tbody>
+            {% endif %}
+          </table>
+
+          {% if not adminConfigured %}
+          <div class="pt-3">
+            {% if adminError %}
+            <div class="alert alert-danger py-2 small mb-3 setup-alert-text">{{ msg[adminError] }}</div>
+            {% endif %}
+            <form method="post" action="/setup" autocomplete="off">
+              <table class="oe-info-table mb-3">
+                <colgroup><col style="width:150px;"><col></colgroup>
+                <tbody>
+                  <tr>
+                    <td class="oe-info-label">{{ msg['auth.userid'] }}</td>
+                    <td><input type="text" name="userId" class="form-control form-control-sm" autofocus></td>
+                  </tr>
+                  <tr>
+                    <td class="oe-info-label">{{ msg['auth.password'] }}</td>
+                    <td><input type="password" name="password" class="form-control form-control-sm"></td>
+                  </tr>
+                  <tr>
+                    <td class="oe-info-label">{{ msg['auth.confirm.password'] }}</td>
+                    <td><input type="password" name="confirm" class="form-control form-control-sm"></td>
+                  </tr>
+                </tbody>
+              </table>
+              <button type="submit" class="oe-modal-btn ca-action-btn">
+                <span class="oe-icon oe-icon-admin" style="width:13px;height:13px"></span>{{ msg['setup.admin.create.btn'] }}
+              </button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+
+        {# ── Step 2: oeHosts Settings ── #}
+        <div class="oe-info-section">
+          <table class="oe-info-table ua-preset-table mb-0" id="urlPresetTable">
+            <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+            <thead>
+              <tr>
+                <th colspan="2">{{ msg['settings.url.title'] }}</th>
+                <th class="col-actions text-end">
+                  <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUrlPreset" type="button" title="{{ msg['settings.url.add'] }}">
+                    <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="urlPresetBody">
+              <tr id="urlEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.url.empty'] }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="oe-info-section">
+          <table class="oe-info-table ua-preset-table mb-0" id="uaPresetTable">
+            <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+            <thead>
+              <tr>
+                <th colspan="2">{{ msg['settings.ua.title'] }}</th>
+                <th class="col-actions text-end">
+                  <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUaPreset" type="button" title="{{ msg['settings.ua.add'] }}">
+                    <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="uaPresetBody">
+              <tr id="uaEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.ua.empty'] }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        {# ── Step 3: CA Certificate ── #}
+        <div class="oe-info-section">
+          <table class="oe-info-table mb-0">
+            <colgroup><col style="width:110px;"><col></colgroup>
+            <thead>
+              <tr>
+                <th colspan="2">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <span>{{ msg['setup.ca.title'] }}</span>
+                    {% if caConfigured %}
+                    <span class="badge bg-success">{{ msg['setup.configured'] }}</span>
+                    {% endif %}
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            {% if caConfigured %}
+            <tbody>
+              <tr>
+                <td class="oe-info-label">{{ msg['setup.ca.name'] }}</td>
+                <td>{{ ca.name }}</td>
+              </tr>
+              <tr>
+                <td class="oe-info-label">{{ msg['settings.ca.serial'] }}</td>
+                <td class="setup-mono">{{ ca.serial }}</td>
+              </tr>
+              <tr>
+                <td class="oe-info-label">{{ msg['settings.ca.valid.from'] }}</td>
+                <td>{{ ca.notBefore }}</td>
+              </tr>
+              <tr>
+                <td class="oe-info-label">{{ msg['settings.ca.valid.until'] }}</td>
+                <td>{{ ca.notAfter }}</td>
+              </tr>
+            </tbody>
+            {% endif %}
+          </table>
+
+          {% if not caConfigured %}
+          <div class="pt-3">
+            {% if caError %}
+            <div class="alert alert-danger py-2 small mb-3">{{ msg[caError] }}</div>
+            {% endif %}
+            <div class="alert alert-warning py-2 small mb-3 ca-note-text">
+              <strong>{{ msg['setup.ca.note.label'] }}:</strong> {{ msg['settings.ca.warning'] }}
+            </div>
+            <ul class="nav nav-tabs mb-3" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link {% if caActiveTab != "import" %}active{% endif %}"
+                        data-bs-toggle="tab" data-bs-target="#caGeneratePane"
+                        type="button" role="tab">{{ msg['settings.ca.tab.generate'] }}</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link {% if caActiveTab == "import" %}active{% endif %}"
+                        data-bs-toggle="tab" data-bs-target="#caImportPane"
+                        type="button" role="tab">{{ msg['settings.ca.tab.import'] }}</button>
+              </li>
+            </ul>
+            <div class="tab-content">
+              <div class="tab-pane fade {% if caActiveTab != "import" %}show active{% endif %}"
+                   id="caGeneratePane" role="tabpanel">
+                <form method="post" action="/setup/ca/generate" autocomplete="off">
+                  <div class="mb-3">
+                    <label class="form-label">{{ msg['settings.ca.name.label'] }}</label>
+                    <input type="text" name="caName" class="form-control"
+                           value="{{ defaultCaName }}" placeholder="{{ msg['setup.ca.name.placeholder'] }}" required>
+                    <div class="form-text">{{ msg['settings.ca.name.help'] }}</div>
+                  </div>
+                  <button type="submit" class="oe-modal-btn ca-action-btn">
+                    <span class="oe-icon oe-icon-cert" style="width:13px;height:13px"></span>{{ msg['setup.ca.generate.btn'] }}
+                  </button>
+                </form>
+              </div>
+              <div class="tab-pane fade {% if caActiveTab == "import" %}show active{% endif %}"
+                   id="caImportPane" role="tabpanel">
+                <form method="post" action="/setup/ca/import" enctype="multipart/form-data" autocomplete="off">
+                  <div class="mb-3">
+                    <label class="form-label">{{ msg['settings.ca.cert.file'] }} <span class="text-muted fw-normal">(.cer / .pem / .crt)</span></label>
+                    <input type="file" name="certFile" class="form-control" accept=".cer,.pem,.crt" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">{{ msg['settings.ca.key.file'] }} <span class="text-muted fw-normal">(.pfx / .p12)</span></label>
+                    <input type="file" name="keyFile" class="form-control" accept=".pfx,.p12,.pem" required>
+                  </div>
+                  <button type="submit" class="oe-modal-btn ca-action-btn">
+                    <span class="oe-icon oe-icon-cert" style="width:13px;height:13px"></span>{{ msg['setup.ca.import.btn'] }}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        {# ── Step 4: oeOID Domains ── #}
+        <div class="oe-info-section">
+          <table class="oe-info-table mb-0">
+            <colgroup><col style="width:110px;"><col></colgroup>
+            <thead>
+              <tr>
+                <th>{{ msg['settings.oeoid.title'] }}</th>
+                <th class="text-end">
+                  {% if oidDomainConfigured %}
+                  <span class="badge bg-success">{{ msg['setup.configured'] }}</span>
+                  {% else %}
+                  <button class="oe-nav-action-btn oe-nav-action-save" type="submit" form="oidDomainDefaultForm" title="{{ msg['btn.save'] }}">
+                    <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
+                  </button>
+                  {% endif %}
+                </th>
+              </tr>
+            </thead>
+            {% if oidDomainConfigured %}
+            <tbody>
+              <tr>
+                <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
+                <td class="setup-mono setup-pre-line">{{ oidDomainDefault }}</td>
+              </tr>
+            </tbody>
+            {% endif %}
+          </table>
+
+          {% if not oidDomainConfigured %}
+          <div class="pt-3">
+            <form id="oidDomainDefaultForm" method="post" action="/setup/oid-domain-default" autocomplete="off">
+              <table class="oe-info-table mb-0">
+                <colgroup><col style="width:150px;"><col></colgroup>
+                <tbody>
+                  <tr>
+                    <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
+                    <td>
+                      <textarea name="oidDomainDefault" class="form-control form-control-sm" rows="4"
+                                placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
+                      <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="text-center mt-2 mb-4">
+          <button type="button" class="oe-modal-btn" id="btnGotoLogin"
+                  data-setup-complete="{% if adminConfigured and caConfigured %}true{% else %}false{% endif %}"
+                  {% if not (adminConfigured and caConfigured) %}disabled{% endif %}
+                  onclick="location.href='/login'">{{ msg['setup.goto.login'] }}</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+<div class="oe-toast" id="toast">
+  <span class="oe-icon oe-icon-success" style="width:21px;height:21px"></span>
+  <span class="oe-toast-msg"></span>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>window.MSG = {{ msgJson | raw }};</script>
+<script src="/js/util.js"></script>
+<script>
+  let unsavedPresetCount = 0;
+  function updateLoginBtn() {
+    const btn = document.getElementById('btnGotoLogin');
+    if (!btn) return;
+    const complete = btn.dataset.setupComplete === 'true';
+    btn.disabled = !complete || unsavedPresetCount > 0;
+  }
+  function onPresetDirtyChange(dirty) {
+    unsavedPresetCount += dirty ? 1 : -1;
+    updateLoginBtn();
+  }
+</script>
+<script src="/js/url-preset.js"></script>
+<script>
+  initUrlPresetTable({
+    apiBase: '/setup/hosts-url',
+    deleteTooltipKey: 'tooltip.url.delete',
+    savedToastKey: 'toast.url.saved',
+    deletedToastKey: 'toast.url.deleted',
+    onDirtyChange: onPresetDirtyChange
+  });
+</script>
+
+<script src="/js/ua-preset.js"></script>
+<script>
+  initUaPresetTable({
+    apiBase: '/setup/hosts-ua',
+    deleteTooltipKey: 'tooltip.ua.delete',
+    savedToastKey: 'toast.ua.saved',
+    deletedToastKey: 'toast.ua.deleted',
+    onDirtyChange: onPresetDirtyChange
+  });
+
+  if (new URLSearchParams(location.search).get('savedOid') === '1') {
+    showToast(MSG['settings.saved']);
+    history.replaceState(null, '', '/setup');
+  }
+</script>
+</body>
+</html>

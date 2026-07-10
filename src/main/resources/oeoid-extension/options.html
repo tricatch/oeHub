@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>oeOID Settings</title>
+<style>
+  :root {
+    --bc100: #dff2b8;
+    --bc300: #a8d878;
+    --bc500: #7ab84a;
+    --bc700: #5a9e2f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    width: 420px;
+    color: #2d2f24;
+    background: #fff;
+  }
+  .oe-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bc100);
+    border-top: 3px solid var(--bc500);
+    border-bottom: 1px solid #c4e89a;
+  }
+  .oe-header h1 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e4a0a;
+  }
+  .oe-toggle {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+    margin: 0 0 0 auto;
+    flex-shrink: 0;
+  }
+  .oe-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .oe-toggle .oe-slider {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+    background: #c4c9bd;
+    border-radius: 20px;
+    transition: background 0.15s;
+  }
+  .oe-toggle .oe-slider::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    bottom: 3px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.15s;
+  }
+  .oe-toggle input:checked + .oe-slider {
+    background: var(--bc500);
+  }
+  .oe-toggle input:checked + .oe-slider::before {
+    transform: translateX(14px);
+  }
+  .oe-toggle input:focus-visible + .oe-slider {
+    box-shadow: 0 0 0 2px rgba(122,184,72,0.4);
+  }
+  .oe-body { padding: 1rem; }
+  .oe-intro { font-size: 12px; color: #6c757d; margin: 0 0 14px; line-height: 1.5; }
+  label { display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: #3a5a24; }
+  label:first-of-type { margin-top: 0; }
+  input, textarea {
+    width: 100%;
+    margin-top: 4px;
+    font-size: 13px;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid #c4e89a;
+    border-radius: 6px;
+    font-family: inherit;
+    color: inherit;
+  }
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--bc500);
+    box-shadow: 0 0 0 2px rgba(122,184,72,0.25);
+  }
+  input:disabled, textarea:disabled {
+    background: #f1f3ef;
+    color: #9aa08e;
+    cursor: not-allowed;
+  }
+  textarea { height: 140px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; resize: vertical; }
+  .help { font-size: 12px; color: #6c757d; margin-top: 4px; }
+  .header-preview {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    color: #4a7a1e;
+    background: var(--bc100);
+    border: 1px solid #c4e89a;
+    border-radius: 6px;
+    padding: 0.3rem 0.55rem;
+    margin-top: 6px;
+    overflow-wrap: anywhere;
+  }
+  .header-preview.disabled {
+    background: #f1f3ef;
+    border-color: #dee2d6;
+    color: #9aa08e;
+  }
+  .oe-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 16px; }
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.9rem;
+    background: var(--bc100);
+    border: 1px solid #c4e89a;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #4a7a1e;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  button:hover { background: var(--bc300); border-color: #8ec45a; color: #2d5010; }
+  button:disabled {
+    background: #f1f3ef;
+    border-color: #dee2d6;
+    color: #9aa08e;
+    cursor: not-allowed;
+  }
+  button:disabled:hover {
+    background: #f1f3ef;
+    border-color: #dee2d6;
+    color: #9aa08e;
+  }
+  #status { font-size: 12px; color: var(--bc700); }
+</style>
+</head>
+<body>
+  <div class="oe-header">
+    <svg width="22" height="22" viewBox="82 82 236 236" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <path id="seed" d="M0 -20 C6 -14, 8 -6, 7 0 C8 8, 6 14, 0 19 C-2.5 16, -4 9, -4 0 C-4 -7, -2.5 -15, 0 -20 Z"/>
+      </defs>
+      <circle cx="200" cy="200" r="118" fill="#a8d878"/>
+      <circle cx="200" cy="200" r="100" fill="#dff2b8"/>
+      <g transform="rotate(15 200 200)">
+        <g transform="rotate(-9 200 200)"><use href="#seed" transform="translate(200 163) scale(1.0)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(19 200 200)"><use href="#seed" transform="translate(200 163) scale(1.1)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(47 200 200)"><use href="#seed" transform="translate(200 163) scale(0.95)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(75 200 200)"><use href="#seed" transform="translate(200 163) scale(1.05)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(121 200 200)"><use href="#seed" transform="translate(200 163) scale(1.1)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(149 200 200)"><use href="#seed" transform="translate(200 163) scale(0.95)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(177 200 200)"><use href="#seed" transform="translate(200 163) scale(1.15)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(241 200 200)"><use href="#seed" transform="translate(200 163) scale(1.0)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(269 200 200)"><use href="#seed" transform="translate(200 163) scale(1.2)" fill="#7ab84a" opacity="0.9"/></g>
+        <g transform="rotate(297 200 200)"><use href="#seed" transform="translate(200 163) scale(0.95)" fill="#7ab84a" opacity="0.9"/></g>
+      </g>
+    </svg>
+    <h1 data-i18n="popupTitle">oeOID Settings</h1>
+    <label class="oe-toggle">
+      <input type="checkbox" id="enabled" data-i18n-aria-label="toggleAriaLabel">
+      <span class="oe-slider"></span>
+    </label>
+  </div>
+  <div class="oe-body">
+    <p class="oe-intro" data-i18n="popupIntro"></p>
+
+    <label for="oid" data-i18n="oidLabel">OID</label>
+    <input type="text" id="oid">
+    <div class="header-preview" id="oidPreview"></div>
+
+    <label for="domains" data-i18n="domainsLabel">Domains</label>
+    <textarea id="domains" data-i18n-placeholder="domainsPlaceholder"></textarea>
+    <div class="help" data-i18n="domainsHelp"></div>
+
+    <div class="oe-actions">
+      <button id="save" data-i18n="saveButton">Save</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

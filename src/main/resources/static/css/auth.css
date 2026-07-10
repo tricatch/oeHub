@@ -1,0 +1,52 @@
+.auth-col { max-width: 860px; }
+.auth-col-narrow { max-width: 430px; }
+
+.auth-wrap { align-items: flex-start; padding-top: 5rem; padding-bottom: 2rem; }
+
+.card {
+  border: 1.5px solid #e2f0d0;
+  border-radius: 12px;
+}
+
+.card-header {
+  background: #f5fbec;
+  border-bottom: 1px solid #e2f0d0;
+  border-radius: 10px 10px 0 0 !important;
+  font-size: 0.85rem;
+  color: #3a6b1a;
+  padding: 0.6rem 1rem;
+}
+
+h2.h5 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2d4a1e;
+}
+
+.form-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 0.3rem;
+}
+
+.form-check-label { font-size: 0.85rem; }
+
+.form-text { font-size: 0.78rem; }
+
+.setup-mono {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.78rem;
+}
+
+.setup-pre-line { white-space: pre-line; }
+
+.auth-col .nav-tabs .nav-link { font-size: 0.78rem; }
+.auth-col .nav-tabs .nav-link:not(.active) { color: #6c757d; }
+.auth-col .nav-tabs .nav-link.active { background-color: #dff2b8; border-color: #dff2b8 #dff2b8 #dff2b8; }
+
+.ca-action-btn { font-size: 0.74rem; }
+.ca-note-text { font-size: 0.78rem; }
+.setup-alert-text { font-size: 0.78rem; }
+
+.auth-col .oe-info-section { margin-bottom: 4rem; }

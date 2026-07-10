@@ -1,0 +1,46 @@
+{% extends "templates/layout.pebble" %}
+
+{% block title %}{{ vhost.vhostProfile }} — oeProxy{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/share.css">
+<style>
+.share-page { height: 95vh; display: flex; flex-direction: column; }
+.share-section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#rawContent { flex: 1; max-height: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="share-page">
+
+  <div class="share-header">
+    <img src="/icon/oe_logo_original.svg" width="36" height="36" alt="">
+    <div>
+      <p class="share-title">{{ vhost.vhostProfile }}</p>
+      <p class="share-meta">by {{ owner }}</p>
+    </div>
+  </div>
+
+  <div class="share-section">
+    <div class="share-section-header-row">
+      <div class="share-section-header">{{ msg['share.proxy.content'] }}</div>
+      <button class="share-copy-btn" id="btnCopy" title="{{ msg['ui.copy.clipboard'] }}">
+        <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+      </button>
+    </div>
+    <pre class="share-content-pre" id="rawContent"></pre>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  const content = {{ contentJson | raw }};
+  document.getElementById('rawContent').textContent = content;
+  document.getElementById('btnCopy').addEventListener('click', () => {
+    copyToClipboard(content).then(() => flashCopyFeedback(document.getElementById('btnCopy')));
+  });
+})();
+</script>
+{% endblock %}

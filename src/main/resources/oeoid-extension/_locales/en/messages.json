@@ -1,0 +1,13 @@
+{
+  "extName": { "message": "oeOID" },
+  "extDescription": { "message": "Injects the X-OeHub-Oid header into requests to configured domains." },
+  "popupTitle": { "message": "oeOID Settings" },
+  "toggleAriaLabel": { "message": "Enable oeOID" },
+  "popupIntro": { "message": "Automatically adds an X-OeHub-Oid header to requests sent to the domains registered below, so oeProxy can identify your per-user routing information. When disabled, oeProxy identifies routing information using the IP address instead." },
+  "oidLabel": { "message": "OID" },
+  "domainsLabel": { "message": "Domains" },
+  "domainsHelp": { "message": "One domain per line. Wildcard prefix (*.) is supported." },
+  "domainsPlaceholder": { "message": "*.foo.oe\n*.bar.oe" },
+  "saveButton": { "message": "Save" },
+  "savedStatus": { "message": "Saved." }
+}

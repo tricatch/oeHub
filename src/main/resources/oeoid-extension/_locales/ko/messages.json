@@ -1,0 +1,13 @@
+{
+  "extName": { "message": "oeOID" },
+  "extDescription": { "message": "설정한 도메인으로 가는 요청에 X-OeHub-Oid 헤더를 추가합니다." },
+  "popupTitle": { "message": "oeOID 설정" },
+  "toggleAriaLabel": { "message": "oeOID 사용" },
+  "popupIntro": { "message": "아래 등록한 도메인으로 요청을 보낼 때 X-OeHub-Oid 헤더를 자동으로 추가하여, oeProxy가 사용자별 라우팅 정보를 식별할 수 있도록 합니다. 비활성화하면 IP를 사용하여 oeProxy가 라우팅 정보를 식별합니다." },
+  "oidLabel": { "message": "OID" },
+  "domainsLabel": { "message": "도메인" },
+  "domainsHelp": { "message": "한 줄에 하나씩 입력하세요. 와일드카드 접두사(*.)를 지원합니다." },
+  "domainsPlaceholder": { "message": "*.foo.oe\n*.bar.oe" },
+  "saveButton": { "message": "저장" },
+  "savedStatus": { "message": "저장되었습니다." }
+}

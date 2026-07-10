@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>502 {{ msg['error.502.label'] }} — oeProxy</title>
+  <style>{% include "templates/error/error-style.pebble" %}</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="brand">{% include "templates/error/oe-logo.pebble" %}
+    <span class="brand-name">oeProxy</span>
+  </div>
+
+  <div class="status-code">502</div>
+  <div class="status-label">{{ msg['error.502.label'] }}</div>
+  <div class="status-desc">{{ msg['error.502.desc'] }}</div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">{{ msg['error.502.request.details'] }}</div>
+  <table class="detail-table">
+    <tr><th>{{ msg['error.502.rid'] }}</th><td>{{ rid }}</td></tr>
+    <tr><th>{{ msg['error.502.request.host'] }}</th><td>{{ requestHost }}</td></tr>
+    <tr><th>{{ msg['error.502.route.path'] }}</th><td>{{ routePath }}</td></tr>
+    <tr><th>{{ msg['error.502.target.url'] }}</th><td>{{ targetUrl }}</td></tr>
+  </table>
+
+  {% if errorMessage %}
+  <div class="error-msg">{{ errorMessage }}</div>
+  {% endif %}
+
+</div>
+</body>
+</html>

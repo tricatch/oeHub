@@ -1,0 +1,55 @@
+{% extends "templates/layout.pebble" %}
+
+{% block title %}oeHub{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/css/index.css">
+{% endblock %}
+
+{% block content %}
+
+<div class="oe-content py-4">
+
+  <!-- Hero -->
+  <div class="oe-hero">
+    <img src="/icon/oe_logo_original.svg" alt="oeHub Logo" class="oe-hero-logo" />
+    <h1 class="oe-hero-title">oeHub</h1>
+    <div class="oe-hero-version">v{{ appVersion }}</div>
+    <p class="oe-hero-sub">{{ msg['index.hero.sub'] }}</p>
+  </div>
+
+  <!-- Tools -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-6">
+      <a href="/oehub/hosts" class="oe-tool-card card">
+        <div class="card-body p-4">
+          <div class="oe-tool-name">oeHosts</div>
+          <ul class="oe-tool-desc">
+            <li>{{ msg['index.hosts.desc1'] }}</li>
+            <li>{{ msg['index.hosts.desc2'] }}</li>
+            <li>{{ msg['index.hosts.desc3'] }}</li>
+          </ul>
+        </div>
+      </a>
+    </div>
+    <div class="col-md-6">
+      <a href="/oehub/proxy" class="oe-tool-card card">
+        <div class="card-body p-4">
+          <div class="oe-tool-name">oeProxy</div>
+          <ul class="oe-tool-desc">
+            <li>{{ msg['index.proxy.desc1'] }}</li>
+            <li>{{ msg['index.proxy.desc2'] }}</li>
+            <li>{{ msg['index.proxy.desc3'] }}</li>
+            <li>{{ msg['index.proxy.desc4'] }}</li>
+          </ul>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <div class="oe-footer">
+    MIT License &copy; 2026 <a href="https://github.com/tricatch" target="_blank" rel="noopener">tricatch</a>
+  </div>
+
+</div>
+{% endblock %}

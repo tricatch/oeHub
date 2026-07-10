@@ -1,0 +1,50 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['licenses.title'] }} — oeHub{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="licensesApp">
+<script>
+  (function() {
+    if (localStorage.getItem('oeWidthExpanded') === 'true') {
+      document.getElementById('licensesApp').classList.add('expanded');
+      document.body.classList.add('oe-expanded');
+    }
+  })();
+</script>
+
+  <div class="info-page-main">
+    <h5>{{ msg['licenses.title'] }}</h5>
+
+    <div class="oe-info-section">
+      <table class="oe-info-table">
+        <colgroup><col style="width:60%"><col style="width:15%"><col style="width:25%"></colgroup>
+        <thead><tr><th colspan="3">{{ msg['licenses.section.opensource'] }}</th></tr></thead>
+        <tbody>
+          <tr><td><a class="lib-link" href="https://github.com/azagniotov/ant-style-path-matcher" target="_blank">Ant-Style Path Matcher</a></td><td>1.0.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://www.bouncycastle.org" target="_blank">Bouncy Castle</a></td><td>1.79</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
+          <tr><td><a class="lib-link" href="https://github.com/tricatch/gotpache-keytool" target="_blank">gotpache-keytool</a></td><td>0.1.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://h2database.com" target="_blank">H2 Database</a></td><td>2.4.240</td><td><span class="license-badge badge-mpl">MPL 2.0 / EPL 1.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://github.com/FasterXML/jackson" target="_blank">Jackson</a></td><td>2.21.3</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://javalin.io" target="_blank">Javalin</a></td><td>7.2.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://github.com/jwtk/jjwt" target="_blank">JJWT</a></td><td>0.12.6</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://mybatis.org" target="_blank">MyBatis</a></td><td>3.5.19</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://pebbletemplates.io" target="_blank">Pebble Templates</a></td><td>4.1.1</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://www.slf4j.org" target="_blank">SLF4J</a></td><td>2.0.17</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
+          <tr><td><a class="lib-link" href="https://ace.c9.io" target="_blank">Ace Editor</a></td><td>1.32</td><td><span class="license-badge badge-mit">BSD</span></td></tr>
+          <tr><td><a class="lib-link" href="https://getbootstrap.com" target="_blank">Bootstrap</a></td><td>5.3.3</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
+          <tr><td><a class="lib-link" href="https://github.com/nodeca/js-yaml" target="_blank">js-yaml</a></td><td>4.x</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
+          <tr><td><a class="lib-link" href="https://lucide.dev" target="_blank">Lucide</a></td><td>latest</td><td><span class="license-badge badge-mit">ISC</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<script>initWidthToggle(document.getElementById('licensesApp'), document.getElementById('btnToggleWidth'));</script>
+{% endblock %}

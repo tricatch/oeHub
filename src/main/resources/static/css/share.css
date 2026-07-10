@@ -1,0 +1,40 @@
+.share-page { max-width: 680px; margin: 2.5rem auto; padding: 0 1rem; }
+.share-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; }
+.share-logo { flex-shrink: 0; }
+.share-title { font-size: 1.1rem; font-weight: 700; margin: 0; }
+.share-meta { font-size: 0.78rem; color: #6c757d; margin: 0; }
+.share-section { border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; margin-bottom: 1rem; }
+.share-section-header-row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #f8f9fa;
+  padding: 0.65rem 0.5rem 0.65rem 0.85rem;
+}
+.share-section-header {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6c757d;
+}
+.share-copy-btn {
+  display: flex; align-items: center;
+  padding: 0.2rem 0.3rem;
+  background: none; border: none; border-radius: 4px;
+  color: #adb5bd; cursor: pointer; font-size: 0.65rem;
+  transition: color 0.15s, background 0.15s;
+}
+.share-copy-btn:hover { background: #e9f7d8; color: #4a7a1e; }
+.share-content-pre {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.82rem; line-height: 1.6;
+  background: #fff; margin: 0; padding: 0.75rem 0.85rem;
+  overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+}
+.share-section-body { padding: 0.75rem 0.85rem; }
+.oe-myip-badge {
+  font-size: 0.62rem; font-weight: 500;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  color: #4a7a1e; background: #f0f9e8;
+  border: 1px solid #c8e6a0; border-radius: 4px;
+  padding: 1px 7px; white-space: nowrap;
+}

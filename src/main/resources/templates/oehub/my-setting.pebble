@@ -1,0 +1,124 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['my.ua.title'] }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/settings.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="mySettingApp">
+<script>
+  (function() {
+    if (localStorage.getItem('oeWidthExpanded') === 'true') {
+      document.getElementById('mySettingApp').classList.add('expanded');
+      document.body.classList.add('oe-expanded');
+    }
+  })();
+</script>
+
+  <div class="info-page-main">
+
+    <h5>{{ msg['my.ua.title'] }}</h5>
+
+    <div class="oe-info-section">
+      <table class="oe-info-table ua-preset-table mb-0" id="uaPresetTable">
+        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['my.ua.card.title'] }}</th>
+            <th class="col-actions text-end">
+              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUaPreset" type="button" title="{{ msg['settings.ua.add'] }}">
+                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="uaPresetBody">
+          <tr id="uaEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.ua.empty'] }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="oe-info-section">
+      <table class="oe-info-table ua-preset-table mb-0" id="urlPresetTable">
+        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['my.url.card.title'] }}</th>
+            <th class="col-actions text-end">
+              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUrlPreset" type="button" title="{{ msg['settings.url.add'] }}">
+                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="urlPresetBody">
+          <tr id="urlEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.url.empty'] }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="oe-info-section">
+      <table class="oe-info-table mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th>{{ msg['my.oeoid.title'] }}</th>
+            <th class="text-end">
+              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveMyOidDomain" type="button" title="{{ msg['btn.save'] }}">
+                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
+            <td>
+              <textarea id="myOidDomainList" class="form-control form-control-sm" rows="4"
+                        placeholder="*.foo.oe&#10;*.bar.oe">{{ myOidDomainList }}</textarea>
+              <div class="form-text">{{ msg['my.oeoid.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+</div>
+<script>initWidthToggle(document.getElementById('mySettingApp'), document.getElementById('btnToggleWidth'));</script>
+
+<script src="/js/ua-preset.js"></script>
+<script>
+  initUaPresetTable({
+    apiBase: '/api/hosts/ua/my',
+    listApiBase: '/api/hosts/ua/presets',
+    deleteTooltipKey: 'tooltip.ua.delete.my',
+    savedToastKey: 'toast.ua.my.saved',
+    deletedToastKey: 'toast.ua.my.deleted'
+  });
+</script>
+
+<script src="/js/url-preset.js"></script>
+<script>
+  initUrlPresetTable({
+    apiBase: '/api/hosts/url/my',
+    listApiBase: '/api/hosts/url/presets',
+    deleteTooltipKey: 'tooltip.url.delete.my',
+    savedToastKey: 'toast.url.my.saved',
+    deletedToastKey: 'toast.url.my.deleted'
+  });
+
+  document.getElementById('btnSaveMyOidDomain').addEventListener('click', async () => {
+    const domainList = document.getElementById('myOidDomainList').value;
+    const res = await fetch('/api/oid/domain/my', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domainList})
+    });
+    if (res.ok) showToast(MSG['settings.saved']);
+  });
+</script>
+{% endblock %}

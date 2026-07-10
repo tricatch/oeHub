@@ -1,0 +1,298 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['settings.title'] }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/settings.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="settingsApp">
+<script>
+  (function() {
+    if (localStorage.getItem('oeWidthExpanded') === 'true') {
+      document.getElementById('settingsApp').classList.add('expanded');
+      document.body.classList.add('oe-expanded');
+    }
+  })();
+</script>
+
+  <div class="settings-main">
+
+    <h5>{{ msg['settings.title'] }}</h5>
+
+    {# ── Default URL Presets ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table ua-preset-table mb-0" id="urlPresetTable">
+        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.url.title'] }}</th>
+            <th class="col-actions text-end">
+              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUrlPreset" type="button" title="{{ msg['settings.url.add'] }}">
+                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="urlPresetBody">
+          <tr id="urlEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.url.empty'] }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ── User-Agent Presets ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table ua-preset-table mb-0" id="uaPresetTable">
+        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.ua.title'] }}</th>
+            <th class="col-actions text-end">
+              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUaPreset" type="button" title="{{ msg['settings.ua.add'] }}">
+                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="uaPresetBody">
+          <tr id="uaEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.ua.empty'] }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ── CA Certificate ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">
+              <div class="d-flex align-items-center justify-content-between">
+                <span>oeProxy - Root CA</span>
+                {% if ca.configured %}
+                <button class="oe-nav-action-btn"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#caConfigureDiv"
+                        aria-expanded="{% if caError %}true{% else %}false{% endif %}"
+                        title="{{ msg['settings.ca.reconfigure'] }}">
+                  <span class="oe-icon oe-icon-reconfigure" style="width:13px;height:13px"></span>
+                </button>
+                {% endif %}
+              </div>
+            </th>
+          </tr>
+        </thead>
+        {% if ca.configured and not ca.parseError %}
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.ca.subject'] }}</td>
+            <td class="text-break ca-info-mono">{{ ca.subject }}</td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.ca.serial'] }}</td>
+            <td class="ca-info-mono">{{ ca.serial }}</td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.ca.valid.from'] }}</td>
+            <td>{{ ca.notBefore }}</td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.ca.valid.until'] }}</td>
+            <td>{{ ca.notAfter }}</td>
+          </tr>
+        </tbody>
+        {% endif %}
+      </table>
+
+      <div class="pt-3">
+
+        {% if caSuccess %}
+        <div class="alert alert-success py-2 small mb-3">{{ msg[caSuccess] }}</div>
+        {% endif %}
+
+        {% if ca.configured and ca.parseError %}
+        <div class="alert alert-warning py-2 small mb-3">
+          {{ msg['settings.ca.parse.error'] }}
+        </div>
+        {% endif %}
+
+        {% if not ca.configured %}
+        <p class="text-muted small mb-3">{{ msg['settings.ca.no.cert'] }}</p>
+        {% endif %}
+
+        {# Generate / Import form (always shown when not configured; collapsible when configured) #}
+        <div id="caConfigureDiv"
+             class="{% if ca.configured %}collapse{% endif %} {% if caError %}show{% endif %}">
+
+          {% if ca.configured %}<hr class="mt-0 mb-3">{% endif %}
+
+          {% if caError %}
+          <div class="alert alert-danger py-2 small mb-3">{{ msg[caError] }}</div>
+          {% endif %}
+
+          <div class="alert alert-warning py-2 small mb-3 ca-note-text">
+            <strong>{{ msg['setup.ca.note.label'] }}:</strong> {{ msg['settings.ca.warning'] }}
+          </div>
+
+          <ul class="nav nav-tabs mb-3" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link {% if caActiveTab != "import" %}active{% endif %}"
+                      data-bs-toggle="tab" data-bs-target="#caGeneratePane"
+                      type="button" role="tab">{{ msg['settings.ca.tab.generate'] }}</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link {% if caActiveTab == "import" %}active{% endif %}"
+                      data-bs-toggle="tab" data-bs-target="#caImportPane"
+                      type="button" role="tab">{{ msg['settings.ca.tab.import'] }}</button>
+            </li>
+          </ul>
+
+          <div class="tab-content">
+
+            {# Generate tab #}
+            <div class="tab-pane fade {% if caActiveTab != "import" %}show active{% endif %}"
+                 id="caGeneratePane" role="tabpanel">
+              <form method="post" action="/oehub/settings/ca/generate" autocomplete="off">
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['settings.ca.name.label'] }}</label>
+                  <input type="text" name="caName" class="form-control"
+                         value="{{ defaultCaName }}" placeholder="{{ msg['setup.ca.name.placeholder'] }}" required>
+                  <div class="form-text">{{ msg['settings.ca.name.help'] }}</div>
+                </div>
+                <button type="submit" class="oe-modal-btn ca-action-btn">
+                  <span class="oe-icon oe-icon-cert" style="width:13px;height:13px"></span>{{ msg['settings.ca.generate.btn'] }}
+                </button>
+              </form>
+            </div>
+
+            {# Import tab #}
+            <div class="tab-pane fade {% if caActiveTab == "import" %}show active{% endif %}"
+                 id="caImportPane" role="tabpanel">
+              <form method="post" action="/oehub/settings/ca/import"
+                    enctype="multipart/form-data" autocomplete="off">
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['settings.ca.cert.file'] }} <span class="text-muted fw-normal">(.cer / .pem / .crt)</span></label>
+                  <input type="file" name="certFile" class="form-control"
+                         accept=".cer,.pem,.crt" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['settings.ca.key.file'] }} <span class="text-muted fw-normal">(.pfx / .p12)</span></label>
+                  <input type="file" name="keyFile" class="form-control"
+                         accept=".pfx,.p12,.pem" required>
+                </div>
+                <button type="submit" class="oe-modal-btn ca-action-btn">
+                  <span class="oe-icon oe-icon-cert" style="width:13px;height:13px"></span>{{ msg['settings.ca.import.btn'] }}
+                </button>
+              </form>
+            </div>
+
+          </div>{# /tab-content #}
+        </div>{# /caConfigureDiv #}
+
+      </div>
+    </div>
+
+    {# ── oeProxy Identifier ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.identifier.title'] }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.identifier.label'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="identifierOid" checked disabled>
+                <label class="form-check-label" for="identifierOid">{{ msg['settings.identifier.oid'] }}</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="identifierIp" {% if ipIdentifierEnabled %}checked{% endif %}>
+                <label class="form-check-label" for="identifierIp">{{ msg['settings.identifier.ip'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.identifier.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ── oeOID Domains ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th>{{ msg['settings.oeoid.title'] }}</th>
+            <th class="text-end">
+              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveOidDomainDefault" type="button" title="{{ msg['btn.save'] }}">
+                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
+            <td>
+              <textarea id="oidDomainDefault" class="form-control form-control-sm" rows="4"
+                        placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
+              <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+
+</div>
+<script>initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
+
+<script src="/js/ua-preset.js"></script>
+<script>
+  initUaPresetTable({
+    apiBase: '/api/admin/hosts/ua',
+    deleteTooltipKey: 'tooltip.ua.delete',
+    savedToastKey: 'toast.ua.saved',
+    deletedToastKey: 'toast.ua.deleted'
+  });
+</script>
+
+<script src="/js/url-preset.js"></script>
+<script>
+  initUrlPresetTable({
+    apiBase: '/api/admin/hosts/url',
+    deleteTooltipKey: 'tooltip.url.delete',
+    savedToastKey: 'toast.url.saved',
+    deletedToastKey: 'toast.url.deleted'
+  });
+
+  document.getElementById('btnSaveOidDomainDefault').addEventListener('click', async () => {
+    const domainList = document.getElementById('oidDomainDefault').value;
+    const res = await fetch('/api/admin/settings/oid-domain-default', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domainList})
+    });
+    if (res.ok) showToast(MSG['settings.saved']);
+  });
+
+  document.getElementById('identifierIp').addEventListener('change', async e => {
+    const ipEnabled = e.target.checked;
+    const res = await fetch('/api/admin/settings/identifier', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ipEnabled})
+    });
+    if (res.ok) showToast(MSG['settings.saved']);
+    else e.target.checked = !ipEnabled;
+  });
+</script>
+{% endblock %}

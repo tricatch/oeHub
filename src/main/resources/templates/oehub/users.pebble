@@ -1,0 +1,270 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['users.title'] }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/settings.css">
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/info-page.css">
+<style>
+  .oe-role-icon { width: 16px; height: 16px; }
+  .oe-role-icon-user  { color: #adb5bd; }
+  .oe-role-icon-admin { color: #5a9e2f; }
+  .users-search-wrap { position: relative; width: 200px; }
+  .users-search-wrap .oe-icon-search {
+    position: absolute;
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px; height: 14px;
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .users-search-wrap input { padding-left: 2rem; font-size: 0.74rem; }
+  .oe-subhead th { background: #fff; color: #6c757d; }
+  tr.oe-removing { opacity: 0; transition: opacity 0.25s ease; }
+  th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+  th[data-sort]:hover { color: #5a8a28; }
+  .sort-icon { font-size: 0.68rem; margin-left: 0.2rem; opacity: 0.35; }
+  th[data-sort].sort-asc .sort-icon,
+  th[data-sort].sort-desc .sort-icon { opacity: 1; color: #5a9e2f; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="usersApp">
+<script>(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('usersApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
+
+<div class="settings-main">
+
+  <h5>{{ msg['users.title'] }}</h5>
+
+  <div class="oe-info-section">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:90px;">
+        <col style="width:150px;">
+        <col style="width:150px;">
+        <col style="width:155px;">
+        <col style="width:175px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="6">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>{{ msg['users.card.header'] }}</span>
+              <div class="users-search-wrap mb-0">
+                <span class="oe-icon oe-icon-search"></span>
+                <input type="search" id="userSearch" class="form-control form-control-sm"
+                       placeholder="{{ msg['users.search.placeholder'] }}">
+              </div>
+            </div>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.col.userid'] }}</th>
+          <th class="text-center" data-sort="role">{{ msg['users.col.role'] }}<span class="sort-icon">↕</span></th>
+          <th>{{ msg['users.col.created'] }}</th>
+          <th>{{ msg['users.col.updated'] }}</th>
+          <th class="text-center" data-sort="lastLoginAt">{{ msg['users.col.last.login'] }}<span class="sort-icon">↕</span></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="usersTbody">
+        <tr><td colspan="6" class="text-muted text-center py-3">{{ msg['users.empty'] }}</td></tr>
+      </tbody>
+    </table>
+
+  </div>
+
+</div>
+
+</div><!-- /settings-app -->
+
+<script>
+(function () {
+  var currentUserId = '{{ user.userId | escape }}';
+  var searchTimer;
+  var currentUsers = [];
+  var sortCol = null;
+  var sortDir = 1;
+
+  document.querySelectorAll('th[data-sort]').forEach(function(th) {
+    th.addEventListener('click', function() { sortAndRender(this.dataset.sort); });
+  });
+
+  document.getElementById('userSearch').addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    var q = this.value;
+    searchTimer = setTimeout(function () { loadUsers(q); }, 300);
+  });
+
+  function loadUsers(q) {
+    var url = '/api/admin/users' + (q.trim() ? '?q=' + encodeURIComponent(q.trim()) : '');
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (users) {
+        currentUsers = users;
+        if (sortCol) sortCurrentUsers();
+        renderUsers(currentUsers);
+      })
+      .catch(function () { showToast(MSG['toast.role.update.failed']); });
+  }
+
+  function sortAndRender(col) {
+    sortDir = sortCol === col ? -sortDir : 1;
+    sortCol = col;
+    sortCurrentUsers();
+    updateSortHeaders();
+    renderUsers(currentUsers);
+  }
+
+  function sortCurrentUsers() {
+    currentUsers.sort(function(a, b) {
+      var av = a[sortCol] || '';
+      var bv = b[sortCol] || '';
+      if (sortCol === 'role') {
+        av = av === 'adm' ? 0 : 1;
+        bv = bv === 'adm' ? 0 : 1;
+        return (av - bv) * sortDir;
+      }
+      if (!av && bv) return 1;
+      if (av && !bv) return -1;
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    });
+  }
+
+  function updateSortHeaders() {
+    document.querySelectorAll('th[data-sort]').forEach(function(th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      var icon = th.querySelector('.sort-icon');
+      if (icon) icon.textContent = '↕';
+      if (th.dataset.sort === sortCol) {
+        th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+        if (icon) icon.textContent = sortDir === 1 ? '↑' : '↓';
+      }
+    });
+  }
+
+  function renderUsers(users) {
+    var tbody = document.getElementById('usersTbody');
+    if (users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-3">' + escHtml(MSG['users.empty']) + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(function (u) {
+      return '<tr data-user-no="' + u.userNo + '" data-role="' + u.role + '">' +
+        '<td>' + escHtml(u.userId) + '</td>' +
+        '<td class="text-center">' + roleIconHtml(u.role) + '</td>' +
+        '<td class="small text-muted">' + escHtml(u.createAt) + '</td>' +
+        '<td class="small text-muted">' + escHtml(u.updatedAt) + '</td>' +
+        '<td class="small text-muted text-center">' + escHtml(u.lastLoginAt || '') + '</td>' +
+        '<td class="text-end">' + actionHtml(u.userId, u.role) + '</td>' +
+        '</tr>';
+    }).join('');
+    bindButtons();
+  }
+
+  function roleIconHtml(role) {
+    var isAdmin = role === 'adm';
+    var cls = isAdmin ? 'oe-icon-admin oe-role-icon-admin' : 'oe-icon-user oe-role-icon-user';
+    var title = isAdmin ? ' title="' + escHtml(MSG['users.role.admin']) + '"' : '';
+    return '<span class="oe-icon ' + cls + ' oe-role-icon"' + title + '></span>';
+  }
+
+  function actionHtml(userId, role) {
+    var isSelf  = userId === currentUserId;
+    var isAdmin = role === 'adm';
+    var roleIcon     = isAdmin ? 'oe-icon-revoke-admin' : 'oe-icon-grant-admin';
+    var roleTitle    = isAdmin ? MSG['users.btn.revoke.admin'] : MSG['users.btn.grant.admin'];
+    var roleDisabled = (isAdmin && isSelf) ? ' disabled' : '';
+    var delDisabled  = isSelf ? ' disabled' : '';
+    return '<button class="oe-tbl-btn oe-tbl-btn-action btn-toggle-role"' + roleDisabled +
+      ' title="' + escHtml(roleTitle) + '">' +
+      '<span class="oe-icon ' + roleIcon + '" style="width:15px;height:15px"></span></button>' +
+      ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-delete-user ms-1"' + delDisabled +
+      ' title="' + escHtml(MSG['tooltip.delete.user']) + '">' +
+      '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>';
+  }
+
+  function bindButtons() {
+    document.querySelectorAll('.btn-toggle-role').forEach(function (btn) {
+      btn.addEventListener('click', onToggle);
+    });
+    document.querySelectorAll('.btn-delete-user').forEach(function (btn) {
+      btn.addEventListener('click', onDelete);
+    });
+  }
+
+  function bindRowButtons(row) {
+    var toggle = row.querySelector('.btn-toggle-role');
+    var del    = row.querySelector('.btn-delete-user');
+    if (toggle) toggle.addEventListener('click', onToggle);
+    if (del)    del.addEventListener('click', onDelete);
+  }
+
+  function onToggle() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var userNo = row.dataset.userNo;
+    var newRole = row.dataset.role === 'adm' ? 'usr' : 'adm';
+    var confirmMsg = newRole === 'adm' ? MSG['confirm.grant.admin'] : MSG['confirm.revoke.admin'];
+    if (!confirm(confirmMsg)) return;
+    btn.disabled = true;
+    fetch('/api/admin/users/' + userNo + '/role', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole })
+    }).then(function (r) {
+      if (r.ok) {
+        showToast(MSG['toast.role.updated']);
+        var u = currentUsers.find(function(u) { return String(u.userNo) === String(userNo); });
+        if (u) u.role = newRole;
+        applyRoleToRow(row, newRole);
+      } else {
+        btn.disabled = false;
+        r.text().then(function (t) { showToast(t || MSG['toast.role.update.failed']); });
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      showToast(MSG['toast.role.update.failed']);
+    });
+  }
+
+  function applyRoleToRow(row, newRole) {
+    var userId = row.cells[0].textContent.trim();
+    row.dataset.role = newRole;
+    row.cells[1].innerHTML = roleIconHtml(newRole);
+    row.cells[5].innerHTML = actionHtml(userId, newRole);
+    bindRowButtons(row);
+  }
+
+  function onDelete() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var userNo = row.dataset.userNo;
+    if (!confirm(MSG['confirm.delete.user'])) return;
+    btn.disabled = true;
+    fetch('/api/admin/users/' + userNo, { method: 'DELETE' })
+      .then(function (r) {
+        if (r.ok) {
+          showToast(MSG['toast.user.deleted']);
+          currentUsers = currentUsers.filter(function(u) { return String(u.userNo) !== String(userNo); });
+          row.classList.add('oe-removing');
+          setTimeout(function () { row.remove(); }, 260);
+        } else {
+          btn.disabled = false;
+          showToast(MSG['toast.user.delete.failed']);
+        }
+      }).catch(function () {
+        btn.disabled = false;
+        showToast(MSG['toast.user.delete.failed']);
+      });
+  }
+
+  loadUsers('');
+})();
+</script>
+<script>initWidthToggle(document.getElementById('usersApp'), document.getElementById('btnToggleWidth'));</script>
+{% endblock %}

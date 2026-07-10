@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "version": "1.0.0",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0W/kLfpKCsK85jky6rMsx2GIW0KjtjWLthRGt3LPUcKIGVzbRbil/y3BkVwKYrJ3zUwa5WuvWK0t1fuWCoEp/luUeaAoTam7awLESnu5K/ppNqNlXQl05SR+5uSvYT+hx+SlT/UnND35jyocvpBwU/zQTEIAV/clRPtlPfumrzGjgB9jp8245BkFhBShIzu9FJZmd8tOy1ERQ+rXPsPB5AT5rPnsWQOCjOJRYVTa0ed0uZ4DPEt2+/r6mQfojhPXSXXSXJUHT39mHSDXGdgedfQR31iOhMWdFGhkAQfw6WZIWxF6a1ld0gcU2u4PF6+ebqqz3+qKVr3hUAPMLwIcqQIDAQAB",
+  "permissions": ["storage", "declarativeNetRequest"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "options.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html"
+}

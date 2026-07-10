@@ -1,0 +1,99 @@
+/* oeProxy-specific styles — shared layout is in oe-panel.css */
+
+/* Save status overlay */
+.proxy-editor { position: relative; }
+.proxy-editor > .oe-save-status {
+  position: absolute;
+  top: 2.85rem;
+  right: 0.75rem;
+  font-size: 0.72rem;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.proxy-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #6c757d;
+}
+
+#caInstallModal .modal-body {
+  font-size: 0.85rem;
+}
+
+#caInstallModal .modal-header {
+  padding: 0.6rem 1rem;
+}
+
+#caInstallModal .modal-header .modal-title {
+  font-size: 0.9rem;
+}
+
+#caInstallModal .modal-footer {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+}
+
+#caInstallModal .modal-footer .oe-modal-btn {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.75rem;
+}
+
+/* Right panel */
+.proxy-right-panel {
+  flex: 1;
+  border-left: 1px solid #dee2e6;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.proxy-merged-count {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: #aaa;
+  margin-left: 0.25rem;
+}
+
+
+
+#cmMergedConfig { flex: 1; overflow: hidden; position: relative; background: #fafafa; }
+#cmMergedConfig .ace_editor { background: #fafafa !important; }
+#cmMergedConfig .ace_gutter { background: #f5f5f5 !important; border-right: 1px solid #dee2e6; }
+
+.proxy-routes-status {
+  flex-shrink: 0;
+  height: 1.9rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 0.85rem;
+  border-top: 1px solid #dee2e6;
+  background: #f8f9fa;
+}
+
+
+/* Ace editor */
+#cmEditor { flex: 1; overflow: hidden; position: relative; }
+#cmEditor .ace_editor { font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important; line-height: 1.6; }
+#cmEditor .ace_gutter { background: #fafafa; border-right: 1px solid #dee2e6; color: #bbb; }
+#cmEditor.readonly .ace_editor { background: #f8f9fa; }
+#cmEditor.readonly .ace_gutter { background: #f0f0f0; }
+
+#configEmptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.82rem;
+  color: #6c757d;
+  text-align: center;
+}

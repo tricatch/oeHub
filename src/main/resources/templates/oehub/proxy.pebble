@@ -1,0 +1,867 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}oeProxy{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/proxy.css">
+{% endblock %}
+
+{% block content %}
+<div class="proxy-app" id="proxyApp">
+<script>if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('proxyApp').classList.add('expanded');</script>
+
+  <!-- Sidebar -->
+  <div class="proxy-sidebar">
+    <div class="proxy-sidebar-header">
+      <span>{{ msg['proxy.sidebar.header'] }}</span>
+      <button class="oe-nav-action-btn oe-nav-action-add" id="btnAdd" title="{{ msg['tooltip.new.vhost'] }}">
+        <span class="oe-icon oe-icon-new" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnImportLink" title="{{ msg['tooltip.import.link'] }}">
+        <span class="oe-icon oe-icon-import" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnSearchToggle" title="{{ msg['tooltip.search'] }}">
+        <span class="oe-icon oe-icon-search" style="width:15px;height:15px"></span>
+      </button>
+    </div>
+    <div class="oe-search-panel d-none" id="searchPanel">
+      <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="{{ msg['proxy.search.placeholder'] }}" autocomplete="off">
+      <div class="oe-search-results" id="searchResults"></div>
+    </div>
+    <div class="proxy-list" id="vhostList"></div>
+    <div class="oe-sidebar-meta" id="vhostCount"></div>
+  </div>
+
+  <!-- Editor -->
+  <div class="proxy-editor">
+    <div class="oe-editor-header">
+      <div class="oe-hdr-left">
+        <span class="oe-editor-title" id="editorTitle">{{ msg['editor.select.vhost'] }}</span>
+      </div>
+      <button class="oe-nav-action-btn" id="btnShare" title="{{ msg['tooltip.share'] }}" disabled>
+        <span class="oe-icon oe-icon-share" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnCopyShareLink" title="{{ msg['tooltip.open.plain'] }}" disabled>
+        <span class="oe-icon oe-icon-content" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnDownload" title="{{ msg['tooltip.export'] }}" disabled>
+        <span class="oe-icon oe-icon-download" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.vhost'] }}" disabled>
+        <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
+      </button>
+      <span class="oe-visibility-wrap d-none" id="visibilityWrap">
+        <select class="oe-visibility-select" id="visibilitySelect">
+          <option value="public">{{ msg['visibility.public'] }}</option>
+          <option value="private">{{ msg['visibility.private'] }}</option>
+          <option value="collabo">{{ msg['visibility.collabo'] }}</option>
+        </select>
+      </span>
+    </div>
+    <span class="oe-save-status" id="saveStatus"></span>
+    <div class="proxy-empty" id="emptyState">{{ msg['proxy.empty'] }}</div>
+    <div class="proxy-editor-body" id="editorBody" style="display:none">
+      <div id="cmEditor"></div>
+    </div>
+    <div class="oe-editor-meta" id="editorMeta">
+      <span><span id="metaUpdated"></span> / <span id="metaCreator"></span></span>
+    </div>
+  </div>
+
+  <div class="oe-resize-handle" id="proxyResizeHandle"></div>
+
+  <!-- Right panel -->
+  <div class="proxy-right-panel">
+    <div class="proxy-panel-header">
+      <span class="proxy-panel-header-title">
+        {{ msg['proxy.panel.header'] }} - <span class="proxy-panel-header-local-svr-label">LOCAL_SVR:</span>
+        <input type="text" id="localSvrInput" class="oe-local-svr-input" value="{{ localSvr }}" placeholder="{{ clientIp }}" title="{{ msg['tooltip.local.svr.edit'] }}" autocomplete="off">
+      </span>
+      <div class="proxy-panel-header-actions">
+        <button class="oe-nav-action-btn" id="btnMonitor" title="{{ msg['tooltip.monitor'] }}" onclick="window.open('/oehub/proxy/monitor','_blank')" disabled>
+          <span class="oe-icon oe-icon-monitor" style="width:15px;height:15px"></span>
+        </button>
+        <button class="oe-nav-action-btn" data-bs-toggle="modal" data-bs-target="#caInstallModal" title="{{ msg['tooltip.install.guide'] }}">
+          <span class="oe-icon oe-icon-help" style="width:15px;height:15px"></span>
+        </button>
+      </div>
+    </div>
+    <div class="d-none" id="configEmptyState">{{ msg['proxy.config.empty'] }}</div>
+    <div id="cmMergedConfig"></div>
+    <div class="proxy-routes-status">
+      <span class="oe-myip-badge">{% if oid is not empty %}OID: {{ oid }}{% else %}IP: {{ clientIp }}{% endif %}</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- CA install modal -->
+<div class="modal fade" id="caInstallModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.install.ca'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-4">
+          <div class="proxy-section-label mb-1">{{ msg['proxy.section.ca.title'] }}</div>
+          <p class="text-muted small mb-3">{{ msg['proxy.install.ca.desc'] }}</p>
+          <div class="mb-3">
+            <ul class="nav nav-tabs mb-2" id="caTabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active small py-1 px-2" id="caTabWinBtn" data-bs-toggle="tab" data-bs-target="#caTabWin" type="button" role="tab">{{ msg['platform.windows'] }}</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link small py-1 px-2" id="caTabMacBtn" data-bs-toggle="tab" data-bs-target="#caTabMac" type="button" role="tab">{{ msg['platform.macos'] }}</button>
+              </li>
+            </ul>
+            <div class="tab-content">
+              <div class="tab-pane fade show active" id="caTabWin" role="tabpanel">
+                <ol class="small text-muted ps-3" style="line-height:1.9">
+                  <li>{{ msg['proxy.install.step.download'] }}</li>
+                  <li>{{ msg['proxy.install.win.step2'] | raw }}</li>
+                  <li>{{ msg['proxy.install.win.step3'] | raw }}</li>
+                  <li>{{ msg['proxy.install.win.step4'] | raw }}</li>
+                  <li>{{ msg['proxy.install.win.step5'] }}</li>
+                </ol>
+              </div>
+              <div class="tab-pane fade" id="caTabMac" role="tabpanel">
+                <ol class="small text-muted ps-3" style="line-height:1.9">
+                  <li>{{ msg['proxy.install.step.download'] }}</li>
+                  <li>{{ msg['proxy.install.mac.step2'] | raw }}</li>
+                  <li>{{ msg['proxy.install.mac.step3'] | raw }}</li>
+                  <li>{{ msg['proxy.install.mac.step4'] | raw }}</li>
+                  <li>{{ msg['proxy.install.mac.step5'] }}</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+          <div class="d-grid gap-2" id="caDownloadButtons">
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div>
+          <div class="proxy-section-label mb-1">{{ msg['proxy.section.oeoid.title'] }}</div>
+          <p class="text-muted small mb-3">
+            {{ msg['proxy.oeoid.desc'] }}<br>
+            <span class="text-warning-emphasis fw-semibold">{{ msg['proxy.oeoid.warn.dhcp'] }}</span>
+          </p>
+          <div class="d-flex gap-2" id="oidDownloadButtons">
+            <!-- populated by JS -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="form-check me-auto">
+          <input class="form-check-input" type="checkbox" id="caGuideNoShow">
+          <label class="form-check-label small text-muted" for="caGuideNoShow">{{ msg['hosts.install.no.show'] }}</label>
+        </div>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% set importLinkPlaceholder = msg['import.placeholder.proxy'] %}
+{% set importLinkTitle = "oeProxy" %}
+{% include "templates/oehub/_import-link-modal.pebble" %}
+
+<!-- Collabo confirm modal -->
+<div class="modal fade" id="collaboConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.collabo.confirm.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-0">{{ msg['modal.collabo.confirm.body'] }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-primary" id="btnCollaboConfirm">{{ msg['btn.confirm'] }}</button>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="/js/ace-init.js"></script>
+<script>
+
+let LOCAL_SVR = '{{ localSvr }}';
+const LOCAL_SVR_DETECTED = '{{ clientIp }}';
+
+(function() {
+  let vhosts = [];
+  let activeVhostId = null;
+  let isReadonly = false;
+  let saveTimer = null;
+  let savedCrc = 0;
+
+  const vhostList        = document.getElementById('vhostList');
+  const editorTitle      = document.getElementById('editorTitle');
+  const saveStatus       = document.getElementById('saveStatus');
+  const btnDelete        = document.getElementById('btnDelete');
+  const btnShare         = document.getElementById('btnShare');
+  const btnCopyShareLink = document.getElementById('btnCopyShareLink');
+  const btnDownload      = document.getElementById('btnDownload');
+  const emptyState       = document.getElementById('emptyState');
+  const editorBody       = document.getElementById('editorBody');
+  const visibilityWrap   = document.getElementById('visibilityWrap');
+  const visibilitySelect = document.getElementById('visibilitySelect');
+
+  // ── Ace Editor ─────────────────────────────────────────────
+  const editor = initAceEditor('cmEditor', 'ace/mode/yaml');
+  editor.session.on('change', () => {
+    if (!isReadonly && activeVhostId) scheduleSave();
+    updateAceAnnotations(editor.getValue());
+  });
+
+  const mergedEditor = initAceEditor('cmMergedConfig', 'ace/mode/yaml', {
+    fontSize: '0.78rem', highlightActiveLine: false, readOnly: true,
+  });
+
+  function validateSchema(parsed) {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.virtual))
+      return [MSG['proxy.validate.virtual.required']];
+    const errors = [];
+    parsed.virtual.forEach((v, i) => {
+      const p = `virtual[${i}]`;
+      if (!v || typeof v.domain !== 'string' || !v.domain) errors.push(`${p}: ${MSG['proxy.validate.domain.required']}`);
+      if (!Array.isArray(v.location) || v.location.length === 0) {
+        errors.push(`${p}: ${MSG['proxy.validate.location.required']}`);
+      } else {
+        v.location.forEach((loc, j) => {
+          const lp = `${p}.location[${j}]`;
+          if (!loc || typeof loc.host !== 'string' || !loc.host) errors.push(`${lp}: ${MSG['proxy.validate.host.required']}`);
+          if (!Array.isArray(loc.path) || loc.path.length === 0)  errors.push(`${lp}: ${MSG['proxy.validate.path.required']}`);
+          if (loc.header !== undefined && !Array.isArray(loc.header)) errors.push(`${lp}: ${MSG['proxy.validate.header.array']}`);
+        });
+      }
+    });
+    return errors;
+  }
+
+  function lintDoc(docStr) {
+    if (!docStr.trim()) return [];
+    let parsed;
+    try { parsed = jsyaml.load(docStr); }
+    catch (e) { return [{ message: e.reason || e.message }]; }
+    return validateSchema(parsed).map(msg => ({ message: msg }));
+  }
+
+  function updateAceAnnotations(content) {
+    if (!content.trim()) { editor.session.setAnnotations([]); return; }
+    let parsed;
+    try { parsed = jsyaml.load(content); }
+    catch (e) {
+      editor.session.setAnnotations([{ row: e.mark ? e.mark.line : 0, column: 0, text: e.reason || e.message, type: 'error' }]);
+      return;
+    }
+    const errors = validateSchema(parsed);
+    editor.session.setAnnotations(errors.map(msg => ({ row: 0, column: 0, text: msg, type: 'error' })));
+  }
+
+  function setContent(content) {
+    editor.setValue(content, -1);
+  }
+
+  function setReadOnly(readonly) {
+    isReadonly = readonly;
+    editor.setReadOnly(readonly);
+    document.getElementById('cmEditor').classList.toggle('readonly', readonly);
+  }
+
+  // ── Render sidebar ─────────────────────────────────────────
+  function renderVhosts() {
+    vhostList.innerHTML = '';
+    document.getElementById('vhostCount').textContent = MSG['proxy.sidebar.count'].replace('{0}', vhosts.length);
+    if (vhosts.length === 0) {
+      emptyState.classList.remove('d-none');
+      editorBody.style.display = 'none';
+    } else {
+      emptyState.classList.add('d-none');
+      editorBody.style.display = '';
+    }
+    vhosts.forEach(v => {
+      const item = document.createElement('div');
+      item.className = 'oe-list-item' + (v.vhostId === activeVhostId ? ' active' : '');
+      item.dataset.vhostId = v.vhostId;
+      item.draggable = true;
+      item.innerHTML = `
+        <span class="oe-list-drag${v.visibility === 'private' ? ' private' : v.visibility === 'collabo' ? ' collabo' : ''}">&#9776;</span>
+        <span class="oe-list-name${v.visibility === 'private' ? ' private' : v.visibility === 'collabo' ? ' collabo' : ''}" data-vhostid="${v.vhostId}">${escHtml(v.vhostProfile)}</span>
+        <div class="form-check form-switch mb-0 oe-list-toggle">
+          <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${v.selected ? 'checked' : ''}>
+        </div>`;
+
+      item.addEventListener('click', e => { if (e.target.type === 'checkbox') return; activateVhost(v.vhostId, false); });
+      item.querySelector('.oe-list-check').addEventListener('change', () => toggleSelected(v.vhostId));
+      if (!v.parentId) item.querySelector('.oe-list-name').addEventListener('dblclick', e => startRename(e.target, v));
+      item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', v.vhostId); });
+      item.addEventListener('dragover',  e => { e.preventDefault(); item.classList.add('drag-over'); });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+      item.addEventListener('drop', e => {
+        e.preventDefault(); item.classList.remove('drag-over');
+        reorder(e.dataTransfer.getData('text/plain'), v.vhostId);
+      });
+      vhostList.appendChild(item);
+    });
+  }
+
+
+  // ── Activate ───────────────────────────────────────────────
+  function activateVhost(vhostId, readonly) {
+    flushPendingSave();
+    activeVhostId = vhostId;
+    const v = vhosts.find(x => x.vhostId === vhostId);
+    if (!v) return;
+    editorTitle.textContent = v.vhostProfile;
+    setContent(v.vhostContent);
+    setReadOnly(readonly);
+    btnDelete.disabled = readonly;
+    visibilityWrap.classList.toggle('d-none', readonly);
+    visibilitySelect.value = v.visibility || 'public';
+    visibilitySelect.disabled = !!v.parentId;
+    applyVisibilityStyle();
+    btnShare.disabled = v.visibility === 'private';
+    btnCopyShareLink.disabled = v.visibility === 'private';
+    btnDownload.disabled = false;
+    saveStatus.textContent = '';
+    document.querySelectorAll('.oe-list-item').forEach(el =>
+      el.classList.toggle('active', el.dataset.vhostId === String(vhostId)));
+    savedCrc = crc32(v.vhostContent);
+    updateEditorMeta(v);
+  }
+
+  function activateSearchResult(result) {
+    flushPendingSave();
+    activeVhostId = result.vhostId;
+    emptyState.classList.add('d-none');
+    editorBody.style.display = '';
+    setReadOnly(true);
+    editorTitle.textContent = result.vhostProfile;
+    setContent('');
+    btnDelete.disabled = true;
+    btnShare.disabled = false;
+    btnCopyShareLink.disabled = false;
+    btnDownload.disabled = false;
+    visibilityWrap.classList.add('d-none');
+    saveStatus.textContent = '';
+    updateEditorMeta(null);
+    document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
+    fetch('/share/proxy/' + result.vhostId + '/text').then(r => {
+      if (!r.ok) throw new Error('load failed');
+      return r.text();
+    }).then(raw => {
+      const sep = raw.indexOf('\n\n');
+      setContent(sep >= 0 ? raw.slice(sep + 2) : raw);
+      editor.resize(true);
+    }).catch(() => showToast(MSG['toast.load.failed']));
+  }
+
+  // ── Auto-save ──────────────────────────────────────────────
+  function scheduleSave() {
+    if (!activeVhostId || isReadonly) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveContent, 2000);
+  }
+
+  // Cancel the pending debounce and, if there's an unsaved edit, save it immediately.
+  // Call this before switching away from the currently active vhost so a quick
+  // switch within the 3s debounce window doesn't silently discard the edit.
+  function flushPendingSave() {
+    clearTimeout(saveTimer);
+    if (activeVhostId && !isReadonly) flushSaveFor(activeVhostId, editor.getValue());
+  }
+
+  async function saveContent() {
+    if (!activeVhostId || isReadonly) return;
+    await flushSaveFor(activeVhostId, editor.getValue());
+  }
+
+  async function flushSaveFor(vhostId, content) {
+    if (crc32(content) === savedCrc) return;
+    const lintErrors = lintDoc(content);
+    if (lintErrors.length > 0) {
+      if (vhostId === activeVhostId) {
+        saveStatus.textContent = lintErrors[0].message;
+        saveStatus.style.color = '#dc3545';
+      }
+      return;
+    }
+    if (vhostId === activeVhostId) saveStatus.style.color = '';
+    try {
+      const res = await fetch('/api/proxy/vhosts/' + vhostId + '/content', {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content})
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const v = vhosts.find(x => x.vhostId === vhostId);
+        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
+        mergeAndSave();
+        if (vhostId === activeVhostId) {
+          savedCrc = crc32(content);
+          updateEditorMeta(v);
+          saveStatus.textContent = MSG['status.saved'];
+          setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+        }
+      } else if (vhostId === activeVhostId) {
+        saveStatus.textContent = MSG['status.save.failed'];
+        saveStatus.style.color = '#dc3545';
+        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
+      }
+    } catch (e) {
+      if (vhostId === activeVhostId) {
+        saveStatus.textContent = MSG['status.save.failed'];
+        saveStatus.style.color = '#dc3545';
+        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
+      }
+    }
+  }
+
+  // ── Add ────────────────────────────────────────────────────
+  document.getElementById('btnAdd').addEventListener('click', async () => {
+    const res = await fetch('/api/proxy/vhosts', {method: 'POST'});
+    if (res.ok) {
+      const v = await res.json();
+      vhosts.push(v);
+      renderVhosts();
+      activateVhost(v.vhostId, false);
+    }
+  });
+
+  // ── LOCAL_SVR override ────────────────────────────────────────
+  // Always shown as a live input (rather than a click-to-edit badge) so it reads as editable at a glance.
+  const localSvrInput = document.getElementById('localSvrInput');
+
+  localSvrInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); localSvrInput.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); localSvrInput.value = LOCAL_SVR; localSvrInput.blur(); }
+  });
+
+  localSvrInput.addEventListener('blur', async () => {
+    const value = localSvrInput.value.trim();
+    const nextEffective = value || LOCAL_SVR_DETECTED;
+    if (nextEffective === LOCAL_SVR) { localSvrInput.value = LOCAL_SVR; return; }
+    LOCAL_SVR = nextEffective;
+    localSvrInput.value = LOCAL_SVR;
+    await fetch('/api/proxy/conf/local_svr', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value})
+    });
+    mergeAndSave();
+  });
+
+  // ── Delete ─────────────────────────────────────────────────
+  document.getElementById('btnDelete').addEventListener('click', async () => {
+    if (!activeVhostId || !confirm(MSG['confirm.delete.vhost'])) return;
+    clearTimeout(saveTimer);
+    await fetch('/api/proxy/vhosts/' + activeVhostId, {method: 'DELETE'});
+    vhosts = vhosts.filter(v => v.vhostId !== activeVhostId);
+    activeVhostId = null;
+    editorTitle.textContent = MSG['editor.select.vhost'];
+    setContent('');
+    btnDelete.disabled = true;
+    btnShare.disabled = true;
+    btnCopyShareLink.disabled = true;
+    btnDownload.disabled = true;
+    visibilityWrap.classList.add('d-none');
+    updateEditorMeta(null);
+    renderVhosts();
+  });
+
+  // ── Toggle selected ────────────────────────────────────────
+  async function toggleSelected(vhostId) {
+    const res = await fetch('/api/proxy/vhosts/' + vhostId + '/selected', {method: 'PATCH'});
+    if (res.ok) {
+      const updated = await res.json();
+      const v = vhosts.find(x => x.vhostId === vhostId);
+      if (v) v.selected = updated.selected;
+      mergeAndSave();
+    }
+  }
+
+  // ── Merge & save ───────────────────────────────────────────
+  async function mergeAndSave() {
+    const selected = vhosts.filter(v => v.selected);
+    const allVirtual = [];
+    const seenDomains = new Set();
+    for (const v of selected) {
+      if (!v.vhostContent.trim()) continue;
+      try {
+        const parsed = jsyaml.load(v.vhostContent);
+        if (parsed && Array.isArray(parsed.virtual)) {
+          for (const entry of parsed.virtual) {
+            if (entry.domain && seenDomains.has(entry.domain)) continue;
+            if (entry.domain) seenDomains.add(entry.domain);
+            allVirtual.push(entry);
+          }
+        }
+      } catch { /* skip invalid */ }
+    }
+    const merged = allVirtual.length > 0
+      ? jsyaml.dump({ virtual: allVirtual }, { indent: 2, lineWidth: -1 })
+      : '';
+    const configEmpty = document.getElementById('configEmptyState');
+    const hasSelected = selected.length > 0;
+    configEmpty.classList.toggle('d-none', hasSelected);
+    document.getElementById('cmMergedConfig').style.display = hasSelected ? '' : 'none';
+    document.querySelector('.proxy-panel-header').style.color = hasSelected ? '#e53e3e' : '';
+    document.getElementById('btnMonitor').disabled = !hasSelected;
+    mergedEditor.setValue(merged.replace(/\$\{LOCAL_SVR\}/g, LOCAL_SVR), -1);
+    await fetch('/api/proxy/conf/vhost', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: merged})
+    });
+  }
+
+  // ── Rename ─────────────────────────────────────────────────
+  function startRename(el, v) {
+    el.contentEditable = 'true';
+    el.classList.add('editing');
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    let cancelled = false;
+    const commit = async () => {
+      if (cancelled) return;
+      el.contentEditable = 'false';
+      el.classList.remove('editing');
+      const newName = el.textContent.trim();
+      if (!newName || newName === v.vhostProfile) { el.textContent = v.vhostProfile; return; }
+      const res = await fetch('/api/proxy/vhosts/' + v.vhostId + '/name', {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: newName})
+      });
+      if (res.ok) { v.vhostProfile = newName; if (activeVhostId === v.vhostId) editorTitle.textContent = newName; }
+      else { el.textContent = v.vhostProfile; }
+    };
+    const onKeydown = e => {
+      if (e.key === 'Enter')  { e.preventDefault(); el.removeEventListener('keydown', onKeydown); el.blur(); }
+      if (e.key === 'Escape') { cancelled = true; el.removeEventListener('keydown', onKeydown); el.textContent = v.vhostProfile; el.contentEditable = 'false'; el.classList.remove('editing'); el.blur(); }
+    };
+    el.addEventListener('blur', commit, {once: true});
+    el.addEventListener('keydown', onKeydown);
+  }
+
+  // ── Reorder ────────────────────────────────────────────────
+  async function reorder(srcId, targetId) {
+    const srcIdx = vhosts.findIndex(v => v.vhostId === srcId);
+    const tgtIdx = vhosts.findIndex(v => v.vhostId === targetId);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+    const [moved] = vhosts.splice(srcIdx, 1);
+    vhosts.splice(tgtIdx, 0, moved);
+    renderVhosts();
+    await fetch('/api/proxy/vhosts/order', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(vhosts.map(v => v.vhostId))
+    });
+  }
+
+  // ── Share ──────────────────────────────────────────────────
+  document.getElementById('btnShare').addEventListener('click', () => {
+    if (!activeVhostId) return;
+    window.open('/share/proxy/' + activeVhostId + '/view', '_blank');
+  });
+
+  document.getElementById('btnCopyShareLink').addEventListener('click', () => {
+    if (!activeVhostId) return;
+    window.open('/share/proxy/' + activeVhostId + '/text', '_blank');
+  });
+
+  // ── Download ───────────────────────────────────────────────
+  document.getElementById('btnDownload').addEventListener('click', () => {
+    if (!activeVhostId) { showToast(MSG['toast.select.vhost']); return; }
+    const v = vhosts.find(x => x.vhostId === activeVhostId);
+    const blob = new Blob([editor.getValue()], {type: 'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (v ? v.vhostProfile : 'vhost').replace(/[^a-z0-9]/gi, '_') + '.yaml';
+    a.click();
+  });
+
+  // ── Search ─────────────────────────────────────────────────
+  const btnSearchToggle = document.getElementById('btnSearchToggle');
+  const searchPanelEl   = document.getElementById('searchPanel');
+  const searchInputEl   = document.getElementById('searchInput');
+
+  btnSearchToggle.addEventListener('click', () => {
+    if (searchPanelEl.classList.contains('d-none')) {
+      searchPanelEl.classList.remove('d-none');
+      searchInputEl.focus();
+    } else {
+      closeSearch();
+    }
+  });
+
+  function closeSearch() {
+    searchPanelEl.classList.add('d-none');
+    clearSearch();
+  }
+
+  let searchTimer;
+  searchInputEl.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(doSearch, 300);
+  });
+
+  document.addEventListener('click', e => {
+    if (!searchPanelEl.contains(e.target) && !btnSearchToggle.contains(e.target))
+      closeSearch();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeSearch();
+  });
+
+  async function doSearch() {
+    const q = searchInputEl.value.trim();
+    const container = document.getElementById('searchResults');
+    if (!q) { container.innerHTML = ''; return; }
+    const res = await fetch('/api/proxy/vhosts/search?q=' + encodeURIComponent(q));
+    const results = await res.json();
+    container.innerHTML = '';
+    if (results.length === 0) {
+      container.innerHTML = '<div class="oe-search-empty">'+MSG['ui.no.results']+'</div>';
+      return;
+    }
+    results.forEach(r => {
+      const el = document.createElement('div');
+      el.className = 'oe-search-item';
+      const isCollabo = r.userNo < 0;
+      el.innerHTML = `
+        <div class="search-item-info">
+          <div class="search-profile">${escHtml(r.vhostProfile)}</div>
+          <div class="search-meta"><span>${fmtDateTime(r.updatedAt)}</span></div>
+        </div>
+        <button class="search-copy-btn" title="{{ msg['tooltip.copy.to.mine'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+        </button>`;
+      el.querySelector('.search-item-info').addEventListener('click', () => activateSearchResult(r));
+      el.querySelector('.search-copy-btn').addEventListener('click', async e => {
+        e.stopPropagation();
+        const url = isCollabo ? '/api/proxy/vhosts/' + r.vhostId + '/register' : '/api/proxy/vhosts/' + r.vhostId + '/copy';
+        const res = await fetch(url, {method: 'POST'});
+        if (res.ok) {
+          const v = await res.json();
+          vhosts.push(v);
+          renderVhosts();
+          activateVhost(v.vhostId, false);
+          showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+        }
+      });
+      container.appendChild(el);
+    });
+  }
+
+  // ── Import from link ───────────────────────────────────────
+  document.getElementById('btnImportLink').addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('importLinkModal')).show();
+  });
+  document.getElementById('btnImportLinkConfirm').addEventListener('click', async () => {
+    const val = document.getElementById('shareLinkInput').value.trim();
+    const match = val.match(/\/share\/proxy\/([^\/]+)/);
+    const id = match ? match[1] : val;
+    if (!id) return;
+    const { feedback, btn, IDLE_HTML, BUSY_HTML } = window._importLinkModal;
+    btn.disabled = true;
+    btn.innerHTML = BUSY_HTML;
+    feedback.style.display = 'none';
+    const res = await fetch('/api/proxy/vhosts/' + id + '/copy', {method: 'POST'});
+    if (res.ok) {
+      const v = await res.json();
+      vhosts.push(v);
+      renderVhosts();
+      activateVhost(v.vhostId, false);
+      bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
+      showToast(MSG['toast.imported']);
+    } else {
+      feedback.textContent = MSG['feedback.vhost.not.found'];
+      feedback.style.display = 'block';
+      btn.disabled = false;
+      btn.innerHTML = IDLE_HTML;
+    }
+  });
+
+  // ── Visibility ─────────────────────────────────────────────
+  function updateEditorMeta(v) {
+    document.getElementById('metaCreator').textContent = v ? (v.userId || '—') : '—';
+    document.getElementById('metaUpdated').textContent = v ? (fmtDateTime(v.updatedAt) || '—') : '—';
+  }
+
+  function applyVisibilityStyle() {
+    visibilitySelect.style.color = visibilitySelect.value === 'private' ? '#CC7722' : visibilitySelect.value === 'collabo' ? '#3b7dd8' : '';
+  }
+
+  let _pendingCollabo = false;
+  let _prevVisibility = null;
+
+  async function doUpdateVisibility(visibility) {
+    const res = await fetch('/api/proxy/vhosts/' + activeVhostId + '/visibility', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({visibility})
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      const v = vhosts.find(x => x.vhostId === activeVhostId);
+      if (v) { v.visibility = updated.visibility; v.parentId = updated.parentId; }
+      const updatedV = vhosts.find(x => x.vhostId === activeVhostId);
+      visibilitySelect.disabled = !!(updatedV && updatedV.parentId);
+      applyVisibilityStyle();
+      btnShare.disabled = updated.visibility === 'private';
+      btnCopyShareLink.disabled = updated.visibility === 'private';
+      renderVhosts();
+      document.querySelectorAll('.oe-list-item').forEach(el =>
+        el.classList.toggle('active', el.dataset.vhostId === String(activeVhostId)));
+    }
+  }
+
+  visibilitySelect.addEventListener('change', e => {
+    if (!activeVhostId) return;
+    if (e.target.value === 'collabo') {
+      _prevVisibility = vhosts.find(x => x.vhostId === activeVhostId)?.visibility || 'public';
+      _pendingCollabo = true;
+      new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
+      return;
+    }
+    doUpdateVisibility(e.target.value);
+  });
+
+  document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
+    bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
+    if (_pendingCollabo && activeVhostId) {
+      _pendingCollabo = false;
+      await doUpdateVisibility('collabo');
+    }
+  });
+
+  document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
+    if (_pendingCollabo) {
+      visibilitySelect.value = _prevVisibility;
+      applyVisibilityStyle();
+      _pendingCollabo = false;
+    }
+  });
+
+  // ── CA install modal ───────────────────────────────────────
+  window.addEventListener('load', () => {
+    const a = document.createElement('a');
+    a.href = '/api/proxy/ca';
+    a.download = 'oeHub-CA.cer';
+    a.className = 'oe-modal-btn justify-content-center';
+    a.innerHTML = `<span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>${MSG['proxy.download.ca']}`;
+    document.getElementById('caDownloadButtons').appendChild(a);
+
+    const oidA = document.createElement('a');
+    oidA.href = '/api/oid/download';
+    oidA.download = 'oeOID-extension.zip';
+    oidA.className = 'oe-modal-btn justify-content-center';
+    oidA.style.flex = '3';
+    oidA.innerHTML = `<span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>${MSG['proxy.download.oeoid']}`;
+    document.getElementById('oidDownloadButtons').appendChild(oidA);
+
+    const oidGuideA = document.createElement('a');
+    oidGuideA.href = 'https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world?hl={{ currentLocale }}#load-unpacked';
+    oidGuideA.target = '_blank';
+    oidGuideA.rel = 'noopener';
+    oidGuideA.className = 'oe-modal-btn oe-modal-btn-plain justify-content-center';
+    oidGuideA.style.flex = '2';
+    oidGuideA.textContent = MSG['proxy.oeoid.install.guide'];
+    document.getElementById('oidDownloadButtons').appendChild(oidGuideA);
+
+    if (navigator.userAgent.includes('Mac')) {
+      bootstrap.Tab.getOrCreateInstance(document.getElementById('caTabMacBtn')).show();
+    }
+  });
+
+  // ── Width toggle ───────────────────────────────────────────
+  initWidthToggle(
+    document.getElementById('proxyApp'),
+    document.getElementById('btnToggleWidth'),
+    () => { editor.resize(); mergedEditor.resize(); }
+  );
+
+  // ── Panel resize ───────────────────────────────────────────
+  (function() {
+    const handle      = document.getElementById('proxyResizeHandle');
+    const editorPanel = document.querySelector('.proxy-editor');
+    const rightPanel  = document.querySelector('.proxy-right-panel');
+    let dragging = false, startX, startEditorW, startRightW;
+
+    function applyWidths(ew) {
+      editorPanel.style.flex  = `0 0 ${ew}px`;
+      editorPanel.style.width = `${ew}px`;
+      rightPanel.style.flex   = '';
+      rightPanel.style.width  = '';
+      editor.resize();
+      mergedEditor.resize();
+    }
+
+    function restoreWidths() {
+      const saved = localStorage.getItem('proxyPanelWidth');
+      if (saved && !document.getElementById('proxyApp').classList.contains('expanded')) applyWidths(Number(saved));
+    }
+
+    handle.addEventListener('mousedown', e => {
+      dragging     = true;
+      startX       = e.clientX;
+      startEditorW = editorPanel.getBoundingClientRect().width;
+      startRightW  = rightPanel.getBoundingClientRect().width;
+      handle.classList.add('resizing');
+      document.body.style.cursor     = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const delta  = e.clientX - startX;
+      const total  = startEditorW + startRightW;
+      let ew = startEditorW + delta;
+      let rw = total - ew;
+      if (ew < 200) { ew = 200; rw = total - 200; }
+      if (rw < 150) { ew = total - 150; }
+      applyWidths(ew);
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('resizing');
+      document.body.style.cursor     = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem('proxyPanelWidth', editorPanel.getBoundingClientRect().width);
+    });
+
+    restoreWidths();
+  })();
+
+  // ── Guide auto-show ────────────────────────────────────────
+  window.addEventListener('load', () => {
+    initGuideModal('caInstallModal', 'caGuideNoShow', 'proxyGuideHidden');
+  });
+
+  // ── Init ───────────────────────────────────────────────────
+  (async () => {
+    const res = await fetch('/api/proxy/vhosts');
+    vhosts = await res.json();
+    renderVhosts();
+    if (vhosts.length > 0) {
+      const initial = vhosts.find(v => v.selected) || vhosts[0];
+      activateVhost(initial.vhostId, false);
+    }
+    mergeAndSave();
+  })();
+})();
+</script>
+{% endblock %}

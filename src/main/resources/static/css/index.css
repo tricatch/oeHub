@@ -1,0 +1,76 @@
+.oe-content {
+  max-width: 38rem;
+  margin: 0 auto;
+}
+
+.oe-hero {
+  text-align: center;
+  padding: 2.5rem 0 1.75rem;
+}
+
+.oe-hero-logo {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 0.75rem;
+  display: block;
+  filter: drop-shadow(0 4px 12px rgba(120, 190, 60, 0.3));
+}
+
+.oe-hero-title {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #2d6a2d;
+  letter-spacing: -0.5px;
+  margin-bottom: 0.2rem;
+}
+
+.oe-hero-version {
+  font-size: 0.78rem;
+  color: #a0b89a;
+  margin-bottom: 0.5rem;
+}
+
+.oe-hero-sub {
+  color: #6c757d;
+  font-size: 1rem;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.oe-tool-card {
+  display: block;
+  border: 1.5px solid #e2f0d0;
+  border-radius: 14px;
+  background: #fff;
+  text-decoration: none;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.15s ease;
+  height: 100%;
+}
+
+.oe-tool-card:hover {
+  border-color: #a8d878;
+  box-shadow: 0 6px 24px rgba(120, 190, 60, 0.18);
+  transform: translateY(-3px);
+  text-decoration: none;
+}
+
+.oe-tool-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #2a5518;
+  margin-bottom: 0.3rem;
+}
+
+.oe-tool-desc {
+  font-size: 0.82rem;
+  color: #8a9a88;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.oe-footer {
+  font-size: 0.78rem;
+  color: #bbb;
+  text-align: center;
+  padding-bottom: 1.5rem;
+}

@@ -1,0 +1,46 @@
+.oe-brand-title {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #2d6a2d;
+  letter-spacing: -0.5px;
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+.oe-brand-logo {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 0.25rem;
+  display: block;
+  filter: drop-shadow(0 4px 12px rgba(120, 190, 60, 0.3));
+}
+
+.btn-oe {
+  --bs-btn-color: #2d6a2d;
+  --bs-btn-bg: #a8d878;
+  --bs-btn-border-color: #8ec45a;
+  --bs-btn-hover-color: #2d6a2d;
+  --bs-btn-hover-bg: #8ec45a;
+  --bs-btn-hover-border-color: #7ab848;
+  --bs-btn-focus-shadow-rgb: 120, 190, 60;
+  --bs-btn-active-color: #2d6a2d;
+  --bs-btn-active-bg: #7ab848;
+  --bs-btn-active-border-color: #6aa030;
+  font-weight: 600;
+}
+
+.oe-tbl-btn.oe-tbl-btn-action:disabled,
+.oe-tbl-btn.oe-tbl-btn-delete:disabled { color: #adb5bd; opacity: 1; }
+
+.btn-oe-secondary {
+  --bs-btn-color: #6c757d;
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: #dee2e6;
+  --bs-btn-hover-color: #4a7a1e;
+  --bs-btn-hover-bg: #f5fbec;
+  --bs-btn-hover-border-color: #c4e89a;
+  --bs-btn-active-color: #4a7a1e;
+  --bs-btn-active-bg: #e8f5d4;
+  --bs-btn-active-border-color: #a8d878;
+  font-weight: 600;
+}

@@ -1,0 +1,48 @@
+# example
+virtual:
+
+  # multi-domain — route multiple domains to the same backend
+  # certificates are dynamically generated per domain by the reverse proxy
+  # common use cases: domain aliases, brand consolidation, staged migrations
+  - domain: foo.oe
+    location:
+      - host: http://${LOCAL_SVR}:36912
+        path:
+          - /**
+  - domain: myip.oe
+    location:
+      - host: http://${LOCAL_SVR}:36912
+        path:
+          - /**
+
+  # subdomains are also supported — each subdomain of example.com gets its own dynamically generated certificate
+  - domain: dev.foo.oe
+    location:
+      - host: http://${LOCAL_SVR}:36912
+        path:
+          - /**
+
+  # partial local dev — when you can't run the full stack locally,
+  # run only the service you're working on locally and proxy everything else to a remote server
+  # backend host can be either http or https — the proxy connects accordingly
+  - domain: stg.foo.oe
+    location:
+      - host: http://${LOCAL_SVR}:8080
+        path:
+          - /api/**
+      - host: https://stg.backend.foo.oe
+        path:
+          - /**
+
+  # mixed backend — serve a Vue/Node dev server alongside a backend API on the same domain
+  # front-end dev server handles its own paths (HMR, static assets); everything else goes to the backend
+  - domain: mix.foo.oe
+    location:
+      - host: https://${LOCAL_SVR}:9528
+        path:
+          - /
+          - /front**
+          - /sockjs-node/**
+      - host: http://${LOCAL_SVR}:8080
+        path:
+          - /**

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>503 {{ msg['error.503.label'] }} — oeProxy</title>
+  <style>{% include "templates/error/error-style.pebble" %}</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="brand">{% include "templates/error/oe-logo.pebble" %}
+    <span class="brand-name">oeProxy</span>
+  </div>
+
+  <div class="status-code">503</div>
+  <div class="status-label">{{ msg['error.503.label'] }}</div>
+  <div class="status-desc">{% if ipEnabled %}{{ msg['error.503.desc'] }}{% else %}{{ msg['error.503.desc.oid.only'] }}{% endif %}</div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">{{ msg['error.what.to.do'] }}</div>
+  <p class="page-note">{{ msg['error.503.note'] | raw }}</p>
+
+  <div class="section-label">{{ msg['error.503.identifier.info'] }}</div>
+  <table class="detail-table">
+    <tr><th>OID</th><td>{% if oidHeader is not empty %}{{ oidHeader }}{% else %}{{ msg['error.503.identifier.none'] }}{% endif %}</td></tr>
+    <tr><th>IP{% if not ipEnabled %}({{ msg['error.503.identifier.disabled'] }}){% endif %}</th><td>{{ clientIp }}</td></tr>
+  </table>
+  <p class="page-note">{{ msg['error.503.identifier.recommend'] | raw }}</p>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="{{ currentLocale }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>500 {{ msg['error.500.label'] }} — oeHub</title>
+  <style>{% include "templates/error/error-style.pebble" %}</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="brand">{% include "templates/error/oe-logo.pebble" %}
+    <span class="brand-name">oeHub</span>
+  </div>
+
+  <div class="status-code">500</div>
+  <div class="status-label">{{ msg['error.500.label'] }}</div>
+  <div class="status-desc">{{ msg['error.500.desc'] }}</div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">{{ msg['error.details'] }}</div>
+  <table class="detail-table">
+    <tr><th>{{ msg['error.500.path'] }}</th><td>{{ requestPath }}</td></tr>
+    <tr><th>{{ msg['error.500.error'] }}</th><td>{{ message }}</td></tr>
+  </table>
+
+  <div class="section-label" style="margin-top:1.25rem">{{ msg['error.what.to.do'] }}</div>
+  <p class="page-note">
+    {{ msg['error.500.note'] }}
+    <a href="/" style="color:#4a7a1e">{{ msg['error.500.note.link'] }}</a>.
+  </p>
+
+</div>
+</body>
+</html>

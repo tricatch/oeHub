@@ -1,0 +1,20 @@
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="DEBUG">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Reduce noise from verbose libraries -->
+    <logger name="io.netty" level="INFO"/>
+    <logger name="org.eclipse.jetty" level="INFO"/>
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+    <logger name="org.mybatis" level="INFO"/>
+    <logger name="com.h2database" level="INFO"/>
+
+</configuration>

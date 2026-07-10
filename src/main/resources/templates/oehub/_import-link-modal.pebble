@@ -1,0 +1,40 @@
+<div class="modal fade" id="importLinkModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header"><h5 class="modal-title">{{ importLinkTitle }} — {{ msg['modal.import.title'] }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body py-5">
+        <input type="text" class="form-control form-control-sm" id="shareLinkInput" placeholder="{{ importLinkPlaceholder }}" autocomplete="off">
+        <div class="text-danger small mt-1" id="importLinkFeedback" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+        <button type="button" class="oe-modal-btn" id="btnImportLinkConfirm">
+          <span class="oe-icon oe-icon-import" style="width:13px;height:13px"></span> {{ msg['btn.import'] }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const modal    = document.getElementById('importLinkModal');
+  const input    = document.getElementById('shareLinkInput');
+  const feedback = document.getElementById('importLinkFeedback');
+  const btn      = document.getElementById('btnImportLinkConfirm');
+  const IDLE_HTML = '<span class="oe-icon oe-icon-import" style="width:13px;height:13px"></span> ' + MSG['btn.import'];
+  const BUSY_HTML = '<span class="spinner-border" style="width:11px;height:11px;border-width:1.5px"></span> ' + MSG['ui.importing'];
+
+  window._importLinkModal = { feedback, btn, IDLE_HTML, BUSY_HTML };
+
+  modal.addEventListener('shown.bs.modal', () => {
+    input.value = '';
+    input.classList.remove('is-invalid');
+    feedback.style.display = 'none';
+    btn.disabled = false;
+    btn.innerHTML = IDLE_HTML;
+    input.focus();
+  });
+
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
+})();
+</script>

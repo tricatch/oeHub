@@ -1,0 +1,429 @@
+﻿{% extends "templates/layout.pebble" %}
+
+{% block title %}{{ hosts.hostsProfile }} — oeHosts{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/hosts.css">
+<link rel="stylesheet" href="/css/share.css">
+<style>
+.share-page { height: 95vh; display: flex; flex-direction: column; }
+.share-section:last-child { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#rawContent { flex: 1; max-height: none; }
+.share-launcher-section {
+  padding: 0.75rem 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.share-launcher-section .hosts-scheme-preview { white-space: pre-wrap; max-height: 160px; }
+.share-launcher-section.hosts-args-section { border-top: none; padding-top: 0.75rem; }
+.share-launcher-section .hosts-chrome-btn-row { margin-bottom: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="share-page">
+
+  <div class="share-header">
+    <img class="share-logo" src="/icon/oe_logo_original.svg" width="36" height="36" alt="">
+    <div>
+      <p class="share-title">{{ hosts.hostsProfile }}</p>
+      <p class="share-meta">by {{ owner }}</p>
+    </div>
+  </div>
+
+  <!-- Chrome Launcher block -->
+  <div class="share-section">
+    <div class="share-section-header-row">
+      <div class="share-section-header">{{ msg['hosts.chrome.launcher'] }}</div>
+      <span class="oe-myip-badge">PROXY_SVR: {{ proxyIp }}</span>
+    </div>
+
+    <div class="hosts-browser-options">
+      <div class="hosts-browser-option">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleOelink" role="switch" checked disabled>
+        </div>
+        <span>--oelink</span>
+      </div>
+      <div class="hosts-browser-option">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleDevTools" role="switch">
+        </div>
+        <span>--auto-open-devtools-for-tabs</span>
+      </div>
+
+      <div class="hosts-browser-option">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleIncognito" role="switch">
+        </div>
+        <span>--incognito</span>
+      </div>
+
+      <div class="hosts-browser-option hosts-browser-option-url">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleUserAgent" role="switch">
+        </div>
+        <span>{{ msg['hosts.ua.label'] }}</span>
+        <input type="text" class="form-control form-control-sm" id="userAgent" placeholder="{{ msg['hosts.ua.placeholder'] }}" disabled>
+      </div>
+      <div class="hosts-browser-option hosts-browser-option-url">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleUserDataDir" role="switch" checked>
+        </div>
+        <span>--user-data-dir</span>
+        <input type="text" class="form-control form-control-sm" id="userDataDir">
+      </div>
+      <div class="hosts-browser-option hosts-browser-option-extra">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleExtraArgs" role="switch">
+        </div>
+        <span>extraArgs</span>
+        <input type="text" class="form-control form-control-sm extra-args-input" id="extraArgsInput" readonly disabled placeholder="—">
+        <textarea class="form-control form-control-sm extra-args-textarea" id="extraArgs" rows="5" style="display:none"></textarea>
+      </div>
+      <div class="hosts-browser-option hosts-browser-option-url">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleOpenUrl" role="switch" checked>
+        </div>
+        <span>{{ msg['hosts.chrome.open.label'] }}</span>
+        <input type="text" class="form-control form-control-sm" id="openUrl" placeholder="{{ msg['hosts.url.placeholder'] }}">
+      </div>
+    </div>
+
+    <div class="share-launcher-section">
+      <div class="hosts-browser-option" style="padding-left:0; border-top:none;">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input" id="toggleHostResolverRules" role="switch" checked>
+        </div>
+        <span>--host-resolver-rules</span>
+      </div>
+      <div class="hosts-chrome-btn-row">
+        <button class="hosts-chrome-launch-btn" id="btnChrome" type="button">
+          <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
+          oelink://chrome
+        </button>
+        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.url'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>oelink
+        </button>
+        <button class="hosts-chrome-cmd-btn" id="btnCopyWinChrome" type="button" title="{{ msg['tooltip.copy.win.chrome'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>Win
+        </button>
+        <button class="hosts-chrome-cmd-btn" id="btnCopyMacChrome" type="button" title="{{ msg['tooltip.copy.mac.chrome'] }}">
+          <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>Mac
+        </button>
+      </div>
+    </div>
+
+    <div class="share-launcher-section hosts-args-section" style="border-top:1px solid #dee2e6;">
+      <div class="hosts-right-label">{{ msg['hosts.chrome.args'] }}</div>
+      <div class="hosts-scheme-preview hosts-args-preview" id="oelinkArgsPreview"></div>
+    </div>
+
+    <div class="share-launcher-section" style="border-top:none; padding-bottom:0.75rem;">
+      <div class="hosts-right-label">--host-resolver-rules</div>
+      <div class="hosts-scheme-preview is-empty" id="schemePreview">{{ msg['share.hosts.loading'] }}</div>
+    </div>
+
+  </div>
+
+  <!-- Raw content -->
+  <div class="share-section">
+    <div class="share-section-header-row">
+      <div class="share-section-header">{{ msg['share.hosts.content'] }}</div>
+      <button class="share-copy-btn" id="btnCopy" title="{{ msg['ui.copy.clipboard'] }}">
+        <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+      </button>
+    </div>
+    <pre class="share-content-pre" id="rawContent"></pre>
+  </div>
+
+</div>
+
+<!-- User-data-dir warning modal -->
+<div class="modal fade" id="uddWarnModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.udd.warn.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-0">{{ msg['hosts.udd.warn'] | raw }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-primary" id="btnUddConfirm">{{ msg['btn.confirm'] }}</button>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Incognito info modal -->
+<div class="modal fade" id="incognitoInfoModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.udd.warn.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-0">{{ msg['hosts.incognito.warn'] | raw }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const content = {{ contentJson | raw }};
+  const PROXY_SVR = '{{ proxyIp }}';
+  const displayContent = content.split('${PROXY_SVR}').join(PROXY_SVR);
+  let baseUdd = '${USERHOME}/oe-chrome';
+
+  document.getElementById('rawContent').textContent = displayContent;
+
+  document.getElementById('btnCopy').addEventListener('click', () => {
+    copyToClipboard(displayContent).then(() => flashCopyFeedback(document.getElementById('btnCopy')));
+  });
+
+
+  function resolveIp(ip) { return ip.replace('${PROXY_SVR}', PROXY_SVR); }
+
+  function buildResolverRulesStr() {
+    const map = parseHostsToMap(content);
+    return Object.entries(map).map(([h, ip]) => `MAP ${h} ${resolveIp(ip)}`).join(',');
+  }
+
+  function buildSchemeArgs() {
+    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
+    const devTools         = document.getElementById('toggleDevTools').checked;
+    const incognito        = document.getElementById('toggleIncognito').checked;
+    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
+    const extraArgsVal     = document.getElementById('extraArgs').value;
+    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
+    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
+    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const url         = document.getElementById('openUrl').value.trim();
+    const userDataDir = document.getElementById('userDataDir').value.trim();
+    const userAgent   = document.getElementById('userAgent').value.trim();
+    const parts = [];
+    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
+    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
+    const rulesStr = buildResolverRulesStr();
+    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
+    if (incognito)                 parts.push('--incognito');
+    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
+    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
+    parts.sort();
+    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
+    if (oelinkEnabled)     parts.unshift(`--oelink=${oelinkValue}`);
+    if (urlEnabled && url) {
+      const wrapped = wrapDelayedUrl(url);
+      parts.push(isWin ? wrapped : macArgQuote(wrapped));
+    }
+    return parts.join(' ');
+  }
+
+  function buildArgsLines() {
+    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
+    const devTools         = document.getElementById('toggleDevTools').checked;
+    const incognito        = document.getElementById('toggleIncognito').checked;
+    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
+    const extraArgsVal     = document.getElementById('extraArgs').value;
+    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
+    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
+    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const url         = document.getElementById('openUrl').value.trim();
+    const userDataDir = document.getElementById('userDataDir').value.trim();
+    const userAgent   = document.getElementById('userAgent').value.trim();
+    const lines = [];
+    if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
+    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
+    const rulesStrPreview = buildResolverRulesStr();
+    if (hrrEnabled && rulesStrPreview) lines.push('--host-resolver-rules "MAP ..."');
+    if (incognito)                 lines.push('--incognito');
+    if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
+    if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
+    lines.sort();
+    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
+    if (oelinkEnabled)             lines.unshift(`--oelink=${oelinkValue}`);
+    if (urlEnabled && url)         lines.push('  ' + url);
+    return lines;
+  }
+
+  function updatePreview() {
+    const hrrEnabled = document.getElementById('toggleHostResolverRules').checked;
+    const map = parseHostsToMap(content);
+    const entries = Object.entries(map);
+    const schemePreview = document.getElementById('schemePreview');
+    if (!hrrEnabled) {
+      schemePreview.textContent = MSG['share.hosts.disabled'];
+      schemePreview.classList.add('is-empty');
+    } else if (entries.length === 0) {
+      schemePreview.textContent = MSG['share.hosts.no.rules'];
+      schemePreview.classList.add('is-empty');
+    } else {
+      schemePreview.textContent = entries.map(([h, ip]) => `MAP ${h} ${resolveIp(ip)}`).join('\n');
+      schemePreview.classList.remove('is-empty');
+    }
+
+    const argsLines = buildArgsLines();
+    document.getElementById('oelinkArgsPreview').textContent = argsLines.join('\n');
+  }
+
+  document.getElementById('toggleOelink').addEventListener('change', updatePreview);
+  document.getElementById('toggleDevTools').addEventListener('change', updatePreview);
+  document.getElementById('toggleIncognito').addEventListener('change', e => {
+    if (e.target.checked) {
+      new bootstrap.Modal(document.getElementById('incognitoInfoModal')).show();
+    }
+    updatePreview();
+  });
+  function updateExtraArgsPreview() {
+    const lines = document.getElementById('extraArgs').value.split('\n').map(l => l.trim()).filter(l => l);
+    document.getElementById('extraArgsInput').value = lines.join('  ');
+  }
+
+  document.getElementById('toggleExtraArgs').addEventListener('change', e => {
+    const enabled = e.target.checked;
+    document.getElementById('extraArgsInput').style.display = enabled ? 'none' : '';
+    document.getElementById('extraArgsInput').disabled = !enabled;
+    document.getElementById('extraArgs').style.display = enabled ? '' : 'none';
+    updatePreview();
+  });
+  document.getElementById('extraArgs').addEventListener('input', updatePreview);
+  document.getElementById('toggleHostResolverRules').addEventListener('change', updatePreview);
+  document.getElementById('toggleUserAgent').addEventListener('change', e => {
+    document.getElementById('userAgent').disabled = !e.target.checked;
+    updatePreview();
+  });
+  document.getElementById('userAgent').addEventListener('input', updatePreview);
+  let _pendingUdd = false;
+  function applyUserDataDir(enabled) {
+    document.getElementById('userDataDir').disabled = !enabled;
+    updatePreview();
+  }
+  document.getElementById('toggleUserDataDir').addEventListener('change', e => {
+    if (e.target.checked) {
+      _pendingUdd = true;
+      new bootstrap.Modal(document.getElementById('uddWarnModal')).show();
+      return;
+    }
+    applyUserDataDir(false);
+  });
+  document.getElementById('btnUddConfirm').addEventListener('click', () => {
+    bootstrap.Modal.getInstance(document.getElementById('uddWarnModal')).hide();
+    if (_pendingUdd) {
+      _pendingUdd = false;
+      applyUserDataDir(true);
+    }
+  });
+  document.getElementById('uddWarnModal').addEventListener('hidden.bs.modal', () => {
+    if (_pendingUdd) {
+      document.getElementById('toggleUserDataDir').checked = false;
+      _pendingUdd = false;
+    }
+  });
+  document.getElementById('userDataDir').addEventListener('input', updatePreview);
+  document.getElementById('toggleOpenUrl').addEventListener('change', e => {
+    document.getElementById('openUrl').disabled = !e.target.checked;
+    updatePreview();
+  });
+  document.getElementById('openUrl').addEventListener('input', updatePreview);
+
+  // Init
+  const DEFAULT_EXTRA_ARGS = '--disable-background-networking\n--disable-sync\n--disk-cache-size=1\n--media-cache-size=1\n--no-first-run';
+  document.getElementById('extraArgs').value = DEFAULT_EXTRA_ARGS;
+  updateExtraArgsPreview();
+  // extraArgs toggle is OFF by default on share page — input visible, textarea hidden
+  const ua = navigator.userAgent;
+  const isWin = ua.includes('Win');
+  const defaultUdd = isWin ? '%USERPROFILE%\\oe-chrome' : '$HOME/oe-chrome';
+  document.getElementById('userDataDir').value = defaultUdd;
+  document.getElementById('userDataDir').placeholder = defaultUdd;
+
+  const rawArgs = new URLSearchParams(location.search).get('chromeArgs');
+  if (rawArgs) {
+    try {
+      const a = JSON.parse(fromBase64Url(rawArgs));
+      if (a.devTools        != null) document.getElementById('toggleDevTools').checked = a.devTools;
+      if (a.incognito       != null) document.getElementById('toggleIncognito').checked = a.incognito;
+      if (a.extraArgsEnabled  != null) {
+        const en = a.extraArgsEnabled;
+        document.getElementById('toggleExtraArgs').checked = en;
+        document.getElementById('extraArgsInput').disabled = !en;
+        document.getElementById('extraArgsInput').style.display = en ? 'none' : '';
+        document.getElementById('extraArgs').style.display = en ? '' : 'none';
+      }
+      if (a.extraArgs != null) { document.getElementById('extraArgs').value = a.extraArgs; updateExtraArgsPreview(); }
+      if (a.hrr               != null) document.getElementById('toggleHostResolverRules').checked = a.hrr;
+      if (a.uaEnabled  != null) { document.getElementById('toggleUserAgent').checked = a.uaEnabled; document.getElementById('userAgent').disabled = !a.uaEnabled; }
+      if (a.ua)                   document.getElementById('userAgent').value = a.ua;
+      if (a.uddEnabled != null) { document.getElementById('toggleUserDataDir').checked = a.uddEnabled; document.getElementById('userDataDir').disabled = !a.uddEnabled; }
+      if (a.udd)                { baseUdd = a.udd; document.getElementById('userDataDir').value = resolveUDD(a.udd, isWin ? 'win' : 'mac'); }
+      if (a.urlEnabled != null) { document.getElementById('toggleOpenUrl').checked = a.urlEnabled; document.getElementById('openUrl').disabled = !a.urlEnabled; }
+      if (a.url != null)          document.getElementById('openUrl').value = a.url;
+    } catch(e) {}
+  }
+
+  updatePreview();
+
+  function buildDirectChromeCmd(os) {
+    const incognito        = document.getElementById('toggleIncognito').checked;
+    const devTools         = document.getElementById('toggleDevTools').checked;
+    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
+    const extraArgsVal     = document.getElementById('extraArgs').value;
+    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
+    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
+    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const url         = document.getElementById('openUrl').value.trim();
+    const userDataDir = resolveUDD(baseUdd, os);
+    const userAgent   = document.getElementById('userAgent').value.trim();
+    const rulesStr    = buildResolverRulesStr();
+    const parts = [];
+    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
+    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
+    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
+    if (incognito)                 parts.push('--incognito');
+    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
+    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
+    parts.sort();
+    if (urlEnabled && url)         parts.push(wrapDelayedUrl(url));
+    if (os === 'win') {
+      const argList = parts.map(winArgQuote).join(', ');
+      return parts.length > 0
+        ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
+        : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
+    } else {
+      return parts.length > 0
+        ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
+        : 'open -na "Google Chrome"';
+    }
+  }
+
+  document.getElementById('btnChrome').addEventListener('click', () => {
+    window.location.href = 'oelink://chrome?' + toBase64Url(buildSchemeArgs());
+  });
+
+  document.getElementById('btnCopyScheme').addEventListener('click', () => {
+    copyToClipboard('oelink://chrome?' + toBase64Url(buildSchemeArgs())).then(() => flashCopyFeedback(document.getElementById('btnCopyScheme'), 'oelink'));
+  });
+
+  document.getElementById('btnCopyWinChrome').addEventListener('click', () => {
+    copyToClipboard(buildDirectChromeCmd('win')).then(() => flashCopyFeedback(document.getElementById('btnCopyWinChrome'), 'Win'));
+  });
+
+  document.getElementById('btnCopyMacChrome').addEventListener('click', () => {
+    copyToClipboard(buildDirectChromeCmd('mac')).then(() => flashCopyFeedback(document.getElementById('btnCopyMacChrome'), 'Mac'));
+  });
+})();
+</script>
+{% endblock %}

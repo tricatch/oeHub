@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 {{ msg['error.404.label'] }} — oeProxy</title>
+  <style>{% include "templates/error/error-style.pebble" %}</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="brand">{% include "templates/error/oe-logo.pebble" %}
+    <span class="brand-name">oeProxy</span>
+  </div>
+
+  <div class="status-code">404</div>
+  <div class="status-label">{{ msg['error.404.label'] }}</div>
+  <div class="status-desc">{{ msg['error.404.desc'] }}</div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">{{ msg['error.404.request.details'] }}</div>
+  <table class="detail-table">
+    <tr><th>{{ msg['error.404.host'] }}</th><td>{{ requestHost }}</td></tr>
+    <tr><th>{{ msg['error.404.path'] }}</th><td>{{ requestPath }}</td></tr>
+  </table>
+
+  <div class="section-label">{{ msg['error.what.to.do'] }}</div>
+  <p class="page-note">
+    {{ msg['error.404.note.prefix'] | raw }} <strong>{{ requestHost }}</strong>{{ msg['error.404.note.suffix'] | raw }}
+  </p>
+
+</div>
+</body>
+</html>
