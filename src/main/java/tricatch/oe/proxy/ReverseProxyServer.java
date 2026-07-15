@@ -21,6 +21,7 @@ import tricatch.oe.proxy.mapper.ProxyVhostMapper;
 import tricatch.oe.proxy.model.ProxyVhost;
 import tricatch.oe.proxy.server.*;
 import tricatch.oe.proxy.service.ProxyConfService;
+import tricatch.oe.proxy.service.ProxyVhostService;
 import tricatch.oe.proxy.util.OidUtil;
 import tricatch.oe.proxy.util.SSLUtil;
 import tricatch.oe.proxy.util.VirtualHostUtil;
@@ -173,13 +174,42 @@ public class ReverseProxyServer {
         // since a shared/proxied client IP can otherwise resolve to the wrong owner.
         // The IP-based fallback itself can be turned off entirely via settings when
         // IP identification is untrustworthy (see ipIdentifierEnabled).
-        String oid = (oidHeader != null && !oidHeader.isBlank())
-            ? oidHeader
-            : (ipIdentifierEnabled ? ipOidMap.get(clientIp) : null);
+        String oid;
+        if (oidHeader != null && !oidHeader.isBlank()) {
+            Long userNo = OidUtil.decode(oidHeader);
+            if (userNo == null) throw new NotFoundProxyVirtualHostsException("Invalid X-OeHub-Oid header: " + oidHeader);
+            oid = OidUtil.encode(userNo);
+        } else {
+            oid = ipIdentifierEnabled ? ipOidMap.get(clientIp) : null;
+        }
         if (oid == null) throw new NotFoundProxyVirtualHostsException("No owner mapped for IP: " + clientIp);
         VirtualHosts virtualHosts = oidVirtualHostsMap.get(oid);
+        if (virtualHosts == null) {
+            virtualHosts = reloadVirtualHostsFromDb(clientIp, oid);
+        }
         if (virtualHosts == null) throw new NotFoundProxyVirtualHostsException("No virtual hosts configured for owner: " + oid);
         return virtualHosts;
+    }
+
+    // A server restart clears oidVirtualHostsMap, so the first request from an owner who
+    // hasn't re-logged-in or re-saved yet would otherwise fail with NotFoundProxyVirtualHostsException.
+    // Rebuild that owner's entry on demand from their persisted, currently-selected vhosts instead.
+    private static VirtualHosts reloadVirtualHostsFromDb(String clientIp, String oid) {
+        Long userNo = OidUtil.decode(oid);
+        if (userNo == null || sqlSessionFactory == null) return null;
+        try {
+            var vhostService = new ProxyVhostService(sqlSessionFactory);
+            var confService   = new ProxyConfService(sqlSessionFactory);
+            var merged = mergeVhostYaml(vhostService.listSelected(userNo));
+            if (merged == null || merged.isBlank()) return null;
+            var localSvrOverride = confService.get("local_svr", userNo);
+            var localSvr = localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp;
+            setVirtualHosts(clientIp, userNo, merged.replace("${LOCAL_SVR}", localSvr));
+            return oidVirtualHostsMap.get(oid);
+        } catch (Exception e) {
+            logger.warn("Failed to lazily reload virtual hosts for owner {}: {}", oid, e.getMessage());
+            return null;
+        }
     }
 
     public static Config getConfig(){

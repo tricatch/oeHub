@@ -74,6 +74,9 @@
       <div class="hosts-right-label-row">
         <span class="oe-icon oe-icon-merge" style="width:12px;height:12px"></span>
         <div class="hosts-right-label hosts-merged-preview-label" id="mergedPreviewLabel"></div>
+        <button class="oe-nav-action-btn" id="btnSaveMerged" title="{{ msg['tooltip.save.merged'] }}">
+          <span class="oe-icon oe-icon-save-merge" style="width:12px;height:12px"></span>
+        </button>
       </div>
       <div class="hosts-scheme-preview" id="mergedPreviewBody"></div>
     </div>
@@ -743,10 +746,20 @@ const PROXY_SVR = '{{ proxyIp }}';
   // ── Scheme / Browser launch ────────────────────────────────
 
   function buildResolverRules() {
+    return mergeSelectedProfiles(p => p.hostsContent.replace(/\$\{PROXY_SVR\}/g, PROXY_SVR));
+  }
+
+  // Same merge as buildResolverRules() but keeps the ${PROXY_SVR} placeholder
+  // unresolved, so saved profile content stays portable across proxy servers.
+  function buildResolverRulesRaw() {
+    return mergeSelectedProfiles(p => p.hostsContent);
+  }
+
+  function mergeSelectedProfiles(contentOf) {
     const seen = {};
     const allEntries = [];
     profiles.filter(p => p.selected).forEach(p => {
-      const map = parseHostsToMap(p.hostsContent.replace(/\$\{PROXY_SVR\}/g, PROXY_SVR));
+      const map = parseHostsToMap(contentOf(p));
       Object.entries(map).forEach(([host, ip]) => {
         const active = seen[host] === undefined;
         if (active) seen[host] = ip;
@@ -840,6 +853,36 @@ const PROXY_SVR = '{{ proxyIp }}';
       body.classList.remove('is-empty');
     }
   }
+
+  // ── Save merged preview as a new profile ───────────────────
+  document.getElementById('btnSaveMerged').addEventListener('click', async () => {
+    const selectedProfiles = profiles.filter(p => p.selected);
+    if (selectedProfiles.length < 2) return;
+    const { allEntries } = buildResolverRulesRaw();
+    const content = allEntries.filter(e => e.active).map(e => `${e.ip} ${e.host}`).join('\n');
+    const name = selectedProfiles.map(p => p.hostsProfile).join(' + ');
+
+    const createRes = await fetch('/api/hosts', {method: 'POST'});
+    if (!createRes.ok) { showToast(MSG['toast.merge.save.failed']); return; }
+    let p = await createRes.json();
+
+    const nameRes = await fetch('/api/hosts/' + p.hostsId + '/name', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name})
+    });
+    if (nameRes.ok) p = await nameRes.json();
+
+    const contentRes = await fetch('/api/hosts/' + p.hostsId + '/content', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content})
+    });
+    if (contentRes.ok) p = await contentRes.json();
+
+    profiles.push(p);
+    renderProfiles();
+    activateProfile(p.hostsId, false);
+    showToast(MSG['toast.merge.saved']);
+  });
 
   function buildSchemeArgs(browser) {
     const oelinkEnabled    = document.getElementById('toggleOelink').checked;

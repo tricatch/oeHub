@@ -42,4 +42,5 @@
 .oe-icon-save         { -webkit-mask-image: url('/icon/lucide/save-plus.svg');    mask-image: url('/icon/lucide/save-plus.svg'); }
 .oe-icon-cancel       { -webkit-mask-image: url('/icon/lucide/x.svg');            mask-image: url('/icon/lucide/x.svg'); }
 .oe-icon-merge        { -webkit-mask-image: url('/icon/lucide/layers-plus.svg');  mask-image: url('/icon/lucide/layers-plus.svg'); }
+.oe-icon-save-merge   { -webkit-mask-image: url('/icon/lucide/copy-plus.svg');     mask-image: url('/icon/lucide/copy-plus.svg'); }
 .oe-icon-success      { -webkit-mask-image: url('/icon/lucide/check.svg');        mask-image: url('/icon/lucide/check.svg'); }
