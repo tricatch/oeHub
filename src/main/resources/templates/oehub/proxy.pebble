@@ -79,6 +79,9 @@
         <input type="text" id="localSvrInput" class="oe-local-svr-input" value="{{ localSvr }}" placeholder="{{ clientIp }}" title="{{ msg['tooltip.local.svr.edit'] }}" autocomplete="off">
       </span>
       <div class="proxy-panel-header-actions">
+        <button class="oe-nav-action-btn" id="btnSaveMergedVhost" title="{{ msg['tooltip.save.merged'] }}" disabled>
+          <span class="oe-icon oe-icon-save-merge" style="width:15px;height:15px"></span>
+        </button>
         <button class="oe-nav-action-btn" id="btnMonitor" title="{{ msg['tooltip.monitor'] }}" onclick="window.open('/oehub/proxy/monitor','_blank')" disabled>
           <span class="oe-icon oe-icon-monitor" style="width:15px;height:15px"></span>
         </button>
@@ -490,9 +493,8 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     }
   }
 
-  // ── Merge & save ───────────────────────────────────────────
-  async function mergeAndSave() {
-    const selected = vhosts.filter(v => v.selected);
+  // Merges the selected vhosts' raw YAML (kept portable: ${LOCAL_SVR} stays unresolved here).
+  function buildMergedVirtualYaml(selected) {
     const allVirtual = [];
     const seenDomains = new Set();
     for (const v of selected) {
@@ -508,21 +510,57 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
         }
       } catch { /* skip invalid */ }
     }
-    const merged = allVirtual.length > 0
+    return allVirtual.length > 0
       ? jsyaml.dump({ virtual: allVirtual }, { indent: 2, lineWidth: -1 })
       : '';
+  }
+
+  // ── Merge & save ───────────────────────────────────────────
+  async function mergeAndSave() {
+    const selected = vhosts.filter(v => v.selected);
+    const merged = buildMergedVirtualYaml(selected);
     const configEmpty = document.getElementById('configEmptyState');
     const hasSelected = selected.length > 0;
     configEmpty.classList.toggle('d-none', hasSelected);
     document.getElementById('cmMergedConfig').style.display = hasSelected ? '' : 'none';
     document.querySelector('.proxy-panel-header').style.color = hasSelected ? '#e53e3e' : '';
     document.getElementById('btnMonitor').disabled = !hasSelected;
+    document.getElementById('btnSaveMergedVhost').disabled = selected.length < 2;
     mergedEditor.setValue(merged.replace(/\$\{LOCAL_SVR\}/g, LOCAL_SVR), -1);
     await fetch('/api/proxy/conf/vhost', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: merged})
     });
   }
+
+  // ── Save merged routes as a new vhost profile ───────────────
+  document.getElementById('btnSaveMergedVhost').addEventListener('click', async () => {
+    const selected = vhosts.filter(v => v.selected);
+    if (selected.length < 2) return;
+    const content = buildMergedVirtualYaml(selected);
+    const name = selected.map(v => v.vhostProfile).join(' + ');
+
+    const createRes = await fetch('/api/proxy/vhosts', {method: 'POST'});
+    if (!createRes.ok) { showToast(MSG['toast.merge.save.failed']); return; }
+    let v = await createRes.json();
+
+    const nameRes = await fetch('/api/proxy/vhosts/' + v.vhostId + '/name', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name})
+    });
+    if (nameRes.ok) v = await nameRes.json();
+
+    const contentRes = await fetch('/api/proxy/vhosts/' + v.vhostId + '/content', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content})
+    });
+    if (contentRes.ok) v = await contentRes.json();
+
+    vhosts.push(v);
+    renderVhosts();
+    activateVhost(v.vhostId, false);
+    showToast(MSG['toast.merge.saved']);
+  });
 
   // ── Rename ─────────────────────────────────────────────────
   function startRename(el, v) {
