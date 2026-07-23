@@ -36,6 +36,10 @@ oeHub bundles two browser-facing tools behind a single login: **oeHosts**, which
 - Tags proxied requests with an `X-OeHub-Oid` header so origin services can identify the acting oeHub user
     - **oeOID** is a Chrome extension that injects the `X-OeHub-Oid` header into requests passing through oeProxy, instead of relying on IP address (which breaks under DHCP)
 
+## Best Practices
+
+- When using oeHosts, open the oeHub web UI itself in Edge (or another non-Chrome browser), and let `oelink` launch Chrome as the browser you actually test in. `oelink` launches Chrome with a profile-specific `--user-data-dir`; if the oeHub UI is also running in Chrome, the two can collide over the same user-data-dir and cause profile lock/launch conflicts. Keeping them in separate browsers also keeps your normal work environment (email, docs, regular browsing) cleanly separated from the test environment, where host-resolver rules are redirecting real-looking domains to local or staging servers.
+
 ## Accounts
 
 - Multi-user, with `admin` and `user` roles
