@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.2] - 2026-08-05
+
+### Added
+- Windows: `oelink.exe` is now code-signed as part of the build process, avoiding the "unknown publisher" SmartScreen warning on launch.
+
+### Fixed
+- oeProxy: fixed a virtual-thread starvation bug where `HttpStreamReader`/`HttpStreamWriter` inherited `synchronized` buffered I/O from `BufferedInputStream`/`BufferedOutputStream`; a virtual thread blocked on a read pinned its carrier thread instead of yielding it, so a handful of concurrent connections could stall unrelated requests (e.g. static assets stuck pending) for up to the read-timeout.
+- oeProxy: an upstream connection timeout or failure now returns a proper 502/504 error response instead of leaving the client's request pending indefinitely.
+- oelink (macOS): the "Chrome already running" relaunch dialog now follows the OS display language instead of always showing Korean.
+
 ## [0.9.1] - 2026-07-15
 
 ### Added
