@@ -61,6 +61,7 @@ public class PassRequestExecutor implements Stopable {
     private VirtualHosts virtualHosts = null;
     private String clientId = null;
     private String currentLocale = "en";
+    private String currentHost = null;
     private String oidHeader = null;
 
     public PassRequestExecutor(Socket clientSocket, int connectTimeout, int readTimeout){
@@ -91,6 +92,18 @@ public class PassRequestExecutor implements Stopable {
     
     public String getClientId(){
         return this.clientId;
+    }
+
+    public String getCurrentLocale(){
+        return this.currentLocale;
+    }
+
+    public String getCurrentHost(){
+        return this.currentHost;
+    }
+
+    public VirtualPath getCurrentVirtualPath(){
+        return this.preVirtualPath;
     }
 
     public Thread getThread(){
@@ -143,6 +156,7 @@ public class PassRequestExecutor implements Stopable {
 
                 // Parse HTTP request
                 HttpRequest httpRequest = requestHeaders.parseHttpRequest();
+                this.currentHost = httpRequest.getHost();
 
                 if (logger.isDebugEnabled()) {
                     logger.debug("{}, {}, Request Headers\n{}"
@@ -230,6 +244,13 @@ public class PassRequestExecutor implements Stopable {
                 }
 
                 LockSupport.park();
+
+                // PassResponseExecutor may have set stop=true (e.g. upstream read timeout) while
+                // this thread was parked; honor it now instead of blocking on the next client read
+                // with no one left to relay a response for the request already sent upstream.
+                if (this.stop) {
+                    break;
+                }
             }
         } catch (BadGatewayException e) {
             logger.error("{}, {}, Upstream connection failed: {}"

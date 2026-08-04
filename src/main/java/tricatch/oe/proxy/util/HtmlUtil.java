@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.i18n.Messages;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.exception.BadGatewayException;
+import tricatch.oe.proxy.exception.GatewayTimeoutException;
 import tricatch.oe.proxy.http.HTTP;
 import tricatch.oe.proxy.http.io.HttpStreamWriter;
 
@@ -82,6 +83,34 @@ public class HtmlUtil {
 
         byte[] body = html.getBytes(StandardCharsets.UTF_8);
         out.write("HTTP/1.1 502 Bad Gateway\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write("Content-Type: text/html; charset=utf-8\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write("Connection: close\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Length: " + body.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(HTTP.CRLF);
+        out.write(body);
+        out.flush();
+    }
+
+    public static void writeGatewayTimeoutResponse(HttpStreamWriter out, GatewayTimeoutException ex, String locale) throws IOException {
+        String html;
+        try {
+            PebbleTemplate template = pebble.getTemplate("templates/error/proxy-gateway-timeout.pebble");
+            Map<String, Object> ctx = new HashMap<>();
+            ctx.put("msg",          msg(locale));
+            ctx.put("rid",          ex.getRid());
+            ctx.put("requestHost",  ex.getRequestHost());
+            ctx.put("routePath",    ex.getRoutePath());
+            ctx.put("targetUrl",    ex.getTargetUrl());
+            StringWriter writer = new StringWriter();
+            template.evaluate(writer, ctx);
+            html = writer.toString();
+        } catch (Exception e) {
+            logger.warn("Failed to render gateway-timeout template", e);
+            html = "<html><body><h1>504 Gateway Timeout</h1><p>" + escapeHtml(ex.getMessage()) + "</p></body></html>";
+        }
+
+        byte[] body = html.getBytes(StandardCharsets.UTF_8);
+        out.write("HTTP/1.1 504 Gateway Timeout\r\n".getBytes(StandardCharsets.UTF_8));
         out.write("Content-Type: text/html; charset=utf-8\r\n".getBytes(StandardCharsets.UTF_8));
         out.write("Connection: close\r\n".getBytes(StandardCharsets.UTF_8));
         out.write(("Content-Length: " + body.length + "\r\n").getBytes(StandardCharsets.UTF_8));

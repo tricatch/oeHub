@@ -27,7 +27,7 @@ Thumbs.db
 *.oelocal
 *.pfx
 
-ref-src/
+log/
 
 # oeOID signing key (do not commit)
 oeoid/
