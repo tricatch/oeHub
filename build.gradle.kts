@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "tricatch.oe.hub"
-version = "0.9.1"
+version = "0.9.2"
 
 java {
     toolchain {

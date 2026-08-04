@@ -2,8 +2,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $SCRIPT_DIR = $PSScriptRoot
+$OUT_DIR    = "$SCRIPT_DIR\.."
 $SOURCE_PS1 = "$SCRIPT_DIR\_oelink_exe.ps1"
-$OUTPUT_EXE = "$SCRIPT_DIR\oelink.exe"
+$OUTPUT_EXE = "$OUT_DIR\oelink.exe"
 
 if (-not (Test-Path $SOURCE_PS1)) {
     Write-Error "Source not found: $SOURCE_PS1"
@@ -32,17 +33,5 @@ if (Test-Path $OUTPUT_EXE) {
     exit 1
 }
 
-# Package distribution zip
-$STATIC_DIR = "$SCRIPT_DIR\..\..\src\main\resources\static\oelink"
-$ZIP_PATH   = "$STATIC_DIR\install_windows_oelink_scheme.zip"
-
-Write-Host "Packaging $ZIP_PATH ..." -ForegroundColor Yellow
-if (Test-Path $ZIP_PATH) { Remove-Item $ZIP_PATH -Force }
-Compress-Archive -Path @(
-    $OUTPUT_EXE,
-    "$SCRIPT_DIR\install_win_oelink.cmd",
-    "$SCRIPT_DIR\install_win_oelink.ps1",
-    "$SCRIPT_DIR\uninstall_win_oelink.cmd",
-    "$SCRIPT_DIR\uninstall_win_oelink.ps1"
-) -DestinationPath $ZIP_PATH
-Write-Host "Packaged: $ZIP_PATH" -ForegroundColor Green
+Write-Host ""
+Write-Host "Note: oelink.exe is unsigned. Sign it now (02.sign_win_oelink.cmd), then run 03.package_win_oelink.cmd (it will NOT rebuild the exe)." -ForegroundColor Yellow

@@ -41,6 +41,17 @@ cat > "$TMP_DIR/launcher.sh" << 'BEOF'
 
 LOG="/tmp/oelink_debug.log"
 
+# ── UI 언어 감지 (macOS 표시 언어 기준, ko 외에는 en) ────────────────────────
+get_lang() {
+    local raw
+    raw=$(defaults read -g AppleLanguages 2>/dev/null | sed -n '2p' | sed -E 's/[^a-zA-Z-]//g' | cut -d'-' -f1)
+    if [[ "$raw" == "ko" ]]; then
+        echo "ko"
+    else
+        echo "en"
+    fi
+}
+
 # ── --oelink=<id> 값 추출 ────────────────────────────────────────────────────
 #    값이 있는 형태(--oelink=abc123)만 추출; 값 없는 --oelink 플래그는 무시
 get_oelink_id() {
@@ -99,9 +110,22 @@ check_oelink_chrome() {
     [[ -z "$root_pids" ]] && return 0
 
     echo "[oelink] Found running Chrome (oelink='$target_id', PIDs: $root_pids)" >> "$LOG"
+
+    local lang msg btn_no btn_yes
+    lang=$(get_lang)
+    if [[ "$lang" == "ko" ]]; then
+        msg="동일한 프로필로 실행 중인 Chrome이 있습니다.\n종료하고 다시 실행하시겠습니까?"
+        btn_no="아니오"; btn_yes="예"
+    else
+        msg="Chrome is already running with the same profile.\nClose it and relaunch?"
+        btn_no="No"; btn_yes="Yes"
+    fi
+
+    local as_cmd
+    as_cmd="display dialog \"$msg\" with title \"oelink\" buttons {\"$btn_no\", \"$btn_yes\"} default button \"$btn_yes\""
     local answer
-    answer=$(/usr/bin/osascript -e 'display dialog "동일한 프로필로 실행 중인 Chrome이 있습니다.\n종료하고 다시 실행하시겠습니까?" buttons {"아니오", "예"} default button "예"' 2>/dev/null) || true
-    if echo "$answer" | grep -q "예"; then
+    answer=$(/usr/bin/osascript -e "$as_cmd" 2>/dev/null) || true
+    if echo "$answer" | grep -q "$btn_yes"; then
         stop_oelink_chrome "$target_id"
         return 0
     fi

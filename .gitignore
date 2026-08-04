@@ -23,10 +23,16 @@ Thumbs.db
 *.mv.db
 *.trace.db
 
+# Local conf
+*.oelocal
+*.pfx
+
 ref-src/
 
 # oeOID signing key (do not commit)
 oeoid/
+
+movStoryboard/
 
 
 

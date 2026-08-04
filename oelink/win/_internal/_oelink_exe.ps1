@@ -1,4 +1,4 @@
-param([string]$RawUrl = "")
+﻿param([string]$RawUrl = "")
 
 $CHROME_PATHS = @(
     "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
@@ -7,6 +7,18 @@ $CHROME_PATHS = @(
 )
 
 $LOG = "$env:TEMP\oelink_debug.log"
+
+$UI_LANG = (Get-UICulture).TwoLetterISOLanguageName
+if ($UI_LANG -ne 'ko') { $UI_LANG = 'en' }
+
+$MSG = @{
+    ko = @{
+        ChromeRunning = "동일한 프로필로 실행 중인 Chrome이 있습니다.`n종료하고 다시 실행하시겠습니까?"
+    }
+    en = @{
+        ChromeRunning = "Chrome is already running with the same profile.`nClose it and relaunch?"
+    }
+}
 
 function Find-Exe($Paths) {
     foreach ($p in $Paths) { if (Test-Path $p) { return $p } }
@@ -68,7 +80,7 @@ function Check-OelinkChrome($TargetId) {
     Add-Content $LOG "[oelink] Found running Chrome (oelink='$TargetId', PIDs: $($mainPids -join ', '))"
 
     $wsh = New-Object -ComObject WScript.Shell
-    $result = $wsh.Popup("동일한 프로필로 실행 중인 Chrome이 있습니다.`n종료하고 다시 실행하시겠습니까?", 0, "oelink", 4)
+    $result = $wsh.Popup($MSG[$UI_LANG].ChromeRunning, 0, "oelink", 4)
     if ($result -eq 6) {
         Stop-OelinkChrome $TargetId
         return $false
