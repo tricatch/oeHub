@@ -32,7 +32,7 @@ log/
 # oeOID signing key (do not commit)
 oeoid/
 
-movStoryboard/
+aidoc/
 
 
 
