@@ -172,6 +172,23 @@ public class HtmlUtil {
         out.flush();
     }
 
+    /** Renders the forward-proxy relay-whitelist 403 page as HTML (caller owns the transport / response framing). */
+    public static String renderFwdProxyForbidden(String host, String locale) {
+        try {
+            PebbleTemplate template = pebble.getTemplate("templates/error/fwdproxy-forbidden.pebble");
+            Map<String, Object> ctx = new HashMap<>();
+            ctx.put("msg",  msg(locale));
+            ctx.put("host", host != null ? host : "");
+            StringWriter writer = new StringWriter();
+            template.evaluate(writer, ctx);
+            return writer.toString();
+        } catch (Exception e) {
+            logger.warn("Failed to render fwdproxy-forbidden template", e);
+            return "<html><body><h1>403 Forbidden</h1><p>Blocked by oeHub forward-proxy whitelist: "
+                    + escapeHtml(host) + "</p></body></html>";
+        }
+    }
+
     private static String escapeHtml(String s) {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");

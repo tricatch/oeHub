@@ -224,6 +224,43 @@
       </table>
     </div>
 
+    {# ── Forward Proxy (LittleProxy) ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th>{{ msg['settings.fwdproxy.title'] }}</th>
+            <th class="text-end">
+              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveFwdproxyWhitelist" type="button" title="{{ msg['btn.save'] }}">
+                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.fwdproxy.status'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="fwdproxyEnabled" checked disabled>
+                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.fwdproxy.whitelist.label'] }}</td>
+            <td>
+              <textarea id="fwdproxyWhitelist" class="form-control form-control-sm" rows="4"
+                        placeholder="*.example.com&#10;api.example.com">{{ fwdproxyWhitelist }}</textarea>
+              <div class="form-text">{{ msg['settings.fwdproxy.whitelist.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     {# ── oeOID Domains ── #}
     <div class="oe-info-section">
       <table class="oe-info-table mb-0">
@@ -281,6 +318,15 @@
     const res = await fetch('/api/admin/settings/oid-domain-default', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({domainList})
+    });
+    if (res.ok) showToast(MSG['settings.saved']);
+  });
+
+  document.getElementById('btnSaveFwdproxyWhitelist').addEventListener('click', async () => {
+    const whitelist = document.getElementById('fwdproxyWhitelist').value;
+    const res = await fetch('/api/admin/settings/fwdproxy-whitelist', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({whitelist})
     });
     if (res.ok) showToast(MSG['settings.saved']);
   });

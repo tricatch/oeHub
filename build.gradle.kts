@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "tricatch.oe.hub"
-version = "0.9.2"
+version = "0.9.3"
 
 java {
     toolchain {
@@ -67,6 +67,7 @@ dependencies {
     implementation("org.bouncycastle:bcpkix-jdk18on:1.79")
     implementation("org.bouncycastle:bcutil-jdk18on:1.79")
     implementation("io.github.azagniotov:ant-style-path-matcher:1.0.0")
+    implementation("io.github.littleproxy:littleproxy:2.9.0")
 
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")

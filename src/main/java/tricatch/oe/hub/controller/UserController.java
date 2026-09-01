@@ -6,20 +6,25 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
+import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.proxy.model.ProxyVhost;
 import tricatch.oe.proxy.service.ProxyVhostService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 public class UserController {
 
+    private final SqlSessionFactory sqlSessionFactory;
     private final HostsProfService hostsProfService;
     private final HostConfService hostConfService;
     private final ProxyVhostService proxyVhostService;
     private final ObjectMapper objectMapper;
 
     public UserController(SqlSessionFactory sqlSessionFactory, ObjectMapper objectMapper) {
+        this.sqlSessionFactory = sqlSessionFactory;
         this.hostsProfService = new HostsProfService(sqlSessionFactory);
         this.hostConfService = new HostConfService(sqlSessionFactory);
         this.proxyVhostService = new ProxyVhostService(sqlSessionFactory);
@@ -101,5 +106,41 @@ public class UserController {
         }
 
         ctx.status(200).result("OK");
+    }
+
+    @SuppressWarnings("unchecked")
+    public void apiChangePassword(Context ctx) throws Exception {
+        var hubUser = AuthController.currentUser(ctx);
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var currentPassword = (String) body.get("currentPassword");
+        var newPassword     = (String) body.get("newPassword");
+        var confirmPassword = (String) body.get("confirmPassword");
+
+        if (newPassword == null || newPassword.isBlank()) {
+            ctx.status(400).json(Map.of("error", "password_required"));
+            return;
+        }
+        if (newPassword.length() < 4) {
+            ctx.status(400).json(Map.of("error", "password_too_short"));
+            return;
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            ctx.status(400).json(Map.of("error", "password_mismatch"));
+            return;
+        }
+
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HubUserMapper.class);
+            var target = mapper.findByUserNo(hubUser.getUserNo());
+            if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
+                ctx.status(400).json(Map.of("error", "current_password_invalid"));
+                return;
+            }
+            target.setPassword(PasswordUtil.hash(newPassword));
+            target.setUpdatedAt(LocalDateTime.now());
+            mapper.updatePassword(target);
+            session.commit();
+        }
+        ctx.status(204);
     }
 }

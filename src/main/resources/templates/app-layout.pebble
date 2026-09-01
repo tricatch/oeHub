@@ -55,6 +55,7 @@
           </a>
           <div class="dropdown-menu dropdown-menu-end oe-user-dropdown">
             <a href="/oehub/my/info" class="dropdown-item">{{ msg['nav.my.info'] }}</a>
+            <a href="#" class="dropdown-item" id="navBtnChangePassword">{{ msg['nav.change.password'] }}</a>
             {% if user.role == 'adm' %}
             <a href="/oehub/settings" class="dropdown-item">{{ msg['nav.settings'] }}</a>
             <a href="/oehub/admin/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
@@ -124,6 +125,34 @@
     </div>
   </div>
 </div>
+
+<!-- Change password modal -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header"><h5 class="modal-title">{{ msg['nav.change.password'] }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label small mb-1" for="cpCurrentPassword">{{ msg['change.password.current'] }}</label>
+          <input type="password" class="form-control form-control-sm" id="cpCurrentPassword" autocomplete="current-password">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1" for="cpNewPassword">{{ msg['change.password.new'] }}</label>
+          <input type="password" class="form-control form-control-sm" id="cpNewPassword" autocomplete="new-password">
+        </div>
+        <div class="mb-1">
+          <label class="form-label small mb-1" for="cpConfirmPassword">{{ msg['change.password.confirm'] }}</label>
+          <input type="password" class="form-control form-control-sm" id="cpConfirmPassword" autocomplete="new-password">
+        </div>
+        <div class="small text-danger d-none" id="cpError"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+        <button type="button" class="oe-modal-btn" id="btnChangePasswordConfirm">{{ msg['btn.confirm'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
   document.getElementById('langSelect').addEventListener('change', function() {
     document.cookie = 'oe_lang=' + this.value + '; path=/; max-age=31536000';
@@ -166,6 +195,47 @@
       location.reload();
     } else {
       showToast(MSG['toast.restore.failed']);
+    }
+  });
+
+  document.getElementById('navBtnChangePassword')?.addEventListener('click', function(e) {
+    e.preventDefault();
+    document.getElementById('cpCurrentPassword').value = '';
+    document.getElementById('cpNewPassword').value = '';
+    document.getElementById('cpConfirmPassword').value = '';
+    document.getElementById('cpError').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('changePasswordModal')).show();
+  });
+
+  function showChangePasswordError(text) {
+    var errEl = document.getElementById('cpError');
+    errEl.textContent = text;
+    errEl.classList.remove('d-none');
+  }
+
+  document.getElementById('btnChangePasswordConfirm').addEventListener('click', async function() {
+    var current = document.getElementById('cpCurrentPassword').value;
+    var next    = document.getElementById('cpNewPassword').value;
+    var confirmVal = document.getElementById('cpConfirmPassword').value;
+
+    if (!next) { showChangePasswordError(MSG['change.password.error.required']); return; }
+    if (next.length < 4) { showChangePasswordError(MSG['change.password.error.too.short']); return; }
+    if (next !== confirmVal) { showChangePasswordError(MSG['change.password.error.mismatch']); return; }
+
+    var res = await fetch('/api/user/change-password', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({currentPassword: current, newPassword: next, confirmPassword: confirmVal})
+    });
+    if (res.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('changePasswordModal')).hide();
+      showToast(MSG['toast.password.changed']);
+    } else {
+      var data = await res.json().catch(function() { return {}; });
+      var key = data.error === 'current_password_invalid' ? 'change.password.error.current.invalid'
+              : data.error === 'password_too_short'        ? 'change.password.error.too.short'
+              : data.error === 'password_mismatch'          ? 'change.password.error.mismatch'
+              : 'change.password.error.failed';
+      showChangePasswordError(MSG[key]);
     }
   });
 </script>

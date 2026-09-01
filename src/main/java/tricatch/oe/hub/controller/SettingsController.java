@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
+import tricatch.oe.fwdproxy.ForwardProxyServer;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.service.ProxyConfService;
 
@@ -92,6 +93,15 @@ public class SettingsController {
         var ipEnabled = Boolean.TRUE.equals(body.get("ipEnabled"));
         ReverseProxyServer.setIpIdentifierEnabled(ipEnabled);
         ctx.json(Map.of("ipEnabled", ipEnabled));
+    }
+
+    // ── forward proxy relay whitelist ─────────────────────────────────────────
+
+    public void apiSaveFwdProxyWhitelist(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var whitelist = ((String) body.getOrDefault("whitelist", "")).trim();
+        ForwardProxyServer.setWhitelist(whitelist);
+        ctx.json(Map.of("whitelist", whitelist));
     }
 
     // ── CA certificate ────────────────────────────────────────────────────────
@@ -180,6 +190,8 @@ public class SettingsController {
         model.put("user", AuthController.currentUser(ctx));
         model.put("oidDomainDefault", getOidDomainDefault());
         model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
+        model.put("fwdproxyPort", ForwardProxyServer.getPort());
+        model.put("fwdproxyWhitelist", ForwardProxyServer.getWhitelist());
         model.put("ca", loadCaInfo());
         model.put("caError", caError);
         model.put("caSuccess", caSuccess);

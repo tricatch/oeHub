@@ -178,6 +178,16 @@
         </button>
         <div class="hosts-info-pop d-none" id="resolverRulesInfoPop">{{ msg['hosts.resolver.rules.info'] }}</div>
       </div>
+      <div class="hosts-browser-option" style="padding-left:0; border-top:none;">
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" class="form-check-input oe-list-check" id="toggleProxyServer" role="switch">
+        </div>
+        <span>--proxy-server</span>
+        <button type="button" class="hosts-info-btn" id="btnProxyServerInfo" aria-label="{{ msg['tooltip.proxy.server'] }}">
+          <span class="oe-icon oe-icon-info" style="width:12px;height:12px"></span>
+        </button>
+        <div class="hosts-info-pop d-none" id="proxyServerInfoPop">{{ msg['hosts.proxy.server.info'] }}</div>
+      </div>
       <div class="hosts-chrome-btn-row">
         <button class="hosts-chrome-launch-btn" id="btnChrome" type="button">
           <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
@@ -306,6 +316,7 @@
 
 <script>
 const PROXY_SVR = '{{ proxyIp }}';
+const FWDPROXY_PORT = 36980;
 
 (function() {
   let profiles = [];
@@ -614,6 +625,7 @@ const PROXY_SVR = '{{ proxyIp }}';
       extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
       extraArgs:        document.getElementById('extraArgs').value,
       hrr:              document.getElementById('toggleHostResolverRules').checked,
+      proxyServer:     document.getElementById('toggleProxyServer').checked,
       uddEnabled:      document.getElementById('toggleUserDataDir').checked,
       udd:             defaultUserDataDir,
       urlEnabled:      document.getElementById('toggleOpenUrl').checked,
@@ -780,6 +792,7 @@ const PROXY_SVR = '{{ proxyIp }}';
     const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
     const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
     const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
     const url = loadingUrlInput.value.trim();
     const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
     const userAgent   = userAgentInput.value.trim();
@@ -790,6 +803,7 @@ const PROXY_SVR = '{{ proxyIp }}';
     if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
     if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
     if (hrrEnabled && hasRules)    lines.push('--host-resolver-rules "MAP ..."');
+    if (proxyServerEnabled)        lines.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
     if (incognito)                 lines.push('--incognito');
     if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
     if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
@@ -896,6 +910,7 @@ const PROXY_SVR = '{{ proxyIp }}';
     const rulesStr = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
     const uddEnabled  = document.getElementById('toggleUserDataDir').checked;
     const uaEnabled   = document.getElementById('toggleUserAgent').checked;
+    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
     const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
     const userAgent   = userAgentInput.value.trim();
     const parts = [];
@@ -903,6 +918,7 @@ const PROXY_SVR = '{{ proxyIp }}';
     if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
     if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
     if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
+    if (proxyServerEnabled)        parts.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
     if (incognito)                 parts.push('--incognito');
     if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
     if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
@@ -937,12 +953,14 @@ const PROXY_SVR = '{{ proxyIp }}';
     const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
     const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
     const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
     const userDataDir = resolveUDD(defaultUserDataDir, os);
     const userAgent   = userAgentInput.value.trim();
     const parts = [];
     if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
     if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
     if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
+    if (proxyServerEnabled)        parts.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
     if (incognito)                 parts.push('--incognito');
     if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
     if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
@@ -976,6 +994,18 @@ const PROXY_SVR = '{{ proxyIp }}';
   document.addEventListener('click', (e) => {
     const pop = document.getElementById('resolverRulesInfoPop');
     if (!pop.classList.contains('d-none') && !pop.contains(e.target) && !e.target.closest('#btnResolverRulesInfo')) {
+      pop.classList.add('d-none');
+    }
+  });
+
+  // ── proxy-server info popover ───────────────────────────────
+  document.getElementById('btnProxyServerInfo').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('proxyServerInfoPop').classList.toggle('d-none');
+  });
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('proxyServerInfoPop');
+    if (!pop.classList.contains('d-none') && !pop.contains(e.target) && !e.target.closest('#btnProxyServerInfo')) {
       pop.classList.add('d-none');
     }
   });
@@ -1118,11 +1148,37 @@ const PROXY_SVR = '{{ proxyIp }}';
     }, 800);
   });
 
+  // --proxy-server and --host-resolver-rules both drive host routing, so only one is
+  // meaningful at a time: with a fixed proxy set, Chrome hands proxied requests' hostnames
+  // to the proxy as-is and never applies --host-resolver-rules to them. Enabling either
+  // turns the other off.
   document.getElementById('toggleHostResolverRules').addEventListener('change', e => {
     fetch('/api/hosts/conf/host_resolver_rules_enabled', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: String(e.target.checked)})
     });
+    if (e.target.checked && document.getElementById('toggleProxyServer').checked) {
+      document.getElementById('toggleProxyServer').checked = false;
+      fetch('/api/hosts/conf/proxy_server_enabled', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: 'false'})
+      });
+    }
+    updateSchemePreview();
+  });
+
+  document.getElementById('toggleProxyServer').addEventListener('change', e => {
+    fetch('/api/hosts/conf/proxy_server_enabled', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: String(e.target.checked)})
+    });
+    if (e.target.checked && document.getElementById('toggleHostResolverRules').checked) {
+      document.getElementById('toggleHostResolverRules').checked = false;
+      fetch('/api/hosts/conf/host_resolver_rules_enabled', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: 'false'})
+      });
+    }
     updateSchemePreview();
   });
 
@@ -1372,7 +1428,7 @@ const PROXY_SVR = '{{ proxyIp }}';
 
   // ── Init ───────────────────────────────────────────────────
   (async () => {
-    const [profilesRes, luRes, ipRes, uddRes, uddeRes, oueRes, hrrRes, uaRes, uaeRes, presetsRes, urlPresetsRes, exaRes, exaeRes] = await Promise.all([
+    const [profilesRes, luRes, ipRes, uddRes, uddeRes, oueRes, hrrRes, uaRes, uaeRes, presetsRes, urlPresetsRes, exaRes, exaeRes, pseRes] = await Promise.all([
       fetch('/api/hosts'),
       fetch('/api/hosts/conf/open_url'),
       fetch('/api/hosts/conf/incognito'),
@@ -1385,7 +1441,8 @@ const PROXY_SVR = '{{ proxyIp }}';
       fetch('/api/hosts/ua/presets'),
       fetch('/api/hosts/url/presets'),
       fetch('/api/hosts/conf/extra_chrome_args'),
-      fetch('/api/hosts/conf/extra_chrome_args_enabled')
+      fetch('/api/hosts/conf/extra_chrome_args_enabled'),
+      fetch('/api/hosts/conf/proxy_server_enabled')
     ]);
     profiles = await profilesRes.json();
     const lu   = await luRes.json();
@@ -1400,6 +1457,8 @@ const PROXY_SVR = '{{ proxyIp }}';
     urlPresets = await urlPresetsRes.json();
     const exa  = await exaRes.json();
     const exae = await exaeRes.json();
+    const pse  = await pseRes.json();
+    document.getElementById('toggleProxyServer').checked = pse.value === 'true';
     defaultUserDataDir = '${USERHOME}/oe-chrome';
     loadingUrlInput.value = lu.value || '';
     userDataDirInput.textContent = defaultUserDataDir;
