@@ -145,9 +145,17 @@ public class ForwardProxyServer {
                                 if (httpObject instanceof HttpRequest request) {
                                     var host = targetHost(request);
                                     if (!isWhitelisted(host)) {
-                                        logger.info("Forward proxy blocked (not whitelisted): user={} host={}",
-                                                authenticatedUser(ctx), host);
-                                        return blockedResponse(request, host);
+                                        // CONNECT (HTTPS): if the blocked-page server is up, let the tunnel
+                                        // succeed here and redirect it there in overrideFor() below, so the
+                                        // client completes a real TLS handshake and renders the 403 page
+                                        // instead of just seeing the CONNECT itself fail. Otherwise (or for
+                                        // plain HTTP, which renders a short-circuit response fine either way)
+                                        // block immediately.
+                                        if (request.method() != HttpMethod.CONNECT || !BlockedPageServer.isRunning()) {
+                                            logger.info("Forward proxy blocked (not whitelisted): user={} host={}",
+                                                    authenticatedUser(ctx), host);
+                                            return blockedResponse(request, host);
+                                        }
                                     }
                                 }
                                 return null;
@@ -248,7 +256,7 @@ public class ForwardProxyServer {
         return hostOnly(host);
     }
 
-    private static String hostOnly(String hostAndPort) {
+    static String hostOnly(String hostAndPort) {
         if (hostAndPort == null) return null;
         int idx = hostAndPort.lastIndexOf(':');
         return idx >= 0 ? hostAndPort.substring(0, idx) : hostAndPort;
@@ -269,6 +277,13 @@ public class ForwardProxyServer {
 
     /** Looks up host:port in the user's cached map; returns null (=normal DNS) when there's no override. */
     static InetSocketAddress overrideFor(String userId, String hostAndPort, String localServerIp) {
+        // Only reachable here for a non-whitelisted host when the CONNECT was deliberately let
+        // through by clientToProxyRequest because BlockedPageServer is up (see there) - redirect
+        // the tunnel to it instead of the real destination.
+        if (!isWhitelisted(hostOnly(hostAndPort))) {
+            return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
+        }
+
         if (userId == null) return null;
         var map = userHostMap.get(userId);
         if (map == null || map.isEmpty()) return null;

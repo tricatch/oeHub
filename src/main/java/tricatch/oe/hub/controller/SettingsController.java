@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
+import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.service.ProxyConfService;
@@ -175,6 +176,7 @@ public class SettingsController {
         } catch (Exception e) {
             logger.warn("SSL proxy server could not be started: {}", e.getMessage());
         }
+        BlockedPageServer.start(caCertPath(), caKeyPath());
     }
 
     private void writeCaFiles(String caName) throws Exception {

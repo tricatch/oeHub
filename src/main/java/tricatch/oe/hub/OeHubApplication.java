@@ -24,6 +24,7 @@ import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
 import tricatch.oe.hosts.controller.HostsController;
+import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.controller.ProxyController;
@@ -417,6 +418,12 @@ public class OeHubApplication {
             ForwardProxyServer.start();
         } catch (Exception e) {
             logger.error("Failed to start forward proxy server: " + e.getMessage(), e);
+        }
+
+        try {
+            BlockedPageServer.start(SettingsController.caCertPath(), SettingsController.caKeyPath());
+        } catch (Exception e) {
+            logger.error("Failed to start forward-proxy blocked-page server: " + e.getMessage(), e);
         }
     }
 
