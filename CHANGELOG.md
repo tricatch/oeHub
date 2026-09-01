@@ -14,6 +14,11 @@ All notable changes to this project are documented in this file.
 ### Fixed
 - oeProxy forward proxy: the `${PROXY_SVR}` placeholder in oeHosts profile content is now resolved to the accepting connection's local address; previously it was left unresolved and silently fell back to normal DNS resolution.
 
+### Security
+- Updated `jackson-databind`/`jackson-datatype-jsr310`/`jackson-dataformat-yaml` 2.21.3 → 2.22.2, fixing a HIGH-severity `PolymorphicTypeValidator` bypass (CVE-2026-54512) allowing arbitrary class instantiation, plus several moderate `@JsonView`/`@JsonIgnore` mass-assignment bypasses.
+- Updated `bcprov-jdk18on`/`bcpkix-jdk18on`/`bcutil-jdk18on` 1.79 → 1.85, fixing a CRITICAL GOST 28147 CTR keystream-reuse bug (CVE-2025-14813) plus a moderate LDAP injection and a moderate risky-cipher issue.
+- Updated `assertj-core` (test-only) 3.27.3 → 3.27.7, fixing a HIGH-severity XXE in `isXmlEqualTo` (CVE-2026-24400).
+
 ## [0.9.2] - 2026-08-05
 
 ### Added
