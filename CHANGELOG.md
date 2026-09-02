@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.9.3] - 2026-08-28
+## [0.9.3] - 2026-09-02
 
 ### Added
 - oeProxy: added a forward (upstream) proxy on a fixed port (36980), authenticated with oeHub account credentials. Once authenticated, requests for hosts in that user's currently-selected oeHosts profiles are routed to the recorded IP from an in-memory per-user map instead of a per-request DB lookup; editing or toggling a selected profile refreshes the cache live. Always running, not admin-toggleable.
