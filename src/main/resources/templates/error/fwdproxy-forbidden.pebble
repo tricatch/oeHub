@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>403 {{ msg['error.403.label'] }} — oeProxy</title>
+  <style>{% include "templates/error/error-style.pebble" %}</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="brand">{% include "templates/error/oe-logo.pebble" %}
+    <span class="brand-name">oeProxy</span>
+  </div>
+
+  <div class="status-code">403</div>
+  <div class="status-label">{{ msg['error.403.label'] }}</div>
+  <div class="status-desc">{{ msg['error.403.desc'] }}</div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">{{ msg['error.403.request.details'] }}</div>
+  <table class="detail-table">
+    <tr><th>{{ msg['error.403.host'] }}</th><td>{{ host }}</td></tr>
+  </table>
+
+  <div class="section-label">{{ msg['error.what.to.do'] }}</div>
+  <p class="page-note">
+    {{ msg['error.403.note.prefix'] | raw }} <strong>{{ host }}</strong> {{ msg['error.403.note.suffix'] | raw }}
+  </p>
+
+</div>
+</body>
+</html>

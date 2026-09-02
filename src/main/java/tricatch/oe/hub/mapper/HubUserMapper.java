@@ -26,6 +26,9 @@ public interface HubUserMapper {
     @Update("UPDATE HUB_USR SET role = #{role}, updated_at = #{updatedAt} WHERE user_no = #{userNo}")
     void updateRole(HubUser hubUser);
 
+    @Update("UPDATE HUB_USR SET password = #{password}, updated_at = #{updatedAt} WHERE user_no = #{userNo}")
+    void updatePassword(HubUser hubUser);
+
     @Update("UPDATE HUB_USR SET last_login_at = #{lastLoginAt} WHERE user_no = #{userNo}")
     void updateLastLoginAt(HubUser hubUser);
 

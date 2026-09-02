@@ -4,11 +4,13 @@ import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.service.HostsProfService;
+import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.proxy.mapper.ProxyConfMapper;
 import tricatch.oe.proxy.service.ProxyVhostService;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -16,6 +18,9 @@ import java.util.*;
 public class AdminUserController {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    // Excludes visually ambiguous characters (0/O, 1/l/I) since an admin reads this out loud or retypes it.
+    private static final String PW_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final SqlSessionFactory sqlSessionFactory;
     private final HostsProfService hostsProfService;
@@ -114,5 +119,31 @@ public class AdminUserController {
             session.commit();
             ctx.status(200).result("OK");
         }
+    }
+
+    public void apiResetPassword(Context ctx) {
+        Long userNo;
+        try { userNo = Long.parseLong(ctx.pathParam("userNo")); }
+        catch (NumberFormatException e) { ctx.status(400).result("Invalid user ID"); return; }
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HubUserMapper.class);
+            var target = mapper.findByUserNo(userNo);
+            if (target == null) {
+                ctx.status(404).result("User not found");
+                return;
+            }
+            var newPassword = generatePassword();
+            target.setPassword(PasswordUtil.hash(newPassword));
+            target.setUpdatedAt(LocalDateTime.now());
+            mapper.updatePassword(target);
+            session.commit();
+            ctx.json(Map.of("password", newPassword));
+        }
+    }
+
+    private static String generatePassword() {
+        var sb = new StringBuilder(12);
+        for (int i = 0; i < 12; i++) sb.append(PW_CHARS.charAt(RANDOM.nextInt(PW_CHARS.length())));
+        return sb.toString();
     }
 }

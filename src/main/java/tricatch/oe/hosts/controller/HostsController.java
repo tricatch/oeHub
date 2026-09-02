@@ -10,6 +10,7 @@ import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SettingsController;
+import tricatch.oe.fwdproxy.ForwardProxyServer;
 
 import tricatch.oe.hosts.model.HostsUa;
 import tricatch.oe.hosts.model.HostsUrl;
@@ -62,6 +63,9 @@ public class HostsController {
         var content = (String) body.get("content");
         var updated = hostsProfService.updateContent(hostId, hubUser.getUserNo(), content);
         if (updated == null) { ctx.status(404); return; }
+        if (updated.isSelected()) {
+            ForwardProxyServer.refreshUserHosts(hubUser);
+        }
         ctx.json(updated);
     }
 
@@ -80,6 +84,7 @@ public class HostsController {
         var hostId = ctx.pathParam("hostsId");
         var updated = hostsProfService.toggleSelected(hostId, hubUser.getUserNo());
         if (updated == null) { ctx.status(404); return; }
+        ForwardProxyServer.refreshUserHosts(hubUser);
         ctx.json(updated);
     }
 

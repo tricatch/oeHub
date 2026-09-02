@@ -24,6 +24,8 @@ import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
 import tricatch.oe.hosts.controller.HostsController;
+import tricatch.oe.fwdproxy.BlockedPageServer;
+import tricatch.oe.fwdproxy.ForwardProxyServer;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.controller.ProxyController;
 
@@ -217,6 +219,7 @@ public class OeHubApplication {
             config.routes.get("/oehub/settings",              settings::showSettings);
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
             config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
+            config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
             config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
             config.routes.post("/oehub/settings/ca/import",   settings::importCa);
 
@@ -311,11 +314,13 @@ public class OeHubApplication {
             // User backup / restore
             config.routes.get("/api/user/backup",   userCtrl::apiBackup);
             config.routes.post("/api/user/restore",  userCtrl::apiRestore);
+            config.routes.post("/api/user/change-password", userCtrl::apiChangePassword);
 
             // Admin: user management
             config.routes.get("/oehub/admin/users",               adminUser::showUsers);
             config.routes.get("/api/admin/users",                 adminUser::apiSearch);
             config.routes.patch("/api/admin/users/{userNo}/role",  adminUser::apiSetRole);
+            config.routes.post("/api/admin/users/{userNo}/reset-password", adminUser::apiResetPassword);
             config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
 
             // Admin: hosts user-agent presets
@@ -398,6 +403,7 @@ public class OeHubApplication {
 
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
         ReverseProxyServer.init(sqlSessionFactory);
+        ForwardProxyServer.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
         try {
@@ -406,6 +412,18 @@ public class OeHubApplication {
             logger.warn("SSL proxy not started: CA certificate not configured yet. ({})", e.getMessage());
         } catch (Exception e) {
             logger.error("Failed to start SSL proxy server: " + e.getMessage(), e);
+        }
+
+        try {
+            ForwardProxyServer.start();
+        } catch (Exception e) {
+            logger.error("Failed to start forward proxy server: " + e.getMessage(), e);
+        }
+
+        try {
+            BlockedPageServer.start(SettingsController.caCertPath(), SettingsController.caKeyPath());
+        } catch (Exception e) {
+            logger.error("Failed to start forward-proxy blocked-page server: " + e.getMessage(), e);
         }
     }
 

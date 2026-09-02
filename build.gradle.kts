@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "tricatch.oe.hub"
-version = "0.9.2"
+version = "0.9.3"
 
 java {
     toolchain {
@@ -54,26 +54,27 @@ repositories {
 dependencies {
     implementation("io.javalin:javalin:7.2.0")
     implementation("ch.qos.logback:logback-classic:1.5.18")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.21.3")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.3")
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.21.3")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2")
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2")
     implementation("io.javalin:javalin-rendering-pebble:7.2.0")
     implementation("io.pebbletemplates:pebble:4.1.1")
     implementation("org.mybatis:mybatis:3.5.19")
     implementation("com.h2database:h2:2.4.240")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     implementation("io.github.tricatch:gotpache-keytool:0.1.0")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.79")
-    implementation("org.bouncycastle:bcutil-jdk18on:1.79")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcutil-jdk18on:1.85")
     implementation("io.github.azagniotov:ant-style-path-matcher:1.0.0")
+    implementation("io.github.littleproxy:littleproxy:2.9.0")
 
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
     testImplementation("io.javalin:javalin-testtools:7.2.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.14.4")
-    testImplementation("org.assertj:assertj-core:3.27.3")
+    testImplementation("org.assertj:assertj-core:3.27.7")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

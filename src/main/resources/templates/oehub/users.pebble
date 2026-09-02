@@ -82,6 +82,30 @@
 
 </div><!-- /settings-app -->
 
+<!-- Password reset result modal -->
+<div class="modal fade" id="pwResetModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.password.reset.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ msg['users.password.reset.desc'] }}</p>
+        <div class="input-group">
+          <input type="text" class="form-control" id="pwResetValue" readonly>
+          <button type="button" class="btn btn-sm btn-oe-secondary" id="btnCopyResetPw" title="{{ msg['ui.copy.clipboard'] }}">
+            <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
@@ -183,6 +207,9 @@
     return '<button class="oe-tbl-btn oe-tbl-btn-action btn-toggle-role"' + roleDisabled +
       ' title="' + escHtml(roleTitle) + '">' +
       '<span class="oe-icon ' + roleIcon + '" style="width:15px;height:15px"></span></button>' +
+      ' <button class="oe-tbl-btn oe-tbl-btn-action btn-reset-password ms-1"' +
+      ' title="' + escHtml(MSG['users.btn.reset.password']) + '">' +
+      '<span class="oe-icon oe-icon-reset-password" style="width:15px;height:15px"></span></button>' +
       ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-delete-user ms-1"' + delDisabled +
       ' title="' + escHtml(MSG['tooltip.delete.user']) + '">' +
       '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>';
@@ -192,6 +219,9 @@
     document.querySelectorAll('.btn-toggle-role').forEach(function (btn) {
       btn.addEventListener('click', onToggle);
     });
+    document.querySelectorAll('.btn-reset-password').forEach(function (btn) {
+      btn.addEventListener('click', onResetPassword);
+    });
     document.querySelectorAll('.btn-delete-user').forEach(function (btn) {
       btn.addEventListener('click', onDelete);
     });
@@ -199,8 +229,10 @@
 
   function bindRowButtons(row) {
     var toggle = row.querySelector('.btn-toggle-role');
+    var reset  = row.querySelector('.btn-reset-password');
     var del    = row.querySelector('.btn-delete-user');
     if (toggle) toggle.addEventListener('click', onToggle);
+    if (reset)  reset.addEventListener('click', onResetPassword);
     if (del)    del.addEventListener('click', onDelete);
   }
 
@@ -239,6 +271,34 @@
     row.cells[5].innerHTML = actionHtml(userId, newRole);
     bindRowButtons(row);
   }
+
+  function onResetPassword() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var userNo = row.dataset.userNo;
+    if (!confirm(MSG['confirm.reset.password'])) return;
+    btn.disabled = true;
+    fetch('/api/admin/users/' + userNo + '/reset-password', { method: 'POST' })
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.ok) {
+          return r.json().then(function (data) {
+            document.getElementById('pwResetValue').value = data.password;
+            new bootstrap.Modal(document.getElementById('pwResetModal')).show();
+          });
+        }
+        showToast(MSG['toast.password.reset.failed']);
+      }).catch(function () {
+        btn.disabled = false;
+        showToast(MSG['toast.password.reset.failed']);
+      });
+  }
+
+  document.getElementById('btnCopyResetPw').addEventListener('click', function () {
+    copyToClipboard(document.getElementById('pwResetValue').value).then(function () {
+      showToast(MSG['toast.password.copied']);
+    });
+  });
 
   function onDelete() {
     var btn = this;

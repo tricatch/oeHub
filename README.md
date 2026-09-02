@@ -36,6 +36,17 @@ oeHub bundles two browser-facing tools behind a single login: **oeHosts**, which
 - Tags proxied requests with an `X-OeHub-Oid` header so origin services can identify the acting oeHub user
     - **oeOID** is a Chrome extension that injects the `X-OeHub-Oid` header into requests passing through oeProxy, instead of relying on IP address (which breaks under DHCP)
 
+### oeProxy Forward Proxy
+
+- Always running (not admin-toggleable) on a fixed port, `36980`
+- Requires authenticating with your oeHub account credentials before it will relay any request
+- Once authenticated, requests for hosts in that user's currently-selected oeHosts profiles are routed to the recorded IP from an in-memory per-user map, instead of a per-request DB lookup
+- oeHosts can point Chrome's `--proxy-server` flag at this forward proxy as an alternative to `--host-resolver-rules` (enabling either one disables the other)
+- Admins can restrict relaying to a whitelist of domains (with `*.` wildcard subdomain matching); blocked destinations get a branded 403 error page, including for HTTPS via a dedicated loopback TLS responder on port `36981`
+- Since it's a standard HTTP(S) proxy, mobile devices can redirect their hosts by pointing the device's Wi-Fi proxy settings (iOS or Android) at it — no `oelink`/host-resolver-rules equivalent needed on mobile
+    - iOS's Wi-Fi proxy setting supports authentication, so it works for both browser and app traffic
+    - Android's Wi-Fi proxy setting does not support authentication, so only the browser (which can prompt for and submit credentials itself) can authenticate and use it; other apps' traffic is not proxied
+
 ## Best Practices
 
 - When using oeHosts, open the oeHub web UI itself in Edge (or another non-Chrome browser), and let `oelink` launch Chrome as the browser you actually test in. `oelink` launches Chrome with a profile-specific `--user-data-dir`; if the oeHub UI is also running in Chrome, the two can collide over the same user-data-dir and cause profile lock/launch conflicts. Keeping them in separate browsers also keeps your normal work environment (email, docs, regular browsing) cleanly separated from the test environment, where host-resolver rules are redirecting real-looking domains to local or staging servers.
@@ -44,8 +55,8 @@ oeHub bundles two browser-facing tools behind a single login: **oeHosts**, which
 
 - Multi-user, with `admin` and `user` roles
 - The first-run `/setup` wizard creates the initial admin account
-- Admins manage users (grant/revoke admin, delete accounts) and the global URL/UA presets from the settings pages
-- Each user has a personal settings page for their own presets, oeOID domain list, and account info
+- Admins manage users (grant/revoke admin, delete accounts, reset a user's password to a randomly generated one) and the global URL/UA presets from the settings pages
+- Each user has a personal settings page for their own presets, oeOID domain list, account info, and self-service password change
 - Each user can back up and restore their own hosts profiles, hosts settings, and proxy vhosts as JSON
 
 ## Getting Started

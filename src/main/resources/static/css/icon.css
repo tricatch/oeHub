@@ -32,6 +32,7 @@
 .oe-icon-admin        { -webkit-mask-image: url('/icon/lucide/shield-user.svg');        mask-image: url('/icon/lucide/shield-user.svg'); }
 .oe-icon-grant-admin  { -webkit-mask-image: url('/icon/lucide/shield-plus.svg');        mask-image: url('/icon/lucide/shield-plus.svg'); }
 .oe-icon-revoke-admin { -webkit-mask-image: url('/icon/lucide/shield-x.svg');           mask-image: url('/icon/lucide/shield-x.svg'); }
+.oe-icon-reset-password { -webkit-mask-image: url('/icon/lucide/key-round.svg');        mask-image: url('/icon/lucide/key-round.svg'); }
 .oe-icon-stop         { -webkit-mask-image: url('/icon/lucide/circle-stop.svg'); mask-image: url('/icon/lucide/circle-stop.svg'); }
 .oe-icon-record       { -webkit-mask-image: url('/icon/lucide/circle-play.svg'); mask-image: url('/icon/lucide/circle-play.svg'); }
 .oe-icon-content      { -webkit-mask-image: url('/icon/lucide/file-text.svg');   mask-image: url('/icon/lucide/file-text.svg'); }

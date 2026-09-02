@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.3] - 2026-09-02
+
+### Added
+- oeProxy: added a forward (upstream) proxy on a fixed port (36980), authenticated with oeHub account credentials. Once authenticated, requests for hosts in that user's currently-selected oeHosts profiles are routed to the recorded IP from an in-memory per-user map instead of a per-request DB lookup; editing or toggling a selected profile refreshes the cache live. Always running, not admin-toggleable.
+- oeHosts: added a `--proxy-server` Chrome launch option pointing at the new forward proxy, placed directly below `--host-resolver-rules`. Enabling either `--proxy-server` or `--host-resolver-rules` automatically disables the other, since Chrome ignores `--host-resolver-rules` for requests sent through a fixed proxy.
+- oeProxy forward proxy: added an admin-configurable relay whitelist (Settings > oeProxy - Forward Proxy). One domain per line, with `*.` wildcard prefix matching the domain and its subdomains; when non-empty, only whitelisted destinations may be relayed and all others get a 403 rendered as a branded oeProxy error page (matching the reverse proxy's existing 404/502/503 pages). Empty (default) keeps prior unrestricted behavior. For blocked HTTPS destinations, the CONNECT tunnel is redirected to a new loopback-only internal server (port 36981) that completes the TLS handshake with a CA-issued certificate for the requested host and serves the same 403 page, so blocked HTTPS requests render identically to blocked HTTP ones instead of just failing the tunnel.
+- Admin: user management now has a "Reset Password" action that generates a random password for the selected account and displays it once for the admin to relay.
+- Accounts: added a self-service "Change Password" menu (current / new / confirm password) available to all users, from the account dropdown.
+
+### Fixed
+- oeProxy forward proxy: the `${PROXY_SVR}` placeholder in oeHosts profile content is now resolved to the accepting connection's local address; previously it was left unresolved and silently fell back to normal DNS resolution.
+
+### Security
+- Updated `jackson-databind`/`jackson-datatype-jsr310`/`jackson-dataformat-yaml` 2.21.3 → 2.22.2, fixing a HIGH-severity `PolymorphicTypeValidator` bypass (CVE-2026-54512) allowing arbitrary class instantiation, plus several moderate `@JsonView`/`@JsonIgnore` mass-assignment bypasses.
+- Updated `bcprov-jdk18on`/`bcpkix-jdk18on`/`bcutil-jdk18on` 1.79 → 1.85, fixing a CRITICAL GOST 28147 CTR keystream-reuse bug (CVE-2025-14813) plus a moderate LDAP injection and a moderate risky-cipher issue.
+- Updated `assertj-core` (test-only) 3.27.3 → 3.27.7, fixing a HIGH-severity XXE in `isXmlEqualTo` (CVE-2026-24400).
+
 ## [0.9.2] - 2026-08-05
 
 ### Added
