@@ -169,6 +169,13 @@ public class ReverseProxyServer {
         oidVirtualHostsMap.remove(OidUtil.encode(userNo));
     }
 
+    // Drops only the cached routing table, leaving ipOidMap intact — for invalidating an owner
+    // who isn't the current request (e.g. a collaborator on a shared vhost someone else just
+    // edited). Their next request finds no cached entry and lazily reloads via getVirtualHosts().
+    public static void invalidateVirtualHosts(Long userNo) {
+        oidVirtualHostsMap.remove(OidUtil.encode(userNo));
+    }
+
     public static VirtualHosts getVirtualHosts(String clientIp, String oidHeader) throws NotFoundProxyVirtualHostsException {
         // X-OeHub-Oid header takes precedence over the IP-based owner lookup,
         // since a shared/proxied client IP can otherwise resolve to the wrong owner.

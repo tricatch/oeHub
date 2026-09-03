@@ -153,6 +153,16 @@ public class ProxyController {
         var body    = objectMapper.readValue(ctx.body(), Map.class);
         var updated = vhostService.updateContent(vhostId, hubUser.getUserNo(), (String) body.get("content"));
         if (updated == null) { ctx.status(404); return; }
+
+        // A shared (collabo) vhost's content lives on one canonical row; other collaborators who
+        // currently have it selected are otherwise left routing on a now-stale cached config until
+        // they trigger their own refresh. Drop their cache so their next request reloads it.
+        if (updated.getParentId() != null) {
+            for (Long collaboratorUserNo : vhostService.selectedCollaboratorUserNos(updated.getParentId(), hubUser.getUserNo())) {
+                ReverseProxyServer.invalidateVirtualHosts(collaboratorUserNo);
+            }
+        }
+
         if (updated.isSelected() && !applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
             // The draft content above was still saved successfully; only pushing it live as part
             // of the merged config failed. Return it anyway (with a 400) so the client can tell

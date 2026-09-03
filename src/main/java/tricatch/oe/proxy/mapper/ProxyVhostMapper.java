@@ -140,6 +140,9 @@ public interface ProxyVhostMapper {
     @Select("SELECT COUNT(*) FROM PROXY_VHOST WHERE parent_id = #{parentId}")
     int countReferencesByParentId(@Param("parentId") String parentId);
 
+    @Select("SELECT user_no FROM PROXY_VHOST WHERE parent_id = #{parentId} AND selected = TRUE AND user_no <> #{excludeUserNo}")
+    List<Long> findSelectedUserNosByParentId(@Param("parentId") String parentId, @Param("excludeUserNo") Long excludeUserNo);
+
     @Select("SELECT COUNT(*) FROM PROXY_VHOST WHERE user_no = #{userNo} AND LOWER(vhost_profile) = LOWER(#{vhostProfile})")
     int countByUserNoAndProfile(@Param("userNo") Long userNo, @Param("vhostProfile") String vhostProfile);
 

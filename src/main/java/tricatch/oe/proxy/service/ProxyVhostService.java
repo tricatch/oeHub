@@ -85,6 +85,14 @@ public class ProxyVhostService {
         }
     }
 
+    // Other users who currently have this shared (collabo) vhost selected, so their cached live
+    // routing can be invalidated after one collaborator edits the shared content.
+    public List<Long> selectedCollaboratorUserNos(String parentId, Long excludeUserNo) {
+        try (var session = sqlSessionFactory.openSession()) {
+            return session.getMapper(ProxyVhostMapper.class).findSelectedUserNosByParentId(parentId, excludeUserNo);
+        }
+    }
+
     public ProxyVhost updateProfile(String vhostId, Long userNo, String newName) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
