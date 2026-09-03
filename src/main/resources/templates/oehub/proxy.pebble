@@ -417,6 +417,21 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
           saveStatus.textContent = MSG['status.saved'];
           setTimeout(() => { saveStatus.textContent = ''; }, 2000);
         }
+      } else if (res.status === 400) {
+        // The draft content was still saved server-side; only pushing it live (as part of the
+        // merged config) was rejected — e.g. a structurally invalid domain/location. Reflect the
+        // save so the editor doesn't re-send stale content, but call out that it isn't live yet.
+        const updated = await res.json();
+        const v = vhosts.find(x => x.vhostId === vhostId);
+        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
+        savedCrc = crc32(content);
+        if (vhostId === activeVhostId) {
+          updateEditorMeta(v);
+          saveStatus.textContent = MSG['status.save.notApplied'];
+          saveStatus.style.color = '#dc3545';
+          setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 4000);
+        }
+        showToast(MSG['toast.vhost.apply.failed']);
       } else if (vhostId === activeVhostId) {
         saveStatus.textContent = MSG['status.save.failed'];
         saveStatus.style.color = '#dc3545';
@@ -457,10 +472,13 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     if (nextEffective === LOCAL_SVR) { localSvrInput.value = LOCAL_SVR; return; }
     LOCAL_SVR = nextEffective;
     localSvrInput.value = LOCAL_SVR;
-    await fetch('/api/proxy/conf/local_svr', {
+    const res = await fetch('/api/proxy/conf/local_svr', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value})
     });
+    // The LOCAL_SVR value itself is always saved server-side even on this failure; only
+    // re-pushing the merged config with the new substitution was rejected.
+    if (!res.ok) { showToast(MSG['toast.vhost.apply.failed']); return; }
     mergeAndSave();
   });
 
@@ -490,6 +508,12 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       const v = vhosts.find(x => x.vhostId === vhostId);
       if (v) v.selected = updated.selected;
       mergeAndSave();
+    } else if (res.status === 400) {
+      // The toggle itself was still saved; only the resulting merge was rejected.
+      const updated = await res.json();
+      const v = vhosts.find(x => x.vhostId === vhostId);
+      if (v) v.selected = updated.selected;
+      showToast(MSG['toast.vhost.apply.failed']);
     }
   }
 
@@ -527,10 +551,11 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     document.getElementById('btnMonitor').disabled = !hasSelected;
     document.getElementById('btnSaveMergedVhost').disabled = selected.length < 2;
     mergedEditor.setValue(merged.replace(/\$\{LOCAL_SVR\}/g, LOCAL_SVR), -1);
-    await fetch('/api/proxy/conf/vhost', {
+    const res = await fetch('/api/proxy/conf/vhost', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: merged})
     });
+    if (!res.ok) showToast(MSG['toast.vhost.apply.failed']);
   }
 
   // ── Save merged routes as a new vhost profile ───────────────

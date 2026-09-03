@@ -153,8 +153,12 @@ public class ProxyController {
         var body    = objectMapper.readValue(ctx.body(), Map.class);
         var updated = vhostService.updateContent(vhostId, hubUser.getUserNo(), (String) body.get("content"));
         if (updated == null) { ctx.status(404); return; }
-        if (updated.isSelected()) {
-            applyMergedConfig(hubUser.getUserNo(), ctx.ip());
+        if (updated.isSelected() && !applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+            // The draft content above was still saved successfully; only pushing it live as part
+            // of the merged config failed. Return it anyway (with a 400) so the client can tell
+            // the two apart instead of reporting this as a plain save failure.
+            ctx.status(400).json(updated);
+            return;
         }
         ctx.json(updated);
     }
@@ -172,7 +176,11 @@ public class ProxyController {
         var hubUser = AuthController.currentUser(ctx);
         var updated = vhostService.toggleSelected(ctx.pathParam("vhostId"), hubUser.getUserNo());
         if (updated == null) { ctx.status(404); return; }
-        applyMergedConfig(hubUser.getUserNo(), ctx.ip());
+        if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+            // The selection toggle itself was still saved; only the resulting merge was rejected.
+            ctx.status(400).json(updated);
+            return;
+        }
         ctx.json(updated);
     }
 
@@ -289,50 +297,65 @@ public class ProxyController {
         var body  = objectMapper.readValue(ctx.body(), Map.class);
         var name  = ctx.pathParam("name");
         var value = (String) body.get("value");
-        confService.set(name, hubUser.getUserNo(), value);
+
         if ("vhost".equals(name)) {
+            // Validate by live-applying first: only persist a vhost config that ReverseProxyServer
+            // actually accepted, so a bad save never leaves the DB holding YAML that will keep
+            // failing to load (silently) on every future reload/restart.
             if (value != null && !value.isBlank()) {
                 try {
                     var localSvr = resolveLocalSvr(confService, hubUser.getUserNo(), ctx.ip());
                     ReverseProxyServer.setVirtualHosts(ctx.ip(), hubUser.getUserNo(), substituteLocalSvr(value, localSvr));
                 } catch (Exception e) {
-                    logger.warn("Failed to apply virtual hosts for user {}: {}", hubUser.getUserNo(), e.getMessage());
+                    logger.warn("Rejected invalid vhost config for user {}: {}", hubUser.getUserNo(), e.getMessage());
+                    ctx.status(400).result("Invalid vhost configuration: " + e.getMessage());
+                    return;
                 }
             } else {
                 ReverseProxyServer.clearVirtualHosts(ctx.ip(), hubUser.getUserNo());
             }
-        } else if ("local_svr".equals(name)) {
+            confService.set(name, hubUser.getUserNo(), value);
+        } else {
+            confService.set(name, hubUser.getUserNo(), value);
             // Re-push the currently selected vhosts so the new LOCAL_SVR override takes effect immediately.
-            applyMergedConfig(hubUser.getUserNo(), ctx.ip());
+            if ("local_svr".equals(name) && !applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+                ctx.status(400).result("Invalid vhost configuration");
+                return;
+            }
         }
         ctx.status(204);
     }
 
-    private void applyMergedConfig(Long userNo, String routeIp) {
-        applyMergedConfig(vhostService, confService, userNo, routeIp);
+    private boolean applyMergedConfig(Long userNo, String routeIp) {
+        return applyMergedConfig(vhostService, confService, userNo, routeIp);
     }
 
     // Recompute the merged vhost config from the user's currently selected virtual hosts
     // and push it live into the running proxy — usable from outside this controller
     // (e.g. on login) without needing a ProxyController instance.
-    public static void applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
-        applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp);
+    public static boolean applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
+        return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp);
     }
 
     // routeIp identifies the connecting client for the proxy's IP-to-owner lookup and must
     // stay the real observed address; the ${LOCAL_SVR} substitution below is allowed to diverge
     // from it via a user-set override (e.g. when routeIp is contaminated by an intermediate hop).
-    private static void applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp) {
+    // Returns false (and leaves the persisted "vhost" config untouched) if the merged YAML was
+    // rejected by ReverseProxyServer — same validate-before-persist rule as apiConfSet's vhost
+    // handling, so a bad merge never leaves the DB holding config that silently fails to reload.
+    private static boolean applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp) {
         try {
             var selected = vhostService.listSelected(userNo);
             var merged   = ReverseProxyServer.mergeVhostYaml(selected);
-            confService.set("vhost", userNo, merged != null ? merged : "");
             if (merged != null && !merged.isBlank()) {
                 var localSvr = resolveLocalSvr(confService, userNo, routeIp);
                 ReverseProxyServer.setVirtualHosts(routeIp, userNo, substituteLocalSvr(merged, localSvr));
             }
+            confService.set("vhost", userNo, merged != null ? merged : "");
+            return true;
         } catch (Exception e) {
             logger.warn("Failed to apply merged config for user {}: {}", userNo, e.getMessage());
+            return false;
         }
     }
 
