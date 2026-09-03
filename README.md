@@ -13,7 +13,7 @@ oeHub bundles two browser-facing tools behind a single login: **oeHosts**, which
 
 ## How It Works
 
-<img src="https://velog.velcdn.com/images/tricatch/post/0e03b38c-5865-4c56-b093-eaef0f43dfab/image.png" alt="oeHub request flow: browser configures a domain mapping in oeHosts, launches Chrome via oelink with --host-resolver-rules, which routes the request to oeProxy for TLS termination and destination routing, forwarding to a local or remote dev server">
+<img src="https://velog.velcdn.com/images/tricatch/post/daaf1f0b-006c-4369-9e96-b7cff1551ead/image.png" alt="oeHub request flow: browser configures a domain mapping in oeHosts, launches Chrome via oelink with --host-resolver-rules, which routes the request to oeProxy for TLS termination and destination routing, forwarding to a local or remote dev server">
 
 ## Tools
 
