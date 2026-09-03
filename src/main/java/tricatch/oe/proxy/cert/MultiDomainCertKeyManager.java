@@ -17,11 +17,19 @@ import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(MultiDomainCertKeyManager.class);
+
+    // A client can present any SNI hostname it likes, and every distinct one seen here triggers a
+    // fresh RSA keygen + CA signature (CPU-expensive) plus a permanent cache entry (memory) — so
+    // an unbounded cache lets a flood of random SNIs exhaust CPU/memory. Cap it and evict the
+    // oldest entries once over the cap; see MAX_CACHED_CERTIFICATES.
+    private static final int MAX_CACHED_CERTIFICATES = 1000;
 
     // ConcurrentHashMap.computeIfAbsent() locks only the bucket for the domain being generated,
     // so a handshake for an already-cached domain never blocks behind another domain's (CPU-bound
@@ -30,6 +38,10 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
     // ConcurrentHashMap forbids null keys, so the no-SNI case (domain == null) is handled
     // separately via noSniCertificate below instead of as a map entry.
     private final Map<String, CertificateKeyPair> certificates = new ConcurrentHashMap<>();
+    // Insertion order for the (best-effort, approximately-FIFO) eviction below. Appended to only
+    // from inside the computeIfAbsent mapping function, so it grows exactly once per distinct
+    // domain — repeated lookups of an already-cached domain never touch it.
+    private final Queue<String> insertionOrder = new ConcurrentLinkedQueue<>();
     private volatile CertificateKeyPair noSniCertificate;
     private final Object noSniLock = new Object();
 
@@ -62,11 +74,27 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
         }
 
         try {
-            certificates.computeIfAbsent(domain, this::generateCertificate);
+            certificates.computeIfAbsent(domain, d -> {
+                CertificateKeyPair pair = generateCertificate(d);
+                insertionOrder.add(d);
+                return pair;
+            });
+            evictOldestIfOverCapacity();
             return domain;
         } catch (GenerationFailedException e) {
             logger.error("errorGenCert-" + e.getCause().getMessage(), e.getCause());
             return null;
+        }
+    }
+
+    private void evictOldestIfOverCapacity() {
+        // Best-effort trim, not an exact bound: under concurrent generation, size() and the
+        // poll/remove pair below can race a little. That's fine here — the goal is just to keep
+        // the cache roughly bounded, not to enforce MAX_CACHED_CERTIFICATES precisely.
+        while (certificates.size() > MAX_CACHED_CERTIFICATES) {
+            String oldest = insertionOrder.poll();
+            if (oldest == null) break;
+            certificates.remove(oldest);
         }
     }
 

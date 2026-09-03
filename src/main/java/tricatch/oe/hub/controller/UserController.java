@@ -120,7 +120,7 @@ public class UserController {
             ctx.status(400).json(Map.of("error", "password_required"));
             return;
         }
-        if (newPassword.length() < 4) {
+        if (newPassword.length() < 8) {
             ctx.status(400).json(Map.of("error", "password_too_short"));
             return;
         }

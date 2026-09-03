@@ -21,6 +21,12 @@ public class AuthController {
     private static final String COOKIE_NAME = "oe_auth";
     private static final String ATTR_USER   = "currentUser";
 
+    // A fixed bcrypt hash checked (and discarded) whenever there's no real user record to compare
+    // against, so a login attempt for a nonexistent userId takes about as long as one for a real
+    // account with a wrong password — otherwise the early return made account existence
+    // enumerable via response timing.
+    private static final String DUMMY_PASSWORD_HASH = PasswordUtil.hash("no-such-user-timing-parity");
+
     private final SqlSessionFactory sqlSessionFactory;
     private final JwtService        jwtService;
 
@@ -33,11 +39,13 @@ public class AuthController {
 
         String jwt = ctx.cookie(COOKIE_NAME);
         Long userNo = jwtService.verify(jwt);
-        if( logger.isDebugEnabled() ) logger.debug("auth, userNo={}, uri={}, jwt={}", userNo, ctx.path(), jwt);
+        // Never log the JWT itself: it's a bearer credential — anyone who reads the log could
+        // replay it as that user until it expires (up to 365 days with rememberMe).
+        if( logger.isDebugEnabled() ) logger.debug("auth, userNo={}, uri={}", userNo, ctx.path());
 
         if (userNo == null) {
             if (jwt != null) {
-                ctx.res().addHeader("Set-Cookie", COOKIE_NAME + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+                ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
             }
             return;
         }
@@ -68,26 +76,14 @@ public class AuthController {
         if( logger.isDebugEnabled() ) logger.debug( "login, userId={}", userId);
 
         HubUser hubUser = findUser(userId);
-        if( hubUser == null ){
-            logger.warn("login, not found user - {}", userId);
-            ctx.render("templates/login.pebble", Map.of(
-                    "redirect", redirect != null ? redirect : "",
-                    "error", "auth.error.invalid.credentials"
-            ));
-            return;
-        }
 
-        if (password == null) {
-            ctx.render("templates/login.pebble", Map.of(
-                "redirect", redirect != null ? redirect : "",
-                "error", "auth.error.invalid.credentials"
-            ));
-            return;
-        }
-        boolean isCorrectPassword = PasswordUtil.matches(password, hubUser.getPassword());
-        logger.debug("login, userId={}, isCorrectPassword={}", userId, isCorrectPassword);
+        // Always run exactly one bcrypt comparison, real user or not, so a login attempt's
+        // response time doesn't reveal whether userId belongs to an existing account.
+        String hashToCheck = hubUser != null ? hubUser.getPassword() : DUMMY_PASSWORD_HASH;
+        boolean isCorrectPassword = PasswordUtil.matches(password != null ? password : "", hashToCheck);
+        logger.debug("login, userId={}, found={}, isCorrectPassword={}", userId, hubUser != null, isCorrectPassword);
 
-        if (!isCorrectPassword) {
+        if (hubUser == null || password == null || !isCorrectPassword) {
             ctx.render("templates/login.pebble", Map.of(
                 "redirect", redirect != null ? redirect : "",
                 "error", "auth.error.invalid.credentials"
@@ -97,7 +93,7 @@ public class AuthController {
 
         String jwt = jwtService.issue(hubUser.getUserNo(), rememberMe);
 
-        if(logger.isDebugEnabled() ) logger.debug( "login, userId={}, jwt={}", userId, jwt);
+        if(logger.isDebugEnabled() ) logger.debug( "login, userId={}, rememberMe={}", userId, rememberMe);
 
         try (var session = sqlSessionFactory.openSession()) {
             hubUser.setLastLoginAt(LocalDateTime.now());
@@ -107,16 +103,31 @@ public class AuthController {
 
         ProxyController.applyMergedConfig(sqlSessionFactory, hubUser.getUserNo(), ctx.ip());
 
-        String header = rememberMe
-            ? COOKIE_NAME + "=" + jwt + "; Path=/; Max-Age=" + (365L * 24 * 3600) + "; HttpOnly; SameSite=Lax"
-            : COOKIE_NAME + "=" + jwt + "; Path=/; HttpOnly; SameSite=Lax";
-        ctx.res().addHeader("Set-Cookie", header);
+        ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, jwt, rememberMe ? 365L * 24 * 3600 : null));
 
-        if (redirect != null && redirect.startsWith("/") && !redirect.startsWith("//")) {
-            ctx.redirect(redirect);
-        } else {
-            ctx.redirect("/");
-        }
+        ctx.redirect(isSafeRedirect(redirect) ? redirect : "/");
+    }
+
+    /**
+     * Builds the oe_auth Set-Cookie header value. maxAgeSeconds null = session cookie (no
+     * Max-Age); non-null (including 0, used to clear the cookie) sets it explicitly. Adds
+     * "Secure" only when this request itself arrived over HTTPS - unconditionally adding it would
+     * make the cookie silently stop being sent on a plain-HTTP deployment of oeHub itself.
+     */
+    private static String authCookieHeader(Context ctx, String value, Long maxAgeSeconds) {
+        var sb = new StringBuilder(COOKIE_NAME).append('=').append(value).append("; Path=/");
+        if (maxAgeSeconds != null) sb.append("; Max-Age=").append(maxAgeSeconds);
+        sb.append("; HttpOnly; SameSite=Lax");
+        if ("https".equalsIgnoreCase(ctx.scheme())) sb.append("; Secure");
+        return sb.toString();
+    }
+
+    /** Only an absolute path with no scheme/host smuggled in - rejects "//evil.com" and the
+     *  backslash variant "/\evil.com" some browsers normalize into a protocol-relative URL.
+     *  Package-visible (not private) so a test can exercise it directly. */
+    static boolean isSafeRedirect(String path) {
+        if (path == null || path.isEmpty() || path.charAt(0) != '/') return false;
+        return path.length() == 1 || (path.charAt(1) != '/' && path.charAt(1) != '\\');
     }
 
     public void showRegister(Context ctx) {
@@ -144,7 +155,7 @@ public class AuthController {
             renderRegisterError(ctx, "auth.error.password.required", userId);
             return;
         }
-        if (password.length() < 4) {
+        if (password.length() < 8) {
             renderRegisterError(ctx, "auth.error.password.too.short", userId);
             return;
         }
@@ -178,8 +189,7 @@ public class AuthController {
     }
 
     public void logout(Context ctx) {
-        ctx.res().addHeader("Set-Cookie",
-            COOKIE_NAME + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+        ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
         ctx.redirect("/login");
     }
 

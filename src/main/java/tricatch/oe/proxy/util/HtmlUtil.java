@@ -8,6 +8,7 @@ import tricatch.oe.hub.i18n.Messages;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.exception.BadGatewayException;
 import tricatch.oe.proxy.exception.GatewayTimeoutException;
+import tricatch.oe.proxy.exception.UntrustedUpstreamCertificateException;
 import tricatch.oe.proxy.http.HTTP;
 import tricatch.oe.proxy.http.io.HttpStreamWriter;
 
@@ -71,8 +72,9 @@ public class HtmlUtil {
             ctx.put("requestHost",  ex.getRequestHost());
             ctx.put("routePath",    ex.getRoutePath());
             ctx.put("targetUrl",    ex.getTargetUrl());
-            //Throwable cause = ex.getCause();
-            //ctx.put("errorMessage", cause != null ? cause.getMessage() : null);
+            // Only surface a specific reason for the one case a visitor can act on (ask an admin
+            // to approve the certificate) - other causes stay generic to avoid leaking internals.
+            ctx.put("errorMessage", isUntrustedCertificate(ex) ? msg(locale).get("error.502.untrusted.cert") : null);
             StringWriter writer = new StringWriter();
             template.evaluate(writer, ctx);
             html = writer.toString();
@@ -187,6 +189,32 @@ public class HtmlUtil {
             return "<html><body><h1>403 Forbidden</h1><p>Blocked by oeHub forward-proxy whitelist: "
                     + escapeHtml(host) + "</p></body></html>";
         }
+    }
+
+    /**
+     * Writes a plain 400 response for a request rejected before routing/upstream connection ever
+     * happens (malformed request line, ambiguous Content-Length/Transfer-Encoding framing) — no
+     * vhost/routing context exists yet at this point, so unlike the other error pages this isn't
+     * templated/branded.
+     */
+    public static void writeBadRequestResponse(HttpStreamWriter out, String reason) throws IOException {
+        String html = "<html><body><h1>400 Bad Request</h1><p>" + escapeHtml(reason) + "</p></body></html>";
+
+        byte[] body = html.getBytes(StandardCharsets.UTF_8);
+        out.write("HTTP/1.1 400 Bad Request\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write("Content-Type: text/html; charset=utf-8\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write("Connection: close\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Length: " + body.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(HTTP.CRLF);
+        out.write(body);
+        out.flush();
+    }
+
+    private static boolean isUntrustedCertificate(Throwable t) {
+        for (Throwable cause = t; cause != null; cause = cause.getCause()) {
+            if (cause instanceof UntrustedUpstreamCertificateException) return true;
+        }
+        return false;
     }
 
     private static String escapeHtml(String s) {

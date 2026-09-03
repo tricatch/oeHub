@@ -153,6 +153,13 @@ public class ReverseProxyServer {
         Representer representer = new Representer(new DumperOptions());
         representer.getPropertyUtils().setSkipMissingProperties(true);
         LoaderOptions loaderOptions = new LoaderOptions();
+        // virtualHostsConfigYaml is attacker-controllable (any authenticated user's own vhost
+        // content). Plain Constructor honors an explicit YAML tag (e.g. "!!javax.script.ScriptEngineManager")
+        // on ANY node regardless of the field's declared Java type, and merely constructing that
+        // node can have side effects — a well-known SnakeYAML RCE gadget class. Reject every
+        // explicit tag; legitimate vhost YAML never needs one (types are resolved implicitly via
+        // the VirtualHost/VirtualDomain/VirtualLocation JavaBean shape).
+        loaderOptions.setTagInspector(tag -> false);
 
         Constructor constructorVirtualHost = new Constructor(VirtualHost.class, loaderOptions);
         Yaml yamlVirtualHost = new Yaml(constructorVirtualHost, representer);

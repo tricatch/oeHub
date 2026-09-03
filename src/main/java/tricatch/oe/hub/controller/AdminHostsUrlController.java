@@ -60,9 +60,9 @@ public class AdminHostsUrlController {
             var mapper = session.getMapper(HostsUrlMapper.class);
             var url = mapper.findById(urlId);
             if (url == null) { ctx.status(404); return; }
-            if (body.containsKey("urlName")) url.setUrlName(((String) body.get("urlName")).trim());
-            if (body.containsKey("urlValue")) url.setUrlValue(((String) body.get("urlValue")).trim());
-            if (body.containsKey("sortOrder")) url.setSortOrder(((Number) body.get("sortOrder")).intValue());
+            if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
+            if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
+            if (body.get("sortOrder") instanceof Number n) url.setSortOrder(n.intValue());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             ctx.json(url);

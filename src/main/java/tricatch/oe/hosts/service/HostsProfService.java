@@ -145,6 +145,7 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var source = mapper.findByHostsId(sourceHostId);
             if (source == null) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
             var copy = new HostsProf();
             copy.setHostsId(newId());
             copy.setUserNo(userNo);

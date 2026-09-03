@@ -133,6 +133,10 @@ public class RelayWebSocket {
             payloadLength = (int) length;
         }
 
+        if (payloadLength > tricatch.oe.proxy.http.HTTP.MAX_WEBSOCKET_FRAME_LENGTH) {
+            throw new IOException("WebSocket frame payload too large: " + payloadLength);
+        }
+
         boolean masked = (maskAndPayloadLen & 0x80) != 0;
         byte[] maskingKey = null;
 

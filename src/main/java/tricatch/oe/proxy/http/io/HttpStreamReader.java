@@ -123,7 +123,14 @@ public class HttpStreamReader implements Closeable {
             }
 
             if (foundCR) {
-                // CR followed by non-LF character, add CR to buffer
+                // CR followed by non-LF character, add CR to buffer.
+                // bytesRead can already be at max here (this iteration writes CR *and* ch),
+                // so re-check against max — not just the buffer's current capacity — before
+                // writing, otherwise a capped-at-max buffer overflows by one byte.
+                if (bytesRead >= max) {
+                    buffer.setLength(bytesRead);
+                    throw new IOException("Maximum line length (" + max + ") exceeded without finding line terminator");
+                }
                 if (bytesRead >= buffer.getBuffer().length) {
                     // Buffer is full, expand it
                     expandBuffer(buffer, max);
@@ -132,6 +139,10 @@ public class HttpStreamReader implements Closeable {
                 foundCR = false;
             }
 
+            if (bytesRead >= max) {
+                buffer.setLength(bytesRead);
+                throw new IOException("Maximum line length (" + max + ") exceeded without finding line terminator");
+            }
             if (bytesRead >= buffer.getBuffer().length) {
                 // Buffer is full, expand it
                 expandBuffer(buffer, max);

@@ -287,10 +287,10 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
             throw new NumberFormatException("Empty string");
         }
         
-        int result = 0;
+        long result = 0;
         boolean negative = false;
         int i = offset;
-        
+
         // Check for sign
         if (bytes[i] == '-') {
             negative = true;
@@ -298,11 +298,11 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         } else if (bytes[i] == '+') {
             i++;
         }
-        
+
         if (i >= offset + length) {
             throw new NumberFormatException("No digits");
         }
-        
+
         // Parse digits
         while (i < offset + length) {
             byte b = bytes[i];
@@ -310,12 +310,15 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
                 throw new NumberFormatException("Invalid digit");
             }
             result = result * 10 + (b - '0');
+            if (result > Integer.MAX_VALUE) {
+                throw new NumberFormatException("Value out of int range");
+            }
             i++;
         }
-        
-        return negative ? -result : result;
+
+        return negative ? (int) -result : (int) result;
     }
-    
+
     /**
      * Parse long from byte array without creating string
      * @param bytes byte array
@@ -332,7 +335,7 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         long result = 0;
         boolean negative = false;
         int i = offset;
-        
+
         // Check for sign
         if (bytes[i] == '-') {
             negative = true;
@@ -340,24 +343,28 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         } else if (bytes[i] == '+') {
             i++;
         }
-        
+
         if (i >= offset + length) {
             throw new NumberFormatException("No digits");
         }
-        
-        // Parse digits
+
+        // Parse digits, guarding against long overflow before it happens
         while (i < offset + length) {
             byte b = bytes[i];
             if (b < '0' || b > '9') {
                 throw new NumberFormatException("Invalid digit");
             }
-            result = result * 10 + (b - '0');
+            int digit = b - '0';
+            if (result > (Long.MAX_VALUE - digit) / 10) {
+                throw new NumberFormatException("Value out of long range");
+            }
+            result = result * 10 + digit;
             i++;
         }
-        
+
         return negative ? -result : result;
     }
-    
+
     /**
      * Get total size of all header lines in bytes
      * @return total byte size
@@ -444,7 +451,11 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         if (!isValidHttpMethod(method)) {
             throw new IllegalArgumentException("Invalid HTTP method: " + method);
         }
-        
+
+        // Reject ambiguous Content-Length/Transfer-Encoding framing before it's ever forwarded
+        // upstream — the classic CL.TE/TE.CL/CL.CL request-smuggling setup.
+        validateFraming();
+
         // Extract host from headers
         String host = getHeaderValueAsString(HTTP.HEADER.HOST);
         
@@ -460,6 +471,54 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         return new HttpRequest(method, path, version, host, connection, contentLength, httpStream, this);
     }
     
+    /**
+     * Rejects a request whose Content-Length/Transfer-Encoding framing is ambiguous. A
+     * conforming client never needs to send more than one Content-Length header, both
+     * Content-Length and Transfer-Encoding together, or a Transfer-Encoding value other than
+     * exactly "chunked" (RFC 9112 §6.1, §6.3) — anything else is either a broken client or an
+     * attempt to make this proxy and the upstream server disagree about where one request ends
+     * and the next begins (CL.TE / TE.CL / CL.CL request smuggling).
+     * @throws IllegalArgumentException if the framing is ambiguous
+     */
+    private void validateFraming() {
+        int contentLengthCount = 0;
+        int transferEncodingCount = 0;
+        String transferEncodingValue = null;
+
+        for (int i = 1; i < size(); i++) {
+            ByteBuffer headerBuffer = get(i);
+            byte[] buf = headerBuffer.getBuffer();
+            int len = headerBuffer.getLength();
+
+            int clColon = startsWithIgnoreCase(buf, len, HTTP.HEADER.CONTENT_LENGTH);
+            if (clColon >= 0) {
+                contentLengthCount++;
+                continue;
+            }
+
+            int teColon = startsWithIgnoreCase(buf, len, HTTP.HEADER.TRANSFER_ENCODING);
+            if (teColon >= 0) {
+                transferEncodingCount++;
+                if (teColon < len - 1) {
+                    transferEncodingValue = trimHeaderValueAsString(buf, len, teColon + 1);
+                }
+            }
+        }
+
+        if (contentLengthCount > 1) {
+            throw new IllegalArgumentException("Ambiguous framing: multiple Content-Length headers");
+        }
+        if (transferEncodingCount > 1) {
+            throw new IllegalArgumentException("Ambiguous framing: multiple Transfer-Encoding headers");
+        }
+        if (contentLengthCount > 0 && transferEncodingCount > 0) {
+            throw new IllegalArgumentException("Ambiguous framing: Content-Length and Transfer-Encoding both present");
+        }
+        if (transferEncodingCount > 0 && (transferEncodingValue == null || !"chunked".equalsIgnoreCase(transferEncodingValue))) {
+            throw new IllegalArgumentException("Ambiguous framing: unsupported Transfer-Encoding value '" + transferEncodingValue + "'");
+        }
+    }
+
     /**
      * Determine body stream type based on headers
      * @return BodyStream type

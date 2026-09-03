@@ -105,6 +105,15 @@ public class SettingsController {
         ctx.json(Map.of("whitelist", whitelist));
     }
 
+    // ── upstream (origin server) trusted certificate allowlist ───────────────────
+
+    public void apiSaveUpstreamTrustedCerts(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var trustedCerts = ((String) body.getOrDefault("trustedCerts", "")).trim();
+        tricatch.oe.proxy.cert.TrustedUpstreamCerts.setText(trustedCerts);
+        ctx.json(Map.of("trustedCerts", trustedCerts));
+    }
+
     // ── CA certificate ────────────────────────────────────────────────────────
 
     public boolean isCaConfigured() {
@@ -194,6 +203,7 @@ public class SettingsController {
         model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("fwdproxyWhitelist", ForwardProxyServer.getWhitelist());
+        model.put("upstreamTrustedCerts", tricatch.oe.proxy.cert.TrustedUpstreamCerts.getText());
         model.put("ca", loadCaInfo());
         model.put("caError", caError);
         model.put("caSuccess", caSuccess);

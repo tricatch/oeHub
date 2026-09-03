@@ -85,7 +85,7 @@ public class SetupController {
             ctx.render("templates/setup.pebble", buildModel("auth.error.password.required", "", "generate"));
             return;
         }
-        if (password.length() < 4) {
+        if (password.length() < 8) {
             ctx.render("templates/setup.pebble", buildModel("auth.error.password.too.short", "", "generate"));
             return;
         }
@@ -209,8 +209,8 @@ public class SetupController {
             var mapper = session.getMapper(HostsUrlMapper.class);
             var url = mapper.findById(urlId);
             if (url == null) { ctx.status(404); return; }
-            if (body.containsKey("urlName")) url.setUrlName(((String) body.get("urlName")).trim());
-            if (body.containsKey("urlValue")) url.setUrlValue(((String) body.get("urlValue")).trim());
+            if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
+            if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             ctx.json(url);
@@ -276,8 +276,8 @@ public class SetupController {
             var mapper = session.getMapper(HostsUaMapper.class);
             var ua = mapper.findById(uaId);
             if (ua == null) { ctx.status(404); return; }
-            if (body.containsKey("uaName")) ua.setUaName(((String) body.get("uaName")).trim());
-            if (body.containsKey("uaValue")) ua.setUaValue(((String) body.get("uaValue")).trim());
+            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
+            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ctx.json(ua);

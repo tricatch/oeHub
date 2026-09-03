@@ -258,8 +258,43 @@ public class ForwardProxyServer {
 
     static String hostOnly(String hostAndPort) {
         if (hostAndPort == null) return null;
+        return splitHostAndPort(hostAndPort, -1).host();
+    }
+
+    private record HostPort(String host, int port) {}
+
+    /**
+     * Splits "host:port" into host and port, defaulting the port when absent.
+     * Handles bracketed IPv6 literals ("[::1]:8080", "[::1]") as well as a bare
+     * IPv6 literal with no port ("::1") — the latter has multiple colons and no
+     * brackets, so lastIndexOf(':') alone would wrongly chop off part of the address.
+     */
+    private static HostPort splitHostAndPort(String hostAndPort, int defaultPort) {
+        if (hostAndPort.startsWith("[")) {
+            int close = hostAndPort.indexOf(']');
+            if (close < 0) return new HostPort(hostAndPort, defaultPort);
+            String host = hostAndPort.substring(1, close);
+            String rest = hostAndPort.substring(close + 1);
+            if (rest.startsWith(":")) {
+                try {
+                    return new HostPort(host, Integer.parseInt(rest.substring(1)));
+                } catch (NumberFormatException e) {
+                    return new HostPort(host, defaultPort);
+                }
+            }
+            return new HostPort(host, defaultPort);
+        }
+        if (hostAndPort.indexOf(':') != hostAndPort.lastIndexOf(':')) {
+            // Multiple colons with no brackets: a bare IPv6 literal, not host:port.
+            return new HostPort(hostAndPort, defaultPort);
+        }
         int idx = hostAndPort.lastIndexOf(':');
-        return idx >= 0 ? hostAndPort.substring(0, idx) : hostAndPort;
+        if (idx < 0) return new HostPort(hostAndPort, defaultPort);
+        try {
+            return new HostPort(hostAndPort.substring(0, idx), Integer.parseInt(hostAndPort.substring(idx + 1)));
+        } catch (NumberFormatException e) {
+            return new HostPort(hostAndPort, defaultPort);
+        }
     }
 
     /** Builds the 403 response for a non-whitelisted destination, styled like oeProxy's other error pages. */
@@ -288,16 +323,9 @@ public class ForwardProxyServer {
         var map = userHostMap.get(userId);
         if (map == null || map.isEmpty()) return null;
 
-        String host;
-        int port;
-        int idx = hostAndPort.lastIndexOf(':');
-        if (idx >= 0) {
-            host = hostAndPort.substring(0, idx);
-            port = Integer.parseInt(hostAndPort.substring(idx + 1));
-        } else {
-            host = hostAndPort;
-            port = 80;
-        }
+        HostPort hp = splitHostAndPort(hostAndPort, 80);
+        String host = hp.host();
+        int port = hp.port();
 
         String ip = map.get(host.toLowerCase());
         if (ip == null) return null;

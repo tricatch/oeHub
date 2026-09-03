@@ -169,6 +169,19 @@ public class OeHubApplication {
                     ctx.skipRemainingHandlers();
                 }
             });
+            // The /setup/* CRUD routes (hosts-url, hosts-ua, oid-domain-default) exist so the
+            // first-run wizard can manage global presets before any admin account/session exists.
+            // Once setup is complete they must fall back to the same admin-only protection as
+            // their /api/admin/* equivalents — otherwise they stay open to anonymous callers forever.
+            config.routes.before("/setup/*", ctx -> {
+                if (SetupController.isSetupComplete()) {
+                    var user = AuthController.currentUser(ctx);
+                    if (user == null || !"adm".equals(user.getRole())) {
+                        ctx.status(403).result("Forbidden");
+                        ctx.skipRemainingHandlers();
+                    }
+                }
+            });
 
             config.routes.after(ctx -> {
                 LocaleContext.clear();
@@ -220,6 +233,7 @@ public class OeHubApplication {
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
             config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
             config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
+            config.routes.post("/api/admin/settings/upstream-trusted-certs", settings::apiSaveUpstreamTrustedCerts);
             config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
             config.routes.post("/oehub/settings/ca/import",   settings::importCa);
 
@@ -399,11 +413,14 @@ public class OeHubApplication {
         writeH2Properties(oeHubDir, h2JdbcUrl());
         Server.createWebServer("-webPort", String.valueOf(h2ConsolePort),
                 "-properties", oeHubDir.toString()).start();
-        logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub  (user: sa / password: oeHub)", h2ConsolePort);
+        // Credentials intentionally not logged here (see DatabaseConfig) - keeps them out of log
+        // files/aggregation even though the /oehub/h2 route itself already requires admin login.
+        logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub", h2ConsolePort);
 
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
         ReverseProxyServer.init(sqlSessionFactory);
         ForwardProxyServer.init(sqlSessionFactory);
+        tricatch.oe.proxy.cert.TrustedUpstreamCerts.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
         try {

@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
-import tricatch.oe.proxy.util.JsonUtil;
 
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -35,8 +34,9 @@ public class JwtService {
             var priConf = mapper.findByConfKey(KEY_PRIVATE);
             var pubConf  = mapper.findByConfKey(KEY_PUBLIC);
 
-            if( logger.isDebugEnabled() ) logger.debug("jwt.pri.key={}", JsonUtil.toJson(priConf));
-            if( logger.isDebugEnabled() ) logger.debug("jwt.pub.key={}", JsonUtil.toJson(pubConf));
+            // Never log key material: the private key would let anyone who reads the log
+            // forge a valid JWT for any user, permanently (until the key is rotated).
+            if( logger.isDebugEnabled() ) logger.debug("jwt keys loaded from db - pri.present={}, pub.present={}", priConf != null, pubConf != null);
 
             if (priConf != null && pubConf != null) {
                 privateKey = loadPrivateKey(priConf.getConfVal());

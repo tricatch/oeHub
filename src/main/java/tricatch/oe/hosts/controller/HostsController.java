@@ -133,7 +133,7 @@ public class HostsController {
         var model = new HashMap<String, Object>();
         model.put("hosts", hosts);
         model.put("owner", owner != null ? owner : "");
-        model.put("contentJson", objectMapper.writeValueAsString(hosts.getHostsContent()));
+        model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getHostsContent())));
         model.put("proxyIp", extractProxyIp(ctx));
         ctx.render("templates/oehub/hosts-share.pebble", model);
     }
@@ -245,8 +245,8 @@ public class HostsController {
             var mapper = session.getMapper(HostsUaMapper.class);
             var ua = mapper.findByIdAndUserNo(uaId, user.getUserNo());
             if (ua == null) { ctx.status(404); return; }
-            if (body.containsKey("uaName")) ua.setUaName(((String) body.get("uaName")).trim());
-            if (body.containsKey("uaValue")) ua.setUaValue(((String) body.get("uaValue")).trim());
+            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
+            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ua.setMine(true);
@@ -364,8 +364,8 @@ public class HostsController {
             var mapper = session.getMapper(HostsUrlMapper.class);
             var url = mapper.findByIdAndUserNo(urlId, user.getUserNo());
             if (url == null) { ctx.status(404); return; }
-            if (body.containsKey("urlName")) url.setUrlName(((String) body.get("urlName")).trim());
-            if (body.containsKey("urlValue")) url.setUrlValue(((String) body.get("urlValue")).trim());
+            if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
+            if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             url.setMine(true);

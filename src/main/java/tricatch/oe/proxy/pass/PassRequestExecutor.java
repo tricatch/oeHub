@@ -334,6 +334,17 @@ public class PassRequestExecutor implements Stopable {
             } catch (IOException io) {
                 logger.error("{}, Failed to write no-vhosts response: {}", uid, io.getMessage(), io);
             }
+        } catch (IllegalArgumentException e) {
+            // Malformed request line, or ambiguous Content-Length/Transfer-Encoding framing
+            // rejected by HeaderLines.validateFraming() to prevent request smuggling.
+            logger.warn("{}, Rejected malformed/ambiguous request: {}", uid, e.getMessage());
+            try {
+                if (clientOut != null && claimErrorResponse()) {
+                    HtmlUtil.writeBadRequestResponse(clientOut, e.getMessage());
+                }
+            } catch (IOException io) {
+                logger.error("{}, Failed to write 400 response: {}", uid, io.getMessage(), io);
+            }
         } finally {
             VThreadExecutor.removeVirtualThread(Thread.currentThread());
             this.stop = true;

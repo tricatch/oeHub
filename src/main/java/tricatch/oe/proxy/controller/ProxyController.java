@@ -280,7 +280,7 @@ public class ProxyController {
         var model = new HashMap<String, Object>();
         model.put("vhost",       vhost);
         model.put("owner",       vhostService.getOwnerUsername(vhostId));
-        model.put("contentJson", objectMapper.writeValueAsString(vhost.getVhostContent()));
+        model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(vhost.getVhostContent())));
         ctx.render("templates/oehub/proxy-share.pebble", model);
     }
 

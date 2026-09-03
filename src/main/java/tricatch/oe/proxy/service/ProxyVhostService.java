@@ -159,6 +159,7 @@ public class ProxyVhostService {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var source = mapper.findByVhostId(sourceVhostId);
             if (source == null) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
             var copy = new ProxyVhost();
             copy.setVhostId(newId());
             copy.setUserNo(userNo);

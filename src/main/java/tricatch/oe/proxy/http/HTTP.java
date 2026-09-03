@@ -9,6 +9,8 @@ public class HTTP {
     /** Monitor body display limit (1MB). Bodies exceeding this are not collected for monitor. */
     public static final int MONITOR_BODY_LIMIT = 1024 * 1024;
     public static final int CHUNK_SIZE_LINE_LENGTH = 128;
+    /** Upper bound on a single WebSocket frame payload the relay will allocate a buffer for. */
+    public static final int MAX_WEBSOCKET_FRAME_LENGTH = 16 * 1024 * 1024;
     public static final byte[] CRLF = "\r\n".getBytes();
     public static final byte SPACE = (byte)0x20;
 

@@ -1,14 +1,24 @@
 package tricatch.oe.proxy.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tricatch.oe.proxy.cert.TrustedUpstreamCerts;
+import tricatch.oe.proxy.exception.UntrustedUpstreamCertificateException;
+
 import javax.net.ssl.*;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.security.KeyStore;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.HexFormat;
 
 public class SocketUtils {
+
+    private static final Logger logger = LoggerFactory.getLogger(SocketUtils.class);
 
     public static Socket createHttp(String host, int port, int connectTimeout, int readTimeout) throws IOException {
 
@@ -30,14 +40,29 @@ public class SocketUtils {
 
         InetSocketAddress endpoint = new InetSocketAddress(host, port);
 
-        TrustManager[] trustAllCerts = new TrustManager[]{
+        TrustManager[] pinningTrustManagers = new TrustManager[]{
                 new X509TrustManager() {
+                    private final X509TrustManager defaultTrustManager = loadDefaultTrustManager();
+
                     @Override
                     public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
                     }
 
                     @Override
                     public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                        try {
+                            defaultTrustManager.checkServerTrusted(chain, authType);
+                            return; // chain-validated against the JVM's default trust store
+                        } catch (CertificateException chainValidationFailure) {
+                            String fingerprint = sha256Fingerprint(chain[0]);
+                            if (TrustedUpstreamCerts.isTrusted(host, fingerprint)) {
+                                return; // admin-approved pinned fingerprint for this host
+                            }
+                            logger.warn("Rejected untrusted upstream certificate - host={}, sha256={} " +
+                                            "(not in the trusted-upstream-certs allowlist; approve it in oeHub settings if this is expected)",
+                                    host, fingerprint);
+                            throw new UntrustedUpstreamCertificateException(host, fingerprint);
+                        }
                     }
 
                     @Override
@@ -51,7 +76,7 @@ public class SocketUtils {
 
         try {
             sc = SSLContext.getInstance("TLS");
-            sc.init(null, trustAllCerts, new SecureRandom());
+            sc.init(null, pinningTrustManagers, new SecureRandom());
         } catch (Exception e) {
             throw new IOException(e);
         }
@@ -75,6 +100,28 @@ public class SocketUtils {
             closeQuietly(socket);
             closeQuietly(tcpSocket);
             throw e;
+        }
+    }
+
+    private static X509TrustManager loadDefaultTrustManager() {
+        try {
+            var tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init((KeyStore) null); // null = JVM's default cacerts trust store
+            for (TrustManager tm : tmf.getTrustManagers()) {
+                if (tm instanceof X509TrustManager x509) return x509;
+            }
+            throw new IllegalStateException("No X509TrustManager in default TrustManagerFactory");
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load default trust manager", e);
+        }
+    }
+
+    private static String sha256Fingerprint(X509Certificate cert) throws CertificateException {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256").digest(cert.getEncoded());
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new CertificateException("Failed to compute certificate fingerprint", e);
         }
     }
 

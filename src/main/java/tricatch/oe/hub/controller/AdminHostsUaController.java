@@ -60,9 +60,9 @@ public class AdminHostsUaController {
             var mapper = session.getMapper(HostsUaMapper.class);
             var ua = mapper.findById(uaId);
             if (ua == null) { ctx.status(404); return; }
-            if (body.containsKey("uaName")) ua.setUaName(((String) body.get("uaName")).trim());
-            if (body.containsKey("uaValue")) ua.setUaValue(((String) body.get("uaValue")).trim());
-            if (body.containsKey("sortOrder")) ua.setSortOrder(((Number) body.get("sortOrder")).intValue());
+            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
+            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
+            if (body.get("sortOrder") instanceof Number n) ua.setSortOrder(n.intValue());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ctx.json(ua);
