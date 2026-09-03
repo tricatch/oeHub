@@ -108,7 +108,7 @@ public class PassResponseExecutor implements Stopable {
                 }
 
                 if( passRequestExecutor.isStop()
-                    || "Close".equalsIgnoreCase(response.getConnection())
+                    || response.shouldCloseConnection()
                 ){
                     break;
                 }
