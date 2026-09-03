@@ -179,14 +179,10 @@ public class PassRequestExecutor implements Stopable {
 
                 VirtualPath virtualPath = getVirtualPath(rid, httpRequest.getHost(), httpRequest.getPath());
 
-                boolean targetChanged = false;
-                if( preVirtualPath == null ) preVirtualPath = virtualPath;
-                else {
-                    //browser > keep-alive > route > target server
-                    String newTarget = virtualPath.getTarget().toString();
-                    String preTarget = preVirtualPath.getTarget().toString();
-                    if( !preTarget.equals(newTarget) ) targetChanged = true;
-                }
+                //browser > keep-alive > route > target server
+                boolean targetChanged = preVirtualPath == null
+                        || !preVirtualPath.getTarget().toString().equals(virtualPath.getTarget().toString());
+                preVirtualPath = virtualPath;
 
                 if (logger.isDebugEnabled()) {
                     logger.debug("{}, {}, targetChanged={}, targetServerSocket={}"
