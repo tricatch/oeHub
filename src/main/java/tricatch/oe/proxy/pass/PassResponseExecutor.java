@@ -152,7 +152,7 @@ public class PassResponseExecutor implements Stopable {
     // request after this thread has already given up reading further responses).
     private void writeGatewayTimeoutIfPossible() {
         VirtualPath vp = passRequestExecutor.getCurrentVirtualPath();
-        if (clientOut == null || vp == null) return;
+        if (clientOut == null || vp == null || !passRequestExecutor.claimErrorResponse()) return;
         try {
             GatewayTimeoutException ex = new GatewayTimeoutException(
                     this.rid, passRequestExecutor.getCurrentHost(), vp.getTarget(), vp.getPath());
@@ -164,7 +164,7 @@ public class PassResponseExecutor implements Stopable {
 
     private void writeBadGatewayIfPossible(Exception cause) {
         VirtualPath vp = passRequestExecutor.getCurrentVirtualPath();
-        if (clientOut == null || vp == null) return;
+        if (clientOut == null || vp == null || !passRequestExecutor.claimErrorResponse()) return;
         try {
             IOException ioCause = cause instanceof IOException ? (IOException) cause : null;
             BadGatewayException ex = new BadGatewayException(

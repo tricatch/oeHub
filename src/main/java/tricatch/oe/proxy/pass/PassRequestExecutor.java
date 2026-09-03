@@ -31,6 +31,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
 public class PassRequestExecutor implements Stopable {
@@ -46,6 +47,13 @@ public class PassRequestExecutor implements Stopable {
     private HttpStreamReader serverIn = null;
     private HttpStreamWriter serverOut = null;
     private VirtualPath preVirtualPath = null;
+
+    // clientOut is handed to a spawned PassResponseExecutor as well, and a target change can
+    // force-close the server socket it's blocked reading from, waking it into its own error path.
+    // At most one HTTP response may reach the client per connection, so whichever thread (this
+    // one or the child) hits an error first claims the write; the loser skips it rather than
+    // racing unsynchronized writes onto the shared HttpStreamWriter.
+    private final AtomicBoolean errorResponseClaimed = new AtomicBoolean(false);
 
     private final int connectTimeout;
     private final int readTimeout;
@@ -108,6 +116,15 @@ public class PassRequestExecutor implements Stopable {
 
     public Thread getThread(){
         return this.thisThread;
+    }
+
+    /**
+     * At most one caller may write the client-facing error response for this connection.
+     * @return true if the caller won the claim and may write to clientOut; false if another
+     *         thread already claimed it (the caller should skip writing).
+     */
+    public boolean claimErrorResponse(){
+        return errorResponseClaimed.compareAndSet(false, true);
     }
 
     @Override
@@ -256,7 +273,7 @@ public class PassRequestExecutor implements Stopable {
                     , e
             );
             try {
-                if (clientOut != null) {
+                if (clientOut != null && claimErrorResponse()) {
                     HtmlUtil.writeBadGatewayResponse(clientOut, e, this.currentLocale);
                 }
             } catch (IOException io) {
@@ -275,7 +292,7 @@ public class PassRequestExecutor implements Stopable {
         } catch (NotFoundVhostException e) {
             logger.warn("{}, {}", uid, e.getMessage());
             try {
-                if (clientOut != null) {
+                if (clientOut != null && claimErrorResponse()) {
                     HtmlUtil.writeNotFoundVhostResponse(clientOut, e.getRequestHost(), e.getRequestPath(), this.currentLocale);
                 }
             } catch (IOException io) {
@@ -286,7 +303,7 @@ public class PassRequestExecutor implements Stopable {
         } catch (NotFoundProxyVirtualHostsException e) {
             logger.warn("{}, {}", uid, e.getMessage());
             try {
-                if (clientOut != null) {
+                if (clientOut != null && claimErrorResponse()) {
                     HtmlUtil.writeNoVhostsResponse(clientOut, this.clientId, this.oidHeader, this.currentLocale);
                 }
             } catch (IOException io) {
