@@ -44,22 +44,23 @@ public class VThreadExecutor {
 
     public static void stopAll(){
 
-        try {
-            Set<String> names = runningExecutors.keySet();
+        Set<String> names = runningExecutors.keySet();
 
-            for (String name : names) {
+        for (String name : names) {
 
-                Stopable stopable = runningExecutors.get(name);
+            Stopable stopable = runningExecutors.get(name);
 
-                if (stopable == null) continue;
+            if (stopable == null) continue;
 
+            // Each stop() is isolated: one failing Stopable must not prevent the rest of the
+            // registered threads from being told to stop.
+            try {
                 if (logger.isDebugEnabled()) logger.debug("stopped running vt - {}", stopable.getName());
 
                 stopable.stop();
+            } catch (Exception e){
+                logger.error("errorVtStopAll - " + e.getMessage(), e);
             }
-
-        } catch (Exception e){
-            logger.error("errorVtStopAll - " + e.getMessage(), e);
         }
 
     }
