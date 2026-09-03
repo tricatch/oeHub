@@ -267,6 +267,10 @@ public class ProxyController {
             v.setVhostContent((String) m.get("vhostContent"));
             v.setSelected(Boolean.TRUE.equals(m.get("selected")));
             v.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
+            // "collabo" only makes sense with a live parent reference, which an import can't
+            // recreate, so treat anything but an explicit "private" as public (import creates
+            // standalone entries, never collabo refs).
+            v.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
             return v;
         }).toList();
         ctx.json(vhostService.importVhosts(hubUser.getUserNo(), entries, merge));
@@ -315,26 +319,36 @@ public class ProxyController {
                 ctx.status(400).result("Invalid vhost configuration: " + e.getCause().getMessage());
                 return;
             }
-        } else {
-            confService.set(name, hubUser.getUserNo(), value);
-            // Re-push the currently selected vhosts so the new LOCAL_SVR override takes effect immediately.
-            if ("local_svr".equals(name) && !applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+        } else if ("local_svr".equals(name)) {
+            // Validate the new value by re-pushing the currently selected vhosts under it
+            // *before* persisting, so a value that fails to apply never ends up saved (same
+            // validate-before-persist rule as the "vhost" branch above).
+            if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip(), value)) {
                 ctx.status(400).result("Invalid vhost configuration");
                 return;
             }
+            confService.set(name, hubUser.getUserNo(), value);
+        } else {
+            confService.set(name, hubUser.getUserNo(), value);
         }
         ctx.status(204);
     }
 
     private boolean applyMergedConfig(Long userNo, String routeIp) {
-        return applyMergedConfig(vhostService, confService, userNo, routeIp);
+        return applyMergedConfig(vhostService, confService, userNo, routeIp, null);
+    }
+
+    // Used by apiConfSet's local_svr branch to validate a candidate override value against the
+    // currently selected vhosts before it's persisted, without touching the DB first.
+    private boolean applyMergedConfig(Long userNo, String routeIp, String localSvrOverride) {
+        return applyMergedConfig(vhostService, confService, userNo, routeIp, localSvrOverride);
     }
 
     // Recompute the merged vhost config from the user's currently selected virtual hosts
     // and push it live into the running proxy — usable from outside this controller
     // (e.g. on login) without needing a ProxyController instance.
     public static boolean applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
-        return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp);
+        return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, null);
     }
 
     // routeIp identifies the connecting client for the proxy's IP-to-owner lookup and must
@@ -343,7 +357,9 @@ public class ProxyController {
     // Returns false (and leaves the persisted "vhost" config untouched) if the merged YAML was
     // rejected by ReverseProxyServer — same validate-before-persist rule as apiConfSet's vhost
     // handling, so a bad merge never leaves the DB holding config that silently fails to reload.
-    private static boolean applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp) {
+    // localSvrOverride, when non-null, is used in place of the persisted "local_svr" conf value
+    // (see resolveLocalSvr) so a candidate value can be validated before it's saved.
+    private static boolean applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp, String localSvrOverride) {
         String merged;
         try {
             var selected = vhostService.listSelected(userNo);
@@ -353,7 +369,7 @@ public class ProxyController {
             return false;
         }
         try {
-            applyAndPersistVhostConfig(confService, userNo, routeIp, merged);
+            applyAndPersistVhostConfig(confService, userNo, routeIp, merged, localSvrOverride);
             return true;
         } catch (VhostApplyException e) {
             return false;
@@ -365,9 +381,15 @@ public class ProxyController {
     // never leaves the DB holding YAML that will keep failing to load (silently) on every future
     // reload/restart. A null/blank value clears the live routing instead of applying anything.
     private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml) throws VhostApplyException {
+        applyAndPersistVhostConfig(confService, userNo, routeIp, vhostYaml, null);
+    }
+
+    // localSvrOverride, when non-null, is used instead of the persisted "local_svr" conf value —
+    // lets a candidate override be validated (via setVirtualHosts) before it's saved to the DB.
+    private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml, String localSvrOverride) throws VhostApplyException {
         try {
             if (vhostYaml != null && !vhostYaml.isBlank()) {
-                var localSvr = resolveLocalSvr(confService, userNo, routeIp);
+                var localSvr = resolveLocalSvr(confService, userNo, routeIp, localSvrOverride);
                 ReverseProxyServer.setVirtualHosts(routeIp, userNo, substituteLocalSvr(vhostYaml, localSvr));
             } else {
                 ReverseProxyServer.clearVirtualHosts(routeIp, userNo);
@@ -383,8 +405,8 @@ public class ProxyController {
         VhostApplyException(Throwable cause) { super(cause); }
     }
 
-    private static String resolveLocalSvr(ProxyConfService confService, Long userNo, String fallback) {
-        var override = confService.get("local_svr", userNo);
+    private static String resolveLocalSvr(ProxyConfService confService, Long userNo, String fallback, String explicitOverride) {
+        var override = explicitOverride != null ? explicitOverride : confService.get("local_svr", userNo);
         return override != null && !override.isBlank() ? override : fallback;
     }
 

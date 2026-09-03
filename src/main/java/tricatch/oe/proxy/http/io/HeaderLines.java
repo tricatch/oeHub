@@ -629,13 +629,19 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid status code: " + statusCodeStr);
         }
-        
+
+        // Reject ambiguous Content-Length/Transfer-Encoding framing from the upstream response
+        // too — the request side already guards against CL.TE/TE.CL/CL.CL smuggling, but a
+        // malformed/ambiguous response can just as easily desync this client's keep-alive
+        // connection if left unchecked here.
+        validateFraming();
+
         // Extract connection from headers
         String connection = getHeaderValueAsString(HTTP.HEADER.CONNECTION);
-        
+
         // Extract content length from headers
         Integer contentLength = getHeaderValueAsInt(HTTP.HEADER.CONTENT_LENGTH);
-        
+
         // Determine body stream type
         HttpStream httpStream = determineResponseBodyStreamType(statusCode, isHeadRequest);
 

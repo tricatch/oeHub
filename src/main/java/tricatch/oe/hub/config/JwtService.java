@@ -80,7 +80,7 @@ public class JwtService {
                 .parseSignedClaims(token)
                 .getPayload();
             return Long.parseLong(claims.getSubject());
-        } catch (JwtException | NumberFormatException e) {
+        } catch (JwtException | IllegalArgumentException e) {
             logger.warn("errorJwtVerify - {}", e.getMessage(), e);
         }
         return null;

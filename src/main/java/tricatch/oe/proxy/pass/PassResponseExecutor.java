@@ -118,6 +118,14 @@ public class PassResponseExecutor implements Stopable {
                     }
                     return;
                 }
+
+                if (HttpStream.WEBSOCKET != response.getBodyStream()) {
+                    // Undo the eager timeout widening PassRequestExecutor applies as soon as it
+                    // merely sees an Upgrade: websocket request header, since this response shows
+                    // the upgrade wasn't actually confirmed.
+                    passRequestExecutor.restoreConfiguredSoTimeout();
+                }
+
                 clientOut.writeHeaders(responseHeaders);
                 responseHeaderSent = true;
 
@@ -150,6 +158,11 @@ public class PassResponseExecutor implements Stopable {
             if (!responseHeaderSent) writeBadGatewayIfPossible(e);
         } catch (IOException e) {
             logger.error( this.passRequestExecutor.getUid() + ", " + e.getMessage(), e);
+            if (!responseHeaderSent) writeBadGatewayIfPossible(e);
+        } catch (IllegalArgumentException e) {
+            // Malformed response line, or ambiguous Content-Length/Transfer-Encoding framing
+            // rejected by HeaderLines.validateFraming() to prevent response smuggling.
+            logger.warn("{}, Rejected malformed/ambiguous response: {}", this.passRequestExecutor.getUid(), e.getMessage());
             if (!responseHeaderSent) writeBadGatewayIfPossible(e);
         } finally {
 

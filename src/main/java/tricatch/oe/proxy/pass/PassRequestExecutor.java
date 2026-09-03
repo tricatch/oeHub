@@ -133,6 +133,16 @@ public class PassRequestExecutor implements Stopable {
         return this.socketGeneration.get();
     }
 
+    // Called by PassResponseExecutor once a response comes back that did NOT confirm a
+    // WebSocket upgrade (status other than 101), to undo the eager timeout widening applied
+    // in the request loop as soon as an Upgrade: websocket request header was merely seen —
+    // otherwise a rejected upgrade would leave this keep-alive connection running with the
+    // much longer websocket idle timeout for every later request.
+    public void restoreConfiguredSoTimeout() throws SocketException {
+        if (this.clientSocket != null) this.clientSocket.setSoTimeout(this.readTimeout);
+        if (this.serverSocket != null) this.serverSocket.setSoTimeout(this.readTimeout);
+    }
+
     public VirtualPath getCurrentVirtualPath(){
         return this.preVirtualPath;
     }
@@ -237,6 +247,12 @@ public class PassRequestExecutor implements Stopable {
                 //create socket - url matched
                 if (serverSocket == null || targetChanged) {
 
+                    // Bump the generation *before* tearing down the old socket, so a stale child
+                    // woken by forceCloseServerSocket() below immediately observes itself as
+                    // superseded via isCurrentGeneration() instead of racing the new socket's
+                    // (possibly slow, up to connectTimeout) setup.
+                    long myGeneration = socketGeneration.incrementAndGet();
+
                     //create new server socket - new target route
                     if (targetChanged && serverSocket != null) forceCloseServerSocket();
 
@@ -247,7 +263,6 @@ public class PassRequestExecutor implements Stopable {
                     String tName = Thread.currentThread().getName();
                     if( tName.endsWith("x0") ) tName = tName.substring(0, tName.length()-1) + reqCounter;
 
-                    long myGeneration = socketGeneration.incrementAndGet();
                     child =  VThreadExecutor.run(
                             new PassResponseExecutor(this, serverIn, clientOut, myGeneration)
                             , tName

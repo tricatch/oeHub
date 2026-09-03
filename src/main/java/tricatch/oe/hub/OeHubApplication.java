@@ -135,13 +135,15 @@ public class OeHubApplication {
                     ctx.skipRemainingHandlers();
                 }
             });
-            config.routes.before("/oehub/settings", ctx -> {
+            io.javalin.http.Handler settingsAdminOnly = ctx -> {
                 var user = AuthController.currentUser(ctx);
                 if (user == null || !"adm".equals(user.getRole())) {
                     ctx.status(403).result("Forbidden");
                     ctx.skipRemainingHandlers();
                 }
-            });
+            };
+            config.routes.before("/oehub/settings", settingsAdminOnly);
+            config.routes.before("/oehub/settings/*", settingsAdminOnly);
             config.routes.before("/oehub/admin/*", ctx -> {
                 var user = AuthController.currentUser(ctx);
                 if (user == null || !"adm".equals(user.getRole())) {

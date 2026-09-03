@@ -171,6 +171,10 @@ public class HostsController {
             h.setHostsContent((String) m.get("hostsContent"));
             h.setSelected(Boolean.TRUE.equals(m.get("selected")));
             h.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
+            // "collabo" only makes sense with a live parent reference, which an import can't
+            // recreate, so treat anything but an explicit "private" as public (import creates
+            // standalone entries, never collabo refs).
+            h.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
             return h;
         }).toList();
         var updated = hostsProfService.importProfiles(hubUser.getUserNo(), entries, merge);

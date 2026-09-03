@@ -364,10 +364,11 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       if (!r.ok) throw new Error('load failed');
       return r.text();
     }).then(raw => {
+      if (activeVhostId !== result.vhostId) return; // a newer selection has since taken over
       const sep = raw.indexOf('\n\n');
       setContent(sep >= 0 ? raw.slice(sep + 2) : raw);
       editor.resize(true);
-    }).catch(() => showToast(MSG['toast.load.failed']));
+    }).catch(() => { if (activeVhostId === result.vhostId) showToast(MSG['toast.load.failed']); });
   }
 
   // ── Auto-save ──────────────────────────────────────────────
@@ -691,8 +692,15 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     const q = searchInputEl.value.trim();
     const container = document.getElementById('searchResults');
     if (!q) { container.innerHTML = ''; return; }
-    const res = await fetch('/api/proxy/vhosts/search?q=' + encodeURIComponent(q));
-    const results = await res.json();
+    let results;
+    try {
+      const res = await fetch('/api/proxy/vhosts/search?q=' + encodeURIComponent(q));
+      if (!res.ok) throw new Error('search failed');
+      results = await res.json();
+    } catch (e) {
+      showToast(MSG['toast.load.failed']);
+      return;
+    }
     container.innerHTML = '';
     if (results.length === 0) {
       container.innerHTML = '<div class="oe-search-empty">'+MSG['ui.no.results']+'</div>';

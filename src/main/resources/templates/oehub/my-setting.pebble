@@ -91,7 +91,7 @@
 </div>
 <script>initWidthToggle(document.getElementById('mySettingApp'), document.getElementById('btnToggleWidth'));</script>
 
-<script src="/js/ua-preset.js"></script>
+<script src="/js/preset-table.js"></script>
 <script>
   initUaPresetTable({
     apiBase: '/api/hosts/ua/my',
@@ -102,7 +102,6 @@
   });
 </script>
 
-<script src="/js/url-preset.js"></script>
 <script>
   initUrlPresetTable({
     apiBase: '/api/hosts/url/my',

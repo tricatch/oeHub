@@ -280,7 +280,7 @@
             <td class="oe-info-label">{{ msg['settings.upstreamcerts.label'] }}</td>
             <td>
               <textarea id="upstreamTrustedCerts" class="form-control form-control-sm" rows="4"
-                        placeholder="internal-api.local a1b2c3...64hex  # short note">{{ upstreamTrustedCerts }}</textarea>
+                        placeholder="{{ msg['settings.upstreamcerts.placeholder'] }}">{{ upstreamTrustedCerts }}</textarea>
               <div class="form-text">{{ msg['settings.upstreamcerts.help'] }}</div>
             </td>
           </tr>
@@ -321,7 +321,7 @@
 </div>
 <script>initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
 
-<script src="/js/ua-preset.js"></script>
+<script src="/js/preset-table.js"></script>
 <script>
   initUaPresetTable({
     apiBase: '/api/admin/hosts/ua',
@@ -331,7 +331,6 @@
   });
 </script>
 
-<script src="/js/url-preset.js"></script>
 <script>
   initUrlPresetTable({
     apiBase: '/api/admin/hosts/url',
