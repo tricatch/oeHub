@@ -84,7 +84,10 @@ class RelayChunkedTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        RelayChunked.relay("client1", "rid3", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayChunked.relay("client1", "rid3", HttpStream.Flow.RES, in, out);
+
+        // A chunk-size parse failure leaves the connection desynced: it must never be reused.
+        assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);
 
         // Nothing should have been written to the client for a chunk-size line that was
         // rejected before any framing decision was made.
@@ -96,5 +99,22 @@ class RelayChunkedTest {
         int n = in.read(remaining);
         assertThat(n).isEqualTo(trailingBytes.length);
         assertThat(remaining).isEqualTo(trailingBytes);
+    }
+
+    @Test
+    void prematureEofMidChunkData_reportsClose() throws Exception {
+        // The backend declares a 20-byte chunk but the connection dies after only 5 bytes.
+        ByteArrayOutputStream input = new ByteArrayOutputStream();
+        input.write("14".getBytes(StandardCharsets.US_ASCII)); // 0x14 = 20
+        input.write(HTTP.CRLF);
+        input.write("hello".getBytes(StandardCharsets.US_ASCII)); // only 5 of the promised 20 bytes
+
+        HttpStreamReader in = new HttpStreamReader(new ByteArrayInputStream(input.toByteArray()), HTTP.BODY_BUFFER_SIZE);
+        ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
+        HttpStreamWriter out = new HttpStreamWriter(rawOut);
+
+        HttpStream.Connection result = RelayChunked.relay("client1", "rid4", HttpStream.Flow.RES, in, out);
+
+        assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);
     }
 }

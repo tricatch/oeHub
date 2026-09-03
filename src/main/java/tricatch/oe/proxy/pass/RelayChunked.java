@@ -45,6 +45,7 @@ public class RelayChunked {
         byte[] chunkBodyBuffer = new byte[HTTP.BODY_BUFFER_SIZE];
         java.io.ByteArrayOutputStream bodyCollector = new java.io.ByteArrayOutputStream();
         boolean bodyExceedsLimit = false;
+        boolean truncated = false;
 
         while (true) {
             // Read chunk size line
@@ -55,9 +56,10 @@ public class RelayChunked {
                         , rid
                         , flow
                 );
+                truncated = true;
                 break;
             }
-            
+
             int chunkSize;
             try {
                 chunkSize = parseHexChunkSize(chunkSizeBuffer.getBuffer(), chunkSizeBuffer.getLength());
@@ -67,6 +69,7 @@ public class RelayChunked {
                         , flow
                         , new String(chunkSizeBuffer.getBuffer(), 0, chunkSizeBuffer.getLength())
                 );
+                truncated = true;
                 break;
             }
 
@@ -92,6 +95,7 @@ public class RelayChunked {
                                 , rid
                                 , flow
                         );
+                        truncated = true;
                         break;
                     }
 
@@ -134,6 +138,7 @@ public class RelayChunked {
                             , rid
                             , flow
                     );
+                    truncated = true;
                     break;
                 }
                 out.write(chunkBodyBuffer, 0, bytesRead);
@@ -168,6 +173,7 @@ public class RelayChunked {
                 out.flush();
             } else {
                 logger.warn("{}, {}, Invalid chunk end marker", rid, flow);
+                truncated = true;
                 break;
             }
         }
@@ -196,7 +202,9 @@ public class RelayChunked {
             );
         }
         
-        return HttpStream.Connection.KEEP_ALIVE;
+        // Any of the EOF/parse-error breaks above leaves the connection desynced or mid-frame,
+        // so it must not be handed back for reuse.
+        return truncated ? HttpStream.Connection.CLOSE : HttpStream.Connection.KEEP_ALIVE;
     }
 
     private static int parseHexChunkSize(byte[] buf, int len) {

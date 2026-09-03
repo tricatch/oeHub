@@ -39,6 +39,7 @@ public class RelayContentLength {
 
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int remainingBytes = contentLength;
+        boolean truncated = false;
 
         while (remainingBytes > 0) {
             int bytesToRead = Math.min(buffer.length, remainingBytes);
@@ -46,6 +47,7 @@ public class RelayContentLength {
 
             if (bytesRead == -1) {
                 logger.warn("{}, {}, Unexpected end of stream while reading content-length body", rid, flow);
+                truncated = true;
                 break;
             }
 
@@ -82,6 +84,8 @@ public class RelayContentLength {
             logger.debug("{}, {}, Content-length body relay completed", rid, flow);
         }
 
-        return HttpStream.Connection.KEEP_ALIVE;
+        // A body that ended early (EOF before contentLength was fully read) leaves the connection
+        // desynced, so it must not be handed back for reuse.
+        return truncated ? HttpStream.Connection.CLOSE : HttpStream.Connection.KEEP_ALIVE;
     }
 }
