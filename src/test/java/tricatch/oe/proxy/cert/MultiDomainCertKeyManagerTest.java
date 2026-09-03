@@ -64,6 +64,12 @@ class MultiDomainCertKeyManagerTest {
         @Override public String[] getLocalSupportedSignatureAlgorithms() { return new String[0]; }
     }
 
+    /** Simulates a handshake with no SNI extension at all (an old client, or a scanner). */
+    private static class FakeNoSniSession extends FakeSniSession {
+        FakeNoSniSession() { super("unused"); }
+        @Override public List<SNIServerName> getRequestedServerNames() { return Collections.emptyList(); }
+    }
+
     /** SSLSocket's own methods have default (UnsupportedOperationException) bodies since JDK 9; only the handshake session is needed here. */
     private static class FakeSslSocket extends SSLSocket {
         private final SSLSession handshakeSession;
@@ -143,5 +149,24 @@ class MultiDomainCertKeyManagerTest {
         assertThat(aliasesReturned).containsExactly(domain);
         assertThat(missingChainAfterAlias.get()).isEqualTo(0);
         assertThat(missingKeyAfterAlias.get()).isEqualTo(0);
+    }
+
+    @Test
+    void noSniHandshake_failsGracefully_withoutThrowingOutOfChooseServerAlias() throws Exception {
+        // SSLCertificateCreator can't build a certificate for a null domain (BouncyCastle rejects
+        // a null SAN) — that's pre-existing, not something this change alters. What this change
+        // must preserve is that the failure is caught and logged inside chooseServerAlias rather
+        // than propagating out and crashing the handshake thread. getCertificateChain(null) and
+        // getPrivateKey(null) both stay null, exactly as before this class switched to
+        // ConcurrentHashMap (which forbids null keys) for the real per-domain cache.
+        CertificateKeyPair root = new RootCertificateCreator().generateRootCertificate("test-root-ca");
+        MultiDomainCertKeyManager manager = new MultiDomainCertKeyManager(root.getCertificate(), root.getPrivateKey());
+
+        SSLSocket socket = new FakeSslSocket(new FakeNoSniSession());
+        String alias = manager.chooseServerAlias("RSA", null, socket);
+
+        assertThat(alias).isNull();
+        assertThat(manager.getCertificateChain(null)).isNull();
+        assertThat(manager.getPrivateKey(null)).isNull();
     }
 }

@@ -24,6 +24,7 @@ import tricatch.oe.proxy.util.HtmlUtil;
 import tricatch.oe.proxy.util.SocketUtils;
 import tricatch.oe.proxy.util.SysUtil;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketException;
@@ -32,6 +33,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
 public class PassRequestExecutor implements Stopable {
@@ -61,6 +63,12 @@ public class PassRequestExecutor implements Stopable {
     // racing unsynchronized writes onto the shared HttpStreamWriter.
     private final AtomicBoolean errorResponseClaimed = new AtomicBoolean(false);
 
+    // Bumped every time a new server socket/child PassResponseExecutor replaces the previous one
+    // (target change). A child captures the generation it was spawned for; if forceCloseServerSocket()
+    // wakes it with an error after a newer generation has already started, it can tell it's been
+    // superseded and must not write anything (error or otherwise) to the shared clientOut.
+    private final AtomicLong socketGeneration = new AtomicLong(0);
+
     private final int connectTimeout;
     private final int readTimeout;
 
@@ -76,6 +84,7 @@ public class PassRequestExecutor implements Stopable {
     private String clientId = null;
     private String currentLocale = "en";
     private String currentHost = null;
+    private String currentMethod = null;
     private String oidHeader = null;
 
     public PassRequestExecutor(Socket clientSocket, int connectTimeout, int readTimeout){
@@ -114,6 +123,14 @@ public class PassRequestExecutor implements Stopable {
 
     public String getCurrentHost(){
         return this.currentHost;
+    }
+
+    public String getCurrentMethod(){
+        return this.currentMethod;
+    }
+
+    public long getSocketGeneration(){
+        return this.socketGeneration.get();
     }
 
     public VirtualPath getCurrentVirtualPath(){
@@ -180,6 +197,7 @@ public class PassRequestExecutor implements Stopable {
                 // Parse HTTP request
                 HttpRequest httpRequest = requestHeaders.parseHttpRequest();
                 this.currentHost = httpRequest.getHost();
+                this.currentMethod = httpRequest.getMethod();
 
                 if (logger.isDebugEnabled()) {
                     logger.debug("{}, {}, Request Headers\n{}"
@@ -229,8 +247,9 @@ public class PassRequestExecutor implements Stopable {
                     String tName = Thread.currentThread().getName();
                     if( tName.endsWith("x0") ) tName = tName.substring(0, tName.length()-1) + reqCounter;
 
+                    long myGeneration = socketGeneration.incrementAndGet();
                     child =  VThreadExecutor.run(
-                            new PassResponseExecutor(this, serverIn, clientOut)
+                            new PassResponseExecutor(this, serverIn, clientOut, myGeneration)
                             , tName
                         );
 
@@ -330,13 +349,13 @@ public class PassRequestExecutor implements Stopable {
             logger.debug( "{}, vtEnd & closeSocket, vtRes={}", this.uid, child != null ? child.getName() : "none" );
         }
 
-        if( serverIn !=null ) try{ serverIn.close(); }catch(Exception e){ logger.debug("Error closing serverIn: {}", e.getMessage()); }
-        if( serverOut !=null ) try{ serverOut.close(); }catch(Exception e){ logger.debug("Error closing serverOut: {}", e.getMessage()); }
-        if( serverSocket !=null ) try{ serverSocket.close(); }catch(Exception e){ logger.debug("Error closing serverSocket: {}", e.getMessage()); }
+        closeQuietly(serverIn, "serverIn");
+        closeQuietly(serverOut, "serverOut");
+        closeQuietly(serverSocket, "serverSocket");
 
-        if( clientIn !=null ) try{  clientIn.close(); }catch (Exception e){ logger.debug("Error closing clientIn: {}", e.getMessage()); }
-        if( clientOut !=null ) try{ clientOut.close(); }catch(Exception e){ logger.debug("Error closing clientOut: {}", e.getMessage()); }
-        if( clientSocket !=null ) try{ clientSocket.close(); }catch(Exception e){ logger.debug("Error closing clientSocket: {}", e.getMessage()); }
+        closeQuietly(clientIn, "clientIn");
+        closeQuietly(clientOut, "clientOut");
+        closeQuietly(clientSocket, "clientSocket");
 
         serverIn = null;
         serverOut = null;
@@ -349,13 +368,22 @@ public class PassRequestExecutor implements Stopable {
 
     private void forceCloseServerSocket(){
 
-        if (serverIn != null)  try { serverIn.close();  } catch (Exception e) { logger.debug("Error closing previous serverIn: {}", e.getMessage()); }
-        if (serverOut != null) try { serverOut.close(); } catch (Exception e) { logger.debug("Error closing previous serverOut: {}", e.getMessage()); }
-        if (serverSocket != null) try { serverSocket.close(); } catch (Exception e) { logger.debug("Error closing previous serverSocket: {}", e.getMessage()); }
+        closeQuietly(serverIn, "previous serverIn");
+        closeQuietly(serverOut, "previous serverOut");
+        closeQuietly(serverSocket, "previous serverSocket");
 
         serverIn = null;
         serverOut = null;
         serverSocket = null;
+    }
+
+    private void closeQuietly(Closeable resource, String label) {
+        if (resource == null) return;
+        try {
+            resource.close();
+        } catch (Exception e) {
+            logger.debug("Error closing {}: {}", label, e.getMessage());
+        }
     }
 
     private VirtualPath getVirtualPath(String rid, String vhost, String uri) throws IOException {

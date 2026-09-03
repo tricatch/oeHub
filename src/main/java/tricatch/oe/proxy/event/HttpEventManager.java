@@ -94,13 +94,7 @@ public class HttpEventManager {
 
         ChannelConsumers channelConsumers = clientConsumers.get(clientId);
 
-        if (channelConsumers == null) {
-            defaultConsumer.process(event);
-            return;
-        }
-
-        if (channelConsumers.isEmpty()) {
-            clientConsumers.remove(clientId);
+        if (channelConsumers == null || channelConsumers.isEmpty()) {
             defaultConsumer.process(event);
             return;
         }
@@ -116,10 +110,15 @@ public class HttpEventManager {
                 // removal mid-loop.
                 logger.warn("Consumer failed, removing: clientId={}, channelId={}, error={}",
                         clientId, channelId, e.getMessage(), e);
-                channelConsumers.remove(channelId);
-                if (channelConsumers.isEmpty()) {
-                    clientConsumers.remove(clientId);
-                }
+                // computeIfPresent makes "remove this channel, then drop the client entry if that
+                // was the last one" atomic with respect to addEventConsumer()'s computeIfAbsent on
+                // the same key: ConcurrentHashMap serializes compute-family calls per key, so a
+                // concurrent registration for this clientId can no longer land in a ChannelConsumers
+                // instance that this cleanup is about to (or just did) drop from the outer map.
+                clientConsumers.computeIfPresent(clientId, (id, cc) -> {
+                    cc.remove(channelId);
+                    return cc.isEmpty() ? null : cc;
+                });
             }
         }
     }
@@ -198,18 +197,16 @@ public class HttpEventManager {
         String clientId = consumer.getClientId();
         String channelId = consumer.getChannelId();
 
-        ChannelConsumers channelConsumers = clientConsumers.get(clientId);
-
-        if( channelConsumers==null ) return;
-
-        channelConsumers.remove(channelId);
+        // Same check-then-act hazard as dispatch()'s cleanup: a concurrent addEventConsumer() for
+        // this clientId could otherwise land its new channel in a ChannelConsumers instance this
+        // unsubscribe is dropping. computeIfPresent keeps it atomic per key.
+        clientConsumers.computeIfPresent(clientId, (id, cc) -> {
+            cc.remove(channelId);
+            return cc.isEmpty() ? null : cc;
+        });
 
         if( logger.isDebugEnabled() ) {
             logger.debug("Removed subscriber for clientId={} / channelId={}", clientId, channelId);
-        }
-
-        if( channelConsumers.isEmpty() ){
-            clientConsumers.remove(clientId);
         }
     }
 

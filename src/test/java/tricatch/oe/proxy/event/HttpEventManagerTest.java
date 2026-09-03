@@ -119,6 +119,75 @@ class HttpEventManagerTest {
         }
     }
 
+    @Test
+    void registrationRacingConcurrentDispatchCleanup_neverLosesTheNewChannel() throws Exception {
+        // Races addEventConsumer() (new channel) against dispatch()'s failure-cleanup path (a
+        // different, always-failing channel on the same clientId being removed) many times, each
+        // round on a fresh clientId so no round can leave residue for the next.
+        HttpEventManager manager = HttpEventManager.getInstance();
+        int rounds = 100;
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+
+        try {
+            for (int i = 0; i < rounds; i++) {
+                final int round = i;
+                String clientId = "race-client-" + UUID.randomUUID();
+                List<HttpEvent> received = new CopyOnWriteArrayList<>();
+
+                HttpEventConsumer failing = new HttpEventConsumer() {
+                    public String getClientId() { return clientId; }
+                    public String getChannelId() { return "failing"; }
+                    public void process(HttpEvent event) throws IOException { throw new IOException("boom"); }
+                };
+                manager.addEventConsumer(failing);
+
+                HttpEventConsumer good = new HttpEventConsumer() {
+                    public String getClientId() { return clientId; }
+                    public String getChannelId() { return "good"; }
+                    public void process(HttpEvent event) { received.add(event); }
+                };
+
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch go = new CountDownLatch(1);
+                Future<?> f1 = pool.submit(() -> {
+                    ready.countDown();
+                    await(go);
+                    // Triggers dispatch()'s failure-cleanup path for "failing".
+                    manager.enqueue(new HttpEvent(clientId, "rid-fail-" + round, HttpEventType.REQ_HEADER));
+                });
+                Future<?> f2 = pool.submit(() -> {
+                    ready.countDown();
+                    await(go);
+                    manager.addEventConsumer(good);
+                });
+                ready.await();
+                go.countDown();
+                f1.get(2, TimeUnit.SECONDS);
+                f2.get(2, TimeUnit.SECONDS);
+
+                // A later event must still reach "good" — proving its registration above wasn't
+                // lost to the concurrent cleanup of "failing".
+                manager.enqueue(new HttpEvent(clientId, "rid-followup-" + round, HttpEventType.REQ_HEADER));
+                waitUntil(() -> !received.isEmpty(), 2000);
+
+                assertThat(received).as("round %d", i).isNotEmpty();
+
+                manager.removeEventConsumer(good);
+                manager.removeEventConsumer(failing);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static void waitUntil(java.util.function.BooleanSupplier condition, long timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {

@@ -517,10 +517,12 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
      * Parse HTTP response from header lines
      * Parses the first line to extract version, status code, and status message
      * Determines body stream type based on headers
+     * @param isHeadRequest true if the request this is a response to used the HEAD method —
+     *                       such responses never have a body regardless of what the headers say
      * @return HttpResponse object with parsed information
      * @throws IllegalArgumentException if response line is invalid
      */
-    public HttpResponse parseHttpResponse() {
+    public HttpResponse parseHttpResponse(boolean isHeadRequest) {
         if (isEmpty()) {
             throw new IllegalArgumentException("HeaderLines is empty");
         }
@@ -576,17 +578,18 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         Integer contentLength = getHeaderValueAsInt(HTTP.HEADER.CONTENT_LENGTH);
         
         // Determine body stream type
-        HttpStream httpStream = determineResponseBodyStreamType(statusCode);
-        
+        HttpStream httpStream = determineResponseBodyStreamType(statusCode, isHeadRequest);
+
         return new HttpResponse(version, statusCode, statusMessage, connection, contentLength, httpStream, this);
     }
     
     /**
      * Determine response body stream type based on status code and headers
      * @param statusCode HTTP status code
+     * @param isHeadRequest true if this is a response to a HEAD request
      * @return BodyStream type
      */
-    private HttpStream determineResponseBodyStreamType(int statusCode) {
+    private HttpStream determineResponseBodyStreamType(int statusCode, boolean isHeadRequest) {
         // Check for WebSocket upgrade (101 Switching Protocols)
         if (statusCode == 101) {
             String upgrade = getHeaderValueAsString(HTTP.HEADER.UPGRADE);
@@ -598,8 +601,10 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
             }
         }
 
-        // Informational (1xx) responses and 204/304 never have a body, regardless of headers
-        if (statusCode < 200 || statusCode == 204 || statusCode == 304) {
+        // Informational (1xx) responses, 204/304, and any response to a HEAD request never have
+        // a body, regardless of headers — a HEAD response can carry a Content-Length describing
+        // what a GET would return, without actually sending that body.
+        if (statusCode < 200 || statusCode == 204 || statusCode == 304 || isHeadRequest) {
             return HttpStream.NONE;
         }
 

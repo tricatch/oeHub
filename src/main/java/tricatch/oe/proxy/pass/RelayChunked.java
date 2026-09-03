@@ -13,7 +13,6 @@ import tricatch.oe.proxy.event.HttpEventManager;
 import tricatch.oe.proxy.event.HttpEventType;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Class for handling chunked transfer encoding HTTP body relay operations
@@ -43,8 +42,7 @@ public class RelayChunked {
         ByteBuffer chunkSizeBuffer = new ByteBuffer(HTTP.CHUNK_SIZE_LINE_LENGTH);
         ByteBuffer chunkTrailerBuffer = new ByteBuffer(HTTP.CHUNK_SIZE_LINE_LENGTH);
         byte[] chunkBodyBuffer = new byte[HTTP.BODY_BUFFER_SIZE];
-        java.io.ByteArrayOutputStream bodyCollector = new java.io.ByteArrayOutputStream();
-        boolean bodyExceedsLimit = false;
+        MonitorBodyCollector bodyCollector = new MonitorBodyCollector();
         boolean truncated = false;
 
         while (true) {
@@ -143,15 +141,7 @@ public class RelayChunked {
                 }
                 out.write(chunkBodyBuffer, 0, bytesRead);
 
-                // Collect body data for logging, up to the monitor display limit
-                if (!bodyExceedsLimit) {
-                    if (bodyCollector.size() + bytesRead > HTTP.MONITOR_BODY_LIMIT) {
-                        bodyExceedsLimit = true;
-                        bodyCollector.reset();
-                    } else {
-                        bodyCollector.write(chunkBodyBuffer, 0, bytesRead);
-                    }
-                }
+                bodyCollector.add(chunkBodyBuffer, 0, bytesRead);
 
                 remainingBytes -= bytesRead;
                 
@@ -180,13 +170,7 @@ public class RelayChunked {
         
         out.flush();
 
-        byte[] bodyForEvent;
-        if (bodyExceedsLimit) {
-            String prefix = flow == HttpStream.Flow.REQ ? "Request" : "Response";
-            bodyForEvent = (prefix + " body exceeds " + (HTTP.MONITOR_BODY_LIMIT / 1024 / 1024) + "MB and is not supported for display.").getBytes(StandardCharsets.UTF_8);
-        } else {
-            bodyForEvent = bodyCollector.toByteArray();
-        }
+        byte[] bodyForEvent = bodyCollector.toEventBody(flow);
 
         // Enqueue body HttpEvent
         HttpEvent bodyEvent = new HttpEvent(clientId, rid,

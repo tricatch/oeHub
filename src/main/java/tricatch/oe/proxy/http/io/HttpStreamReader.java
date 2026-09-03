@@ -3,6 +3,7 @@ package tricatch.oe.proxy.http.io;
 import tricatch.oe.proxy.exception.MaxBufferExceedException;
 import tricatch.oe.proxy.http.HTTP;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -17,7 +18,7 @@ import java.io.InputStream;
  * Each instance here is only ever driven by a single thread at a time, so no
  * synchronization is needed to begin with.
  */
-public class HttpStreamReader {
+public class HttpStreamReader implements Closeable {
 
     private final InputStream in;
     private final byte[] buf;

@@ -28,13 +28,23 @@ public class PassResponseExecutor implements Stopable {
     private HttpStreamWriter clientOut = null;
     private HttpStreamReader serverIn = null;
 
+    // The generation this executor was spawned for (see PassRequestExecutor.socketGeneration).
+    // If a target change starts a newer generation while this one is still blocked/running, it
+    // must not write anything (error or otherwise) to the shared clientOut anymore.
+    private final long socketGeneration;
+
     private String rid;
 
-    public PassResponseExecutor(PassRequestExecutor passRequestExecutor, HttpStreamReader serverIn, HttpStreamWriter clientOut){
+    public PassResponseExecutor(PassRequestExecutor passRequestExecutor, HttpStreamReader serverIn, HttpStreamWriter clientOut, long socketGeneration){
         this.passRequestExecutor = passRequestExecutor;
         this.serverIn = serverIn;
         this.clientOut = clientOut;
+        this.socketGeneration = socketGeneration;
         this.rid = passRequestExecutor.getUid();
+    }
+
+    private boolean isCurrentGeneration() {
+        return passRequestExecutor.getSocketGeneration() == this.socketGeneration;
     }
 
     @Override
@@ -72,7 +82,8 @@ public class PassResponseExecutor implements Stopable {
                 }
 
                 //parse-res-header
-                HttpResponse response = responseHeaders.parseHttpResponse();
+                boolean isHeadRequest = "HEAD".equalsIgnoreCase(passRequestExecutor.getCurrentMethod());
+                HttpResponse response = responseHeaders.parseHttpResponse(isHeadRequest);
                 if (logger.isDebugEnabled()) {
                     logger.debug("{}, {}, Response Headers\n{}"
                             , rid
@@ -98,6 +109,15 @@ public class PassResponseExecutor implements Stopable {
                 HttpEventManager.getInstance().enqueue(resHeaderEvent);
 
                 //write-res-header
+                if (!isCurrentGeneration()) {
+                    // A target change already spawned a newer PassResponseExecutor for this
+                    // connection; writing this (now-orphaned) response would race that one's
+                    // writes on the shared clientOut. Abandon quietly instead.
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("{}, superseded by a newer target change; discarding response", rid);
+                    }
+                    return;
+                }
                 clientOut.writeHeaders(responseHeaders);
                 responseHeaderSent = true;
 
@@ -151,6 +171,7 @@ public class PassResponseExecutor implements Stopable {
     // waiting forever (see PassRequestExecutor's park loop, which only reads the client's next
     // request after this thread has already given up reading further responses).
     private void writeGatewayTimeoutIfPossible() {
+        if (!isCurrentGeneration()) return;
         VirtualPath vp = passRequestExecutor.getCurrentVirtualPath();
         if (clientOut == null || vp == null || !passRequestExecutor.claimErrorResponse()) return;
         try {
@@ -163,6 +184,7 @@ public class PassResponseExecutor implements Stopable {
     }
 
     private void writeBadGatewayIfPossible(Exception cause) {
+        if (!isCurrentGeneration()) return;
         VirtualPath vp = passRequestExecutor.getCurrentVirtualPath();
         if (clientOut == null || vp == null || !passRequestExecutor.claimErrorResponse()) return;
         try {

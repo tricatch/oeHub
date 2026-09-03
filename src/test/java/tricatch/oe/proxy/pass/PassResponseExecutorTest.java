@@ -29,7 +29,7 @@ class PassResponseExecutorTest {
         HttpStreamWriter clientOut = new HttpStreamWriter(rawOut);
 
         PassRequestExecutor passRequestExecutor = new PassRequestExecutor(null, 5000, 5000);
-        PassResponseExecutor executor = new PassResponseExecutor(passRequestExecutor, serverIn, clientOut);
+        PassResponseExecutor executor = new PassResponseExecutor(passRequestExecutor, serverIn, clientOut, 0L);
 
         executor.run();
 
@@ -40,5 +40,32 @@ class PassResponseExecutorTest {
         int n = serverIn.read(remaining);
         assertThat(n).isEqualTo(resp2.length);
         assertThat(remaining).isEqualTo(resp2);
+    }
+
+    @Test
+    void staleGeneration_discardsItsResponseWithoutWritingToTheClient() throws Exception {
+        // Simulates a PassResponseExecutor left over from a target that a subsequent request
+        // already switched away from: it was spawned for generation 1, but by the time its
+        // response is ready, PassRequestExecutor has moved on to generation 2 (a newer child took
+        // over). It must discard its response instead of writing it to the shared clientOut.
+        byte[] resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello".getBytes(StandardCharsets.US_ASCII);
+        HttpStreamReader serverIn = new HttpStreamReader(new ByteArrayInputStream(resp), HTTP.BODY_BUFFER_SIZE);
+        ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
+        HttpStreamWriter clientOut = new HttpStreamWriter(rawOut);
+
+        PassRequestExecutor passRequestExecutor = new PassRequestExecutor(null, 5000, 5000);
+        bumpGeneration(passRequestExecutor); // generation is now 1
+        PassResponseExecutor stale = new PassResponseExecutor(passRequestExecutor, serverIn, clientOut, 1L);
+        bumpGeneration(passRequestExecutor); // a newer child has since taken over; now generation 2
+
+        stale.run();
+
+        assertThat(rawOut.toByteArray()).isEmpty();
+    }
+
+    private static void bumpGeneration(PassRequestExecutor executor) throws Exception {
+        var field = PassRequestExecutor.class.getDeclaredField("socketGeneration");
+        field.setAccessible(true);
+        ((java.util.concurrent.atomic.AtomicLong) field.get(executor)).incrementAndGet();
     }
 }

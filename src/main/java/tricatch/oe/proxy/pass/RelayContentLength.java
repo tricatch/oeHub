@@ -11,9 +11,7 @@ import tricatch.oe.proxy.event.HttpEvent;
 import tricatch.oe.proxy.event.HttpEventManager;
 import tricatch.oe.proxy.event.HttpEventType;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Class for handling content-length based HTTP body relay operations
@@ -34,8 +32,7 @@ public class RelayContentLength {
             logger.debug("{}, {}, Relaying content-length body: {} bytes", rid, flow, contentLength);
         }
 
-        boolean exceedsLimit = contentLength > HTTP.MONITOR_BODY_LIMIT;
-        ByteArrayOutputStream bodyCollector = exceedsLimit ? null : new ByteArrayOutputStream(contentLength);
+        MonitorBodyCollector bodyCollector = new MonitorBodyCollector();
 
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int remainingBytes = contentLength;
@@ -54,9 +51,7 @@ public class RelayContentLength {
             out.write(buffer, 0, bytesRead);
             out.flush();
 
-            if (bodyCollector != null) {
-                bodyCollector.write(buffer, 0, bytesRead);
-            }
+            bodyCollector.add(buffer, 0, bytesRead);
 
             remainingBytes -= bytesRead;
 
@@ -67,13 +62,7 @@ public class RelayContentLength {
 
         out.flush();
 
-        byte[] bodyForEvent;
-        if (exceedsLimit) {
-            String prefix = flow == HttpStream.Flow.REQ ? "Request" : "Response";
-            bodyForEvent = (prefix + " body exceeds " + (HTTP.MONITOR_BODY_LIMIT / 1024 / 1024) + "MB and is not supported for display.").getBytes(StandardCharsets.UTF_8);
-        } else {
-            bodyForEvent = bodyCollector.toByteArray();
-        }
+        byte[] bodyForEvent = bodyCollector.toEventBody(flow);
 
         HttpEvent bodyEvent = new HttpEvent(clientId, rid, flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
         bodyEvent.setBody(bodyForEvent);

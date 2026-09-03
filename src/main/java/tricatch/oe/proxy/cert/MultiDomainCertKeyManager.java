@@ -16,21 +16,23 @@ import java.net.Socket;
 import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(MultiDomainCertKeyManager.class);
-	
-    // A plain HashMap, but every access below is synchronized on it: this manager is shared
-    // across all connections, and a TLS handshake for a not-yet-cached domain runs on its own
-    // per-connection virtual thread, so an unguarded check-then-act here can both corrupt the
-    // map under concurrent put() and let a reader miss a just-written entry. The generation call
-    // this guards is a short, CPU-bound signing operation (not blocking I/O), so holding the
-    // lock across it doesn't carry the virtual-thread pinning risk that rules out synchronizing
-    // around a blocking socket read/write elsewhere in this package.
-    private final Map<String, CertificateKeyPair> certificates = new HashMap<>();
+
+    // ConcurrentHashMap.computeIfAbsent() locks only the bucket for the domain being generated,
+    // so a handshake for an already-cached domain never blocks behind another domain's (CPU-bound
+    // RSA keygen + signing) generation — unlike a single manager-wide lock, which would serialize
+    // every concurrent handshake behind whichever one happens to be generating a cert.
+    // ConcurrentHashMap forbids null keys, so the no-SNI case (domain == null) is handled
+    // separately via noSniCertificate below instead of as a map entry.
+    private final Map<String, CertificateKeyPair> certificates = new ConcurrentHashMap<>();
+    private volatile CertificateKeyPair noSniCertificate;
+    private final Object noSniLock = new Object();
+
     private final X509Certificate rootCertificate;
     private final PrivateKey rootPrivateKey;
 
@@ -54,20 +56,42 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
             }
         }
 
-        synchronized (certificates) {
-            if( certificates.containsKey(domain) ) return domain;
-
-            try {
-                SSLCertificateCreator sslCertificateCreator = new SSLCertificateCreator();
-                CertificateKeyPair certificateKeyPair = sslCertificateCreator.generateSSLCertificate(domain, rootCertificate, rootPrivateKey);
-                certificates.put(domain, certificateKeyPair);
-                return domain;
-            }catch(Exception e) {
-                logger.error( "errorGenCert-" + e.getMessage(), e );
-            }
+        if (domain == null) {
+            ensureNoSniCertificate();
+            return null;
         }
 
-        return null;
+        try {
+            certificates.computeIfAbsent(domain, this::generateCertificate);
+            return domain;
+        } catch (GenerationFailedException e) {
+            logger.error("errorGenCert-" + e.getCause().getMessage(), e.getCause());
+            return null;
+        }
+    }
+
+    private void ensureNoSniCertificate() {
+        if (noSniCertificate != null) return;
+        synchronized (noSniLock) {
+            if (noSniCertificate != null) return;
+            try {
+                noSniCertificate = generateCertificate(null);
+            } catch (GenerationFailedException e) {
+                logger.error("errorGenCert-" + e.getCause().getMessage(), e.getCause());
+            }
+        }
+    }
+
+    private CertificateKeyPair generateCertificate(String domain) {
+        try {
+            return new SSLCertificateCreator().generateSSLCertificate(domain, rootCertificate, rootPrivateKey);
+        } catch (Exception e) {
+            throw new GenerationFailedException(e);
+        }
+    }
+
+    private static class GenerationFailedException extends RuntimeException {
+        GenerationFailedException(Throwable cause) { super(cause); }
     }
 
     public String[] getServerAliases(String keyType, Principal[] issuers) {
@@ -84,28 +108,15 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
 
 
     public X509Certificate[] getCertificateChain(String alias) {
-
-        synchronized (certificates) {
-            if( certificates.containsKey(alias) ) {
-                X509Certificate[] x509 = new X509Certificate[1];
-                x509[0] = certificates.get(alias).getCertificate();
-                return x509;
-            }
-        }
-
-    	return null;
+        CertificateKeyPair pair = alias == null ? noSniCertificate : certificates.get(alias);
+        if (pair == null) return null;
+        return new X509Certificate[]{ pair.getCertificate() };
     }
 
 	@Override
 	public PrivateKey getPrivateKey(String alias) {
-
-		synchronized (certificates) {
-			if( certificates.containsKey(alias) ) {
-				return certificates.get(alias).getPrivateKey();
-			}
-		}
-
-		return null;
+		CertificateKeyPair pair = alias == null ? noSniCertificate : certificates.get(alias);
+		return pair == null ? null : pair.getPrivateKey();
 	}
 
 }

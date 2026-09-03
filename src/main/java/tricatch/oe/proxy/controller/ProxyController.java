@@ -309,22 +309,12 @@ public class ProxyController {
         var value = (String) body.get("value");
 
         if ("vhost".equals(name)) {
-            // Validate by live-applying first: only persist a vhost config that ReverseProxyServer
-            // actually accepted, so a bad save never leaves the DB holding YAML that will keep
-            // failing to load (silently) on every future reload/restart.
-            if (value != null && !value.isBlank()) {
-                try {
-                    var localSvr = resolveLocalSvr(confService, hubUser.getUserNo(), ctx.ip());
-                    ReverseProxyServer.setVirtualHosts(ctx.ip(), hubUser.getUserNo(), substituteLocalSvr(value, localSvr));
-                } catch (Exception e) {
-                    logger.warn("Rejected invalid vhost config for user {}: {}", hubUser.getUserNo(), e.getMessage());
-                    ctx.status(400).result("Invalid vhost configuration: " + e.getMessage());
-                    return;
-                }
-            } else {
-                ReverseProxyServer.clearVirtualHosts(ctx.ip(), hubUser.getUserNo());
+            try {
+                applyAndPersistVhostConfig(confService, hubUser.getUserNo(), ctx.ip(), value);
+            } catch (VhostApplyException e) {
+                ctx.status(400).result("Invalid vhost configuration: " + e.getCause().getMessage());
+                return;
             }
-            confService.set(name, hubUser.getUserNo(), value);
         } else {
             confService.set(name, hubUser.getUserNo(), value);
             // Re-push the currently selected vhosts so the new LOCAL_SVR override takes effect immediately.
@@ -354,19 +344,43 @@ public class ProxyController {
     // rejected by ReverseProxyServer — same validate-before-persist rule as apiConfSet's vhost
     // handling, so a bad merge never leaves the DB holding config that silently fails to reload.
     private static boolean applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp) {
+        String merged;
         try {
             var selected = vhostService.listSelected(userNo);
-            var merged   = ReverseProxyServer.mergeVhostYaml(selected);
-            if (merged != null && !merged.isBlank()) {
-                var localSvr = resolveLocalSvr(confService, userNo, routeIp);
-                ReverseProxyServer.setVirtualHosts(routeIp, userNo, substituteLocalSvr(merged, localSvr));
-            }
-            confService.set("vhost", userNo, merged != null ? merged : "");
-            return true;
+            merged = ReverseProxyServer.mergeVhostYaml(selected);
         } catch (Exception e) {
-            logger.warn("Failed to apply merged config for user {}: {}", userNo, e.getMessage());
+            logger.warn("Failed to merge vhost config for user {}: {}", userNo, e.getMessage());
             return false;
         }
+        try {
+            applyAndPersistVhostConfig(confService, userNo, routeIp, merged);
+            return true;
+        } catch (VhostApplyException e) {
+            return false;
+        }
+    }
+
+    // Shared by apiConfSet's vhost handling and applyMergedConfig: live-apply first, and only
+    // persist the "vhost" config value if ReverseProxyServer actually accepted it, so a bad save
+    // never leaves the DB holding YAML that will keep failing to load (silently) on every future
+    // reload/restart. A null/blank value clears the live routing instead of applying anything.
+    private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml) throws VhostApplyException {
+        try {
+            if (vhostYaml != null && !vhostYaml.isBlank()) {
+                var localSvr = resolveLocalSvr(confService, userNo, routeIp);
+                ReverseProxyServer.setVirtualHosts(routeIp, userNo, substituteLocalSvr(vhostYaml, localSvr));
+            } else {
+                ReverseProxyServer.clearVirtualHosts(routeIp, userNo);
+            }
+            confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "");
+        } catch (Exception e) {
+            logger.warn("Failed to apply vhost config for user {}: {}", userNo, e.getMessage());
+            throw new VhostApplyException(e);
+        }
+    }
+
+    private static class VhostApplyException extends Exception {
+        VhostApplyException(Throwable cause) { super(cause); }
     }
 
     private static String resolveLocalSvr(ProxyConfService confService, Long userNo, String fallback) {
