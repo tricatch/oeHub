@@ -587,11 +587,6 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
      * @return BodyStream type
      */
     private HttpStream determineResponseBodyStreamType(int statusCode) {
-        // Some status codes never have a body
-        if (statusCode == 204 || statusCode == 304) {
-            return HttpStream.NONE;
-        }
-        
         // Check for WebSocket upgrade (101 Switching Protocols)
         if (statusCode == 101) {
             String upgrade = getHeaderValueAsString(HTTP.HEADER.UPGRADE);
@@ -601,6 +596,11 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
                 containsIgnoreCase(connection, "upgrade")) {
                 return HttpStream.WEBSOCKET;
             }
+        }
+
+        // Informational (1xx) responses and 204/304 never have a body, regardless of headers
+        if (statusCode < 200 || statusCode == 204 || statusCode == 304) {
+            return HttpStream.NONE;
         }
 
         // Check for Transfer-Encoding: chunked
@@ -614,12 +614,9 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         if (contentLength != null && contentLength >= 0) {
             return HttpStream.CONTENT_LENGTH;
         }
-        
-        // For HEAD requests, responses typically have no-body
-        // This is handled at the application level, not here
-        
-        // Default to no-body for responses without explicit content length or transfer encoding
-        return HttpStream.NONE;
+
+        // No Content-Length and no Transfer-Encoding: body is delimited by connection close (RFC 7230 §3.3.3 case 7)
+        return HttpStream.UNTIL_CLOSE;
     }
 
     private static boolean containsIgnoreCase(String text, String search) {
