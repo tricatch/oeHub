@@ -3,9 +3,17 @@ package tricatch.oe.proxy.event;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +62,60 @@ class HttpEventManagerTest {
         } finally {
             manager.removeEventConsumer(bad);
             manager.removeEventConsumer(good);
+        }
+    }
+
+    @Test
+    void concurrentFirstRegistrationsForTheSameClient_neverLoseAChannel() throws Exception {
+        // All of these channels are the first registrations for this brand-new clientId, so every
+        // one of them races through the same get-or-create-ChannelConsumers window in
+        // addEventConsumer().
+        HttpEventManager manager = HttpEventManager.getInstance();
+        String clientId = "test-client-" + UUID.randomUUID();
+
+        int channelCount = 50;
+        Map<String, List<HttpEvent>> received = new ConcurrentHashMap<>();
+        List<HttpEventConsumer> consumers = new ArrayList<>();
+        for (int i = 0; i < channelCount; i++) {
+            String channelId = "ch" + i;
+            received.put(channelId, new CopyOnWriteArrayList<>());
+            consumers.add(new HttpEventConsumer() {
+                public String getClientId() { return clientId; }
+                public String getChannelId() { return channelId; }
+                public void process(HttpEvent event) { received.get(channelId).add(event); }
+            });
+        }
+
+        ExecutorService pool = Executors.newFixedThreadPool(channelCount);
+        CountDownLatch ready = new CountDownLatch(channelCount);
+        CountDownLatch go = new CountDownLatch(1);
+
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (HttpEventConsumer c : consumers) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    go.await();
+                    manager.addEventConsumer(c);
+                    return null;
+                }));
+            }
+            ready.await();
+            go.countDown();
+            for (Future<?> f : futures) f.get(5, TimeUnit.SECONDS);
+
+            manager.enqueue(new HttpEvent(clientId, "rid", HttpEventType.REQ_HEADER));
+
+            waitUntil(() -> received.values().stream().allMatch(l -> l.size() >= 1), 5000);
+
+            // Every channel registered above must have received the event; a lost registration
+            // would show up here as an empty list for that channel.
+            for (var entry : received.entrySet()) {
+                assertThat(entry.getValue()).as("channel %s", entry.getKey()).hasSize(1);
+            }
+        } finally {
+            pool.shutdownNow();
+            for (HttpEventConsumer c : consumers) manager.removeEventConsumer(c);
         }
     }
 

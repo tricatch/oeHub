@@ -179,13 +179,12 @@ public class HttpEventManager {
         String clientId = consumer.getClientId();
         String channelId = consumer.getChannelId();
 
-        ChannelConsumers channelConsumers = clientConsumers.get(clientId);
-
-        if( channelConsumers==null ) channelConsumers = new ChannelConsumers();
+        // computeIfAbsent() makes the get-or-create atomic: two threads registering the first two
+        // channels for the same clientId at once would otherwise each create their own
+        // ChannelConsumers and the later put() would silently drop the other's registration.
+        ChannelConsumers channelConsumers = clientConsumers.computeIfAbsent(clientId, id -> new ChannelConsumers());
 
         channelConsumers.put(channelId, consumer);
-
-        clientConsumers.put(clientId, channelConsumers);
 
         if( logger.isDebugEnabled() ) {
             logger.debug("Added subscriber for clientId={} / channelId={}", clientId, channelId);

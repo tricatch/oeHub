@@ -15,8 +15,13 @@ public class SocketUtils {
         InetSocketAddress endpoint = new InetSocketAddress(host, port);
 
         Socket socket = new Socket();
-        socket.setSoTimeout(readTimeout);
-        socket.connect(endpoint, connectTimeout);
+        try {
+            socket.setSoTimeout(readTimeout);
+            socket.connect(endpoint, connectTimeout);
+        } catch (IOException e) {
+            closeQuietly(socket);
+            throw e;
+        }
 
         return socket;
     }
@@ -54,13 +59,31 @@ public class SocketUtils {
         SSLSocketFactory socketFactory = sc.getSocketFactory();
 
         Socket tcpSocket = new Socket();
-        tcpSocket.setSoTimeout(readTimeout);
-        tcpSocket.connect(endpoint, connectTimeout);
+        Socket socket = null;
+        try {
+            tcpSocket.setSoTimeout(readTimeout);
+            tcpSocket.connect(endpoint, connectTimeout);
 
-        Socket socket = socketFactory.createSocket(tcpSocket, domain, endpoint.getPort(), false);
+            // autoClose=false: closing the SSLSocket layer below does not close tcpSocket, so
+            // both must be closed explicitly on failure.
+            socket = socketFactory.createSocket(tcpSocket, domain, endpoint.getPort(), false);
 
-        ((SSLSocket) socket).startHandshake();
+            ((SSLSocket) socket).startHandshake();
 
-        return socket;
+            return socket;
+        } catch (IOException e) {
+            closeQuietly(socket);
+            closeQuietly(tcpSocket);
+            throw e;
+        }
+    }
+
+    private static void closeQuietly(Socket socket) {
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 }
