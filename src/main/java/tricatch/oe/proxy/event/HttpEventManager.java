@@ -105,11 +105,21 @@ public class HttpEventManager {
             return;
         }
 
-        for (HttpEventConsumer consumer : channelConsumers.values()) {
+        for (var entry : channelConsumers.entrySet()) {
+            String channelId = entry.getKey();
+            HttpEventConsumer consumer = entry.getValue();
             try {
                 consumer.process(event);
             } catch (Exception e) {
-                clientConsumers.remove(clientId);
+                // Only the failing channel is deregistered; other channels/tabs for the same
+                // clientId keep receiving events. ConcurrentHashMap's iterator tolerates this
+                // removal mid-loop.
+                logger.warn("Consumer failed, removing: clientId={}, channelId={}, error={}",
+                        clientId, channelId, e.getMessage(), e);
+                channelConsumers.remove(channelId);
+                if (channelConsumers.isEmpty()) {
+                    clientConsumers.remove(clientId);
+                }
             }
         }
     }
