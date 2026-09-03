@@ -65,4 +65,36 @@ class RelayChunkedTest {
         assertThat(result).isEqualTo(HttpStream.Connection.KEEP_ALIVE);
         assertThat(rawOut.toByteArray()).isEqualTo(encoded);
     }
+
+    @Test
+    void oversizedChunkSize_isRejectedWithoutMisreadingSubsequentBytes() throws Exception {
+        // "80000000" overflows a signed 32-bit int (sets the sign bit). Before the fix,
+        // parseHexChunkSize returned a negative chunkSize, the "remainingBytes > 0" loop was
+        // skipped entirely, and the next 2 bytes of whatever followed on the wire were misread
+        // as the chunk's terminating CRLF. The fix must reject the chunk-size line up front
+        // (NumberFormatException, caught by the existing handler) and touch none of the bytes
+        // that follow it.
+        byte[] trailingBytes = "REST-OF-STREAM-MUST-NOT-BE-TOUCHED".getBytes(StandardCharsets.US_ASCII);
+        ByteArrayOutputStream input = new ByteArrayOutputStream();
+        input.write("80000000".getBytes(StandardCharsets.US_ASCII));
+        input.write(HTTP.CRLF);
+        input.write(trailingBytes);
+
+        HttpStreamReader in = new HttpStreamReader(new ByteArrayInputStream(input.toByteArray()), HTTP.BODY_BUFFER_SIZE);
+        ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
+        HttpStreamWriter out = new HttpStreamWriter(rawOut);
+
+        RelayChunked.relay("client1", "rid3", HttpStream.Flow.RES, in, out);
+
+        // Nothing should have been written to the client for a chunk-size line that was
+        // rejected before any framing decision was made.
+        assertThat(rawOut.toByteArray()).isEmpty();
+
+        // The reader must still be positioned exactly at the start of the trailing bytes,
+        // proving relay() never attempted to consume any of them as chunk data/terminator.
+        byte[] remaining = new byte[trailingBytes.length];
+        int n = in.read(remaining);
+        assertThat(n).isEqualTo(trailingBytes.length);
+        assertThat(remaining).isEqualTo(trailingBytes);
+    }
 }

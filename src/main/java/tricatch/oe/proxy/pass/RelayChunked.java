@@ -209,7 +209,10 @@ public class RelayChunked {
         while (start < end && buf[start] == ' ') start++;
         while (end > start && buf[end - 1] == ' ') end--;
         if (start >= end) throw new NumberFormatException("Empty chunk size");
-        int result = 0;
+        // Accumulate in a long so an oversized chunk-size (e.g. 8 hex digits with the top bit
+        // set) is caught as "too large" instead of silently wrapping into a negative int, which
+        // would make the "remainingBytes > 0" read loop skip the chunk body entirely.
+        long result = 0;
         for (int i = start; i < end; i++) {
             byte b = buf[i];
             int digit;
@@ -218,7 +221,10 @@ public class RelayChunked {
             else if (b >= 'A' && b <= 'F') digit = b - 'A' + 10;
             else throw new NumberFormatException("Invalid hex char: " + (char) b);
             result = (result << 4) | digit;
+            if (result > Integer.MAX_VALUE) {
+                throw new NumberFormatException("Chunk size too large: exceeds " + Integer.MAX_VALUE);
+            }
         }
-        return result;
+        return (int) result;
     }
 }
