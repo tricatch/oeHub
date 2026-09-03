@@ -39,6 +39,12 @@ public class PassRequestExecutor implements Stopable {
     private static final Logger logger = LoggerFactory.getLogger(PassRequestExecutor.class);
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher.Builder().build();
 
+    // WebSocket connections are long-lived and often sit idle between messages, so they get their
+    // own (longer) socket timeout instead of the configurable connectTimeout/readTimeout used for
+    // everything else. Not yet admin-configurable like those two — just named here for now so the
+    // value isn't a duplicated magic number.
+    private static final int WEBSOCKET_IDLE_TIMEOUT_MS = 1000 * 60 * 5;
+
     private Socket clientSocket;
     private HttpStreamReader clientIn = null;
     private HttpStreamWriter clientOut = null;
@@ -234,8 +240,8 @@ public class PassRequestExecutor implements Stopable {
                 serverOut.writeHeaders(requestHeaders);
 
                 if (HttpStream.WEBSOCKET == httpRequest.getHttpStream()) {
-                    this.clientSocket.setSoTimeout(1000 * 60 * 5);
-                    this.serverSocket.setSoTimeout(1000 * 60 * 5);
+                    this.clientSocket.setSoTimeout(WEBSOCKET_IDLE_TIMEOUT_MS);
+                    this.serverSocket.setSoTimeout(WEBSOCKET_IDLE_TIMEOUT_MS);
                 }
 
                 // Relay request body to server if exists
