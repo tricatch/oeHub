@@ -56,7 +56,12 @@ public class JwtService {
         }
     }
 
-    public String issue(Long userNo, boolean rememberMe) {
+    /** Verified token payload: userNo plus the token_version it was issued with, so the caller
+     *  can compare it against the user's current token_version and reject stale tokens (e.g.
+     *  issued before a password change). */
+    public record VerifiedToken(Long userNo, int tokenVersion) {}
+
+    public String issue(Long userNo, int tokenVersion, boolean rememberMe) {
         var now    = new Date();
         var expiry = rememberMe
             ? new Date(now.getTime() + 365L * 24 * 3600 * 1000)
@@ -64,13 +69,14 @@ public class JwtService {
 
         return Jwts.builder()
             .subject(String.valueOf(userNo))
+            .claim("tv", tokenVersion)
             .issuedAt(now)
             .expiration(expiry)
             .signWith(privateKey)
             .compact();
     }
 
-    public Long verify(String token) {
+    public VerifiedToken verify(String token) {
 
         if (token == null) return null;
         try {
@@ -79,7 +85,11 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-            return Long.parseLong(claims.getSubject());
+            Long userNo = Long.parseLong(claims.getSubject());
+            // Tokens issued before this field existed carry no "tv" claim; treat that as
+            // version 0, which matches the DEFAULT 0 every existing user row already has.
+            Integer tv = claims.get("tv", Integer.class);
+            return new VerifiedToken(userNo, tv != null ? tv : 0);
         } catch (JwtException | IllegalArgumentException e) {
             logger.warn("errorJwtVerify - {}", e.getMessage(), e);
         }

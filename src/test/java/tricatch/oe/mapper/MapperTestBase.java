@@ -77,6 +77,7 @@ public abstract class MapperTestBase {
                     user_id       VARCHAR(64)  NOT NULL UNIQUE,
                     password      VARCHAR(128) NOT NULL,
                     role          VARCHAR(16)  NOT NULL,
+                    token_version INT          NOT NULL DEFAULT 0,
                     create_at     TIMESTAMP    NOT NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     last_login_at TIMESTAMP    NULL

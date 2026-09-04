@@ -157,6 +157,7 @@
             <div class="tab-pane fade {% if caActiveTab != "import" %}show active{% endif %}"
                  id="caGeneratePane" role="tabpanel">
               <form method="post" action="/oehub/settings/ca/generate" autocomplete="off">
+                <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                 <div class="mb-3">
                   <label class="form-label">{{ msg['settings.ca.name.label'] }}</label>
                   <input type="text" name="caName" class="form-control"
@@ -174,6 +175,7 @@
                  id="caImportPane" role="tabpanel">
               <form method="post" action="/oehub/settings/ca/import"
                     enctype="multipart/form-data" autocomplete="off">
+                <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                 <div class="mb-3">
                   <label class="form-label">{{ msg['settings.ca.cert.file'] }} <span class="text-muted fw-normal">(.cer / .pem / .crt)</span></label>
                   <input type="file" name="certFile" class="form-control"

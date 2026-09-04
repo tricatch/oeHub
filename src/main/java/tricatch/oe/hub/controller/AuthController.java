@@ -27,6 +27,22 @@ public class AuthController {
     // enumerable via response timing.
     private static final String DUMMY_PASSWORD_HASH = PasswordUtil.hash("no-such-user-timing-parity");
 
+    // Per-IP login throttle: without it, bcrypt cost is the only thing slowing an online
+    // brute-force attempt against a single account. In-memory only (single JVM, same trust
+    // boundary as SetupController.SETUP_LOCK) - resets on restart, which is an acceptable
+    // trade-off for a self-hosted admin tool.
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final java.time.Duration ATTEMPT_WINDOW = java.time.Duration.ofMinutes(15);
+    private static final java.time.Duration LOCKOUT_DURATION = java.time.Duration.ofMinutes(15);
+
+    private static final class LoginAttempts {
+        int count;
+        java.time.Instant windowStart;
+        java.time.Instant lockedUntil;
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, LoginAttempts> loginAttemptsByIp = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final SqlSessionFactory sqlSessionFactory;
     private final JwtService        jwtService;
 
@@ -35,15 +51,50 @@ public class AuthController {
         this.jwtService        = jwtService;
     }
 
+    private boolean isLoginLocked(String ip) {
+        var a = loginAttemptsByIp.get(ip);
+        if (a == null) return false;
+        synchronized (a) {
+            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
+        }
+    }
+
+    private void recordLoginFailure(String ip) {
+        var a = loginAttemptsByIp.computeIfAbsent(ip, k -> new LoginAttempts());
+        synchronized (a) {
+            var now = java.time.Instant.now();
+            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
+                a.windowStart = now;
+                a.count = 0;
+            }
+            a.count++;
+            if (a.count >= MAX_FAILED_ATTEMPTS) {
+                a.lockedUntil = now.plus(LOCKOUT_DURATION);
+            }
+        }
+    }
+
+    private void recordLoginSuccess(String ip) {
+        loginAttemptsByIp.remove(ip);
+    }
+
+    /** Issues a JWT for hubUser and sets the oe_auth cookie - shared by processLogin and
+     *  SetupController (which logs the newly-created admin in immediately after account
+     *  creation, see the /setup/* auth-gating note in OeHubApplication). */
+    public void loginAs(Context ctx, HubUser hubUser, boolean rememberMe) {
+        String jwt = jwtService.issue(hubUser.getUserNo(), hubUser.getTokenVersion(), rememberMe);
+        ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, jwt, rememberMe ? 365L * 24 * 3600 : null));
+    }
+
     public void resolveUser(Context ctx) {
 
         String jwt = ctx.cookie(COOKIE_NAME);
-        Long userNo = jwtService.verify(jwt);
+        var verified = jwtService.verify(jwt);
         // Never log the JWT itself: it's a bearer credential — anyone who reads the log could
         // replay it as that user until it expires (up to 365 days with rememberMe).
-        if( logger.isDebugEnabled() ) logger.debug("auth, userNo={}, uri={}", userNo, ctx.path());
+        if( logger.isDebugEnabled() ) logger.debug("auth, userNo={}, uri={}", verified != null ? verified.userNo() : null, ctx.path());
 
-        if (userNo == null) {
+        if (verified == null) {
             if (jwt != null) {
                 ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
             }
@@ -51,10 +102,14 @@ public class AuthController {
         }
 
         try (var session = sqlSessionFactory.openSession()) {
-            var user = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
-            if (user != null) {
+            var user = session.getMapper(HubUserMapper.class).findByUserNo(verified.userNo());
+            if (user != null && user.getTokenVersion() == verified.tokenVersion()) {
                 user.setPassword(null);
                 ctx.attribute(ATTR_USER, user);
+            } else if (user != null) {
+                // token_version mismatch: this token was issued before a password change/reset
+                // and must no longer be honored, even though its signature/expiry are still valid.
+                ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
             }
         }
     }
@@ -75,6 +130,15 @@ public class AuthController {
 
         if( logger.isDebugEnabled() ) logger.debug( "login, userId={}", userId);
 
+        String ip = ctx.ip();
+        if (isLoginLocked(ip)) {
+            ctx.status(429).render("templates/login.pebble", Map.of(
+                "redirect", redirect != null ? redirect : "",
+                "error", "auth.error.too.many.attempts"
+            ));
+            return;
+        }
+
         HubUser hubUser = findUser(userId);
 
         // Always run exactly one bcrypt comparison, real user or not, so a login attempt's
@@ -84,14 +148,14 @@ public class AuthController {
         logger.debug("login, userId={}, found={}, isCorrectPassword={}", userId, hubUser != null, isCorrectPassword);
 
         if (hubUser == null || password == null || !isCorrectPassword) {
+            recordLoginFailure(ip);
             ctx.render("templates/login.pebble", Map.of(
                 "redirect", redirect != null ? redirect : "",
                 "error", "auth.error.invalid.credentials"
             ));
             return;
         }
-
-        String jwt = jwtService.issue(hubUser.getUserNo(), rememberMe);
+        recordLoginSuccess(ip);
 
         if(logger.isDebugEnabled() ) logger.debug( "login, userId={}, rememberMe={}", userId, rememberMe);
 
@@ -103,7 +167,7 @@ public class AuthController {
 
         ProxyController.applyMergedConfig(sqlSessionFactory, hubUser.getUserNo(), ctx.ip());
 
-        ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, jwt, rememberMe ? 365L * 24 * 3600 : null));
+        loginAs(ctx, hubUser, rememberMe);
 
         ctx.redirect(isSafeRedirect(redirect) ? redirect : "/");
     }

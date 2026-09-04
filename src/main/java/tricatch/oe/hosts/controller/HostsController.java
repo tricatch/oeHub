@@ -21,6 +21,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class HostsController {
 
@@ -29,6 +32,13 @@ public class HostsController {
     private final HostConfService hostConfService;
     private final SettingsController settingsController;
     private final ObjectMapper objectMapper;
+
+    // apiShare (below) is public/unauthenticated and resolves the caller-supplied Host header via
+    // DNS. Bounding that lookup by a timeout on its own virtual thread keeps a slow/unresponsive
+    // domain in the Host header from tying up a request-handling thread indefinitely (a trivial
+    // DoS otherwise, since this endpoint requires no login).
+    private static final ExecutorService DNS_RESOLVER = Executors.newVirtualThreadPerTaskExecutor();
+    private static final long DNS_RESOLVE_TIMEOUT_MS = 500;
 
     public HostsController(SqlSessionFactory sqlSessionFactory, SettingsController settingsController, ObjectMapper objectMapper) {
         this.sqlSessionFactory = sqlSessionFactory;
@@ -442,7 +452,8 @@ public class HostsController {
             hostname = colon > 0 ? host.substring(0, colon) : host;
         }
         try {
-            return InetAddress.getByName(hostname).getHostAddress();
+            var future = DNS_RESOLVER.submit(() -> InetAddress.getByName(hostname).getHostAddress());
+            return future.get(DNS_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             return ctx.req().getLocalAddr();
         }

@@ -28,6 +28,10 @@ public class SetupController {
     private static final Logger logger = LoggerFactory.getLogger(SetupController.class);
 
     private static volatile boolean setupComplete = false;
+    // Read by the /setup/* auth-gating filter in OeHubApplication to lock down ca/generate,
+    // ca/import, and the preset CRUD routes as soon as an admin account exists — independent of
+    // whether the CA step is done yet. See that filter's comment for why.
+    private static volatile boolean adminConfigured = false;
     // Guards the admin-existence-check + insert in processSetup so two concurrent first-run
     // submissions can't both pass the check and create two admin accounts (only one JVM ever
     // runs this, so a plain in-process lock is enough — no need for DB-level locking).
@@ -36,15 +40,22 @@ public class SetupController {
     private final SqlSessionFactory sqlSessionFactory;
     private final SettingsController settings;
     private final ObjectMapper objectMapper;
+    private final AuthController authController;
 
-    public SetupController(SqlSessionFactory sqlSessionFactory, SettingsController settings, ObjectMapper objectMapper) {
+    public SetupController(SqlSessionFactory sqlSessionFactory, SettingsController settings, ObjectMapper objectMapper,
+                            AuthController authController) {
         this.sqlSessionFactory = sqlSessionFactory;
         this.settings = settings;
         this.objectMapper = objectMapper;
+        this.authController = authController;
     }
 
     public static boolean isSetupComplete() {
         return setupComplete;
+    }
+
+    public static boolean isAdminConfigured() {
+        return adminConfigured;
     }
 
     public void refreshSetupState() {
@@ -53,6 +64,7 @@ public class SetupController {
             adminOk = session.getMapper(HubConfMapper.class).findByConfKey("admin") != null;
         }
         boolean caOk = settings.isCaConfigured();
+        adminConfigured = adminOk;
         setupComplete = adminOk && caOk;
         logger.info("Setup state refreshed — admin={}, ca={}, complete={}", adminOk, caOk, setupComplete);
     }
@@ -121,10 +133,16 @@ public class SetupController {
                 session.getMapper(HubConfMapper.class).upsert(conf);
 
                 session.commit();
+
+                refreshSetupState();
+                // Log the new admin in immediately: as soon as adminConfigured flips to true (just
+                // above), OeHubApplication's /setup/* filter requires an authenticated admin for
+                // the remaining wizard steps (CA generate/import, presets) — without this, the
+                // creator would be locked out of their own setup wizard.
+                authController.loginAs(ctx, hubUser, true);
             }
         }
 
-        refreshSetupState();
         ctx.redirect("/setup");
     }
 

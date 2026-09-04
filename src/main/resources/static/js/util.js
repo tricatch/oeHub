@@ -40,8 +40,43 @@ function parseHostsToMap(content) {
 }
 
 function wrapDelayedUrl(url) {
-  return `data:text/html,<script>setTimeout(()=>location.replace('${url}'),1000)</script>`;
+  // The result is parsed twice: once as HTML (by the browser loading the data: URL, which looks
+  // for a literal "</script>" to end the block regardless of JS string quoting) and once as JS
+  // (the string literal inside). Escaping "<"/">" to their \xNN JS escapes keeps a raw "<" out of
+  // the HTML the browser sees at all, so "</script>" injection can't happen; escaping "'" prevents
+  // breaking out of the JS string literal itself.
+  const safe = String(url)
+    .replace(/\\/g, '\\\\')
+    .replace(/</g, '\\x3c')
+    .replace(/>/g, '\\x3e')
+    .replace(/'/g, "\\'");
+  return `data:text/html,<script>setTimeout(()=>location.replace('${safe}'),1000)</script>`;
 }
+
+function getCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\/+^])/g, '\\$1') + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// Auto-attaches the CSRF double-submit token (see OeHubApplication's CSRF before-filters) to
+// every state-changing fetch() call on the page, so individual call sites don't each need to
+// remember to add the header themselves.
+(function() {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    init = init || {};
+    const method = (init.method || 'GET').toUpperCase();
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+      const token = getCookie('oe_csrf');
+      if (token) {
+        const headers = new Headers(init.headers || {});
+        headers.set('X-CSRF-Token', token);
+        init = Object.assign({}, init, { headers });
+      }
+    }
+    return originalFetch(input, init);
+  };
+})();
 
 function winArgQuote(p) {
   return `'${p.replace(/'/g, "''")}'`;

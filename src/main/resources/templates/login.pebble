@@ -31,6 +31,7 @@
             {% endif %}
 
             <form method="post" action="/login" autocomplete="off">
+              <input type="hidden" name="_csrf" value="{{ csrfToken }}">
               <input type="hidden" name="redirect" value="{{ redirect }}">
 
               <div class="mb-3">
