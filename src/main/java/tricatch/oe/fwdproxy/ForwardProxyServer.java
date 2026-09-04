@@ -95,6 +95,11 @@ public class ForwardProxyServer {
 
     private static final ConcurrentHashMap<String, AuthAttempts> authAttemptsByUser = new ConcurrentHashMap<>();
 
+    // Same timing-parity rationale as AuthController.DUMMY_PASSWORD_HASH: without this, a
+    // non-existent userId short-circuits before any bcrypt comparison, making account existence
+    // enumerable via response timing over this always-on, 0.0.0.0-bound proxy port.
+    private static final String DUMMY_PASSWORD_HASH = PasswordUtil.hash("no-such-user-timing-parity");
+
     public static int getPort() {
         return PORT;
     }
@@ -239,7 +244,10 @@ public class ForwardProxyServer {
         }
         try (var session = sqlSessionFactory.openSession()) {
             var user = session.getMapper(HubUserMapper.class).findByUserId(userId);
-            if (user == null || !PasswordUtil.matches(password, user.getPassword())) {
+            // Always run exactly one bcrypt comparison, real user or not - see DUMMY_PASSWORD_HASH.
+            var hashToCheck = user != null ? user.getPassword() : DUMMY_PASSWORD_HASH;
+            var isCorrectPassword = PasswordUtil.matches(password, hashToCheck);
+            if (user == null || !isCorrectPassword) {
                 recordAuthFailure(key);
                 logger.debug("Forward proxy auth failed for userId={}", userId);
                 return false;

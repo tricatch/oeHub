@@ -66,6 +66,7 @@ public class DatabaseConfig {
             new SecureRandom().nextBytes(bytes);
             var password = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
             Files.writeString(pwFile, password, StandardCharsets.UTF_8);
+            AppHome.restrictToOwner(pwFile);
             return password;
         } catch (IOException e) {
             throw new RuntimeException("Failed to load/create H2 database password", e);
