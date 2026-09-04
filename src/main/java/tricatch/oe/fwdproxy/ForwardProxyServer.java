@@ -235,7 +235,10 @@ public class ForwardProxyServer {
         }
     }
 
-    private static boolean authenticate(String userId, String password) {
+    // Package-private (not private) so ForwardProxyServerTest can exercise the lockout and
+    // timing-parity behavior directly, matching this class's existing convention for its other
+    // pure/testable logic (isWhitelisted, isLoopbackTarget, mergeHosts, hostOnly, overrideFor).
+    static boolean authenticate(String userId, String password) {
         if (userId == null || password == null) return false;
         var key = userId.toLowerCase();
         if (isAuthLocked(key)) {
