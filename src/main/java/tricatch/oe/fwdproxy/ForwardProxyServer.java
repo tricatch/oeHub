@@ -37,6 +37,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Forward (upstream) proxy on a fixed port, authenticated against oeHub accounts (HUB_USR).
@@ -100,6 +103,13 @@ public class ForwardProxyServer {
     // enumerable via response timing over this always-on, 0.0.0.0-bound proxy port.
     private static final String DUMMY_PASSWORD_HASH = PasswordUtil.hash("no-such-user-timing-parity");
 
+    // overrideFor (below) resolves an otherwise-unmapped hostname itself so a DNS answer pointing
+    // at loopback/any-local (DNS rebinding) is caught before connecting - isLoopbackTarget() alone
+    // only catches literal IPs/"localhost". Bounded by a timeout on its own virtual thread so a
+    // slow/unresponsive attacker-controlled domain can't tie up the connection-resolution path.
+    private static final ExecutorService DNS_RESOLVER = Executors.newVirtualThreadPerTaskExecutor();
+    private static final long DNS_RESOLVE_TIMEOUT_MS = 500;
+
     public static int getPort() {
         return PORT;
     }
@@ -150,7 +160,9 @@ public class ForwardProxyServer {
      * checked against literal IPs/"localhost" (no DNS lookup here) so ordinary hostnames —
      * including LAN devices an oeHosts profile intentionally targets — cost nothing extra per
      * request; a hostname that itself resolves to a loopback address (DNS rebinding) is not
-     * caught by this check.
+     * caught by this check - overrideFor() below closes that gap for the actual connection by
+     * resolving the hostname itself (bounded by a timeout) and checking the resolved address,
+     * since it alone decides what IP the tunnel/connection is made to.
      */
     static boolean isLoopbackTarget(String host) {
         if (host == null || host.isBlank()) return false;
@@ -407,7 +419,10 @@ public class ForwardProxyServer {
         return response;
     }
 
-    /** Looks up host:port in the user's cached map; returns null (=normal DNS) when there's no override. */
+    /**
+     * Looks up host:port in the user's cached map; falls back to resolving the host itself
+     * (rebind-safe, see below) when there's no override.
+     */
     static InetSocketAddress overrideFor(String userId, String hostAndPort, String localServerIp) {
         // Only reachable here for a blocked host (loopback target, or non-whitelisted) when the
         // CONNECT was deliberately let through by clientToProxyRequest because BlockedPageServer
@@ -419,36 +434,53 @@ public class ForwardProxyServer {
             return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }
 
-        if (userId == null) return null;
-        var map = userHostMap.get(userId);
-        if (map == null || map.isEmpty()) return null;
-
         HostPort hp = splitHostAndPort(hostAndPort, 80);
         String host = hp.host();
         int port = hp.port();
 
-        String ip = map.get(host.toLowerCase());
-        if (ip == null) return null;
-        if (PROXY_SVR_PLACEHOLDER.equals(ip)) {
-            if (localServerIp == null) return null;
-            ip = localServerIp;
-        } else if (isLoopbackTarget(ip)) {
-            // A user's own oeHosts profile is free-text content they authored (mergeHosts()
-            // parses arbitrary "ip hostname" lines from it) - a line like "127.0.0.1 evil.local"
-            // would otherwise let them CONNECT to a hostname that passes both checks above,
-            // then have this override map silently redirect the tunnel to this server's own
-            // loopback interface, the same SSRF pivot isLoopbackTarget(target) blocks for the
-            // literal-host case. PROXY_SVR_PLACEHOLDER is exempt: it resolves to this server's
-            // real network-facing IP as seen by the client, not its loopback interface.
-            return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
+        String ip = userId == null ? null : userHostMap.getOrDefault(userId, Map.of()).get(host.toLowerCase());
+        if (ip != null) {
+            if (PROXY_SVR_PLACEHOLDER.equals(ip)) {
+                if (localServerIp == null) return null;
+                ip = localServerIp;
+            } else if (isLoopbackTarget(ip)) {
+                // A user's own oeHosts profile is free-text content they authored (mergeHosts()
+                // parses arbitrary "ip hostname" lines from it) - a line like "127.0.0.1 evil.local"
+                // would otherwise let them CONNECT to a hostname that passes both checks above,
+                // then have this override map silently redirect the tunnel to this server's own
+                // loopback interface, the same SSRF pivot isLoopbackTarget(target) blocks for the
+                // literal-host case. PROXY_SVR_PLACEHOLDER is exempt: it resolves to this server's
+                // real network-facing IP as seen by the client, not its loopback interface.
+                return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
+            }
+            try {
+                byte[] addr = InetAddress.getByName(ip).getAddress();
+                InetAddress forced = InetAddress.getByAddress(host, addr);
+                return new InetSocketAddress(forced, port);
+            } catch (UnknownHostException e) {
+                return null;
+            }
         }
 
+        // No host-map override: target isn't a literal IP/"localhost" (isLoopbackTarget(target)
+        // above already returned false), so resolve it ourselves and check the *resolved* address
+        // before connecting - otherwise an attacker-registered domain whose DNS answer is
+        // loopback/any-local (DNS rebinding) would sail through every string-based check here and
+        // reach this server's own loopback interface once LittleProxy resolves it independently.
+        // Pinning the address we just checked (rather than returning null and letting LittleProxy
+        // resolve again) also closes the TOCTOU window a rebinding DNS server could otherwise use.
         try {
-            byte[] addr = InetAddress.getByName(ip).getAddress();
-            InetAddress forced = InetAddress.getByAddress(host, addr);
+            var future = DNS_RESOLVER.submit(() -> InetAddress.getByName(host));
+            var resolved = future.get(DNS_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            if (resolved.isLoopbackAddress() || resolved.isAnyLocalAddress()) {
+                logger.info("Forward proxy blocked (DNS-rebind to loopback): host={} resolvedTo={}",
+                        host, resolved.getHostAddress());
+                return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
+            }
+            var forced = InetAddress.getByAddress(host, resolved.getAddress());
             return new InetSocketAddress(forced, port);
-        } catch (UnknownHostException e) {
-            return null;
+        } catch (Exception e) {
+            return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }
     }
 }

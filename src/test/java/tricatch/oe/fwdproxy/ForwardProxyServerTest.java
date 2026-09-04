@@ -186,9 +186,14 @@ class ForwardProxyServerTest extends MapperTestBase {
     }
 
     @Test
-    void overrideFor_userWithNoHostsProfileLoaded_fallsBackToNormalDns() {
+    void overrideFor_userWithNoHostsProfileLoaded_resolvesHostItself() {
+        // Not in any host map, and not a literal loopback/IP, so overrideFor resolves it itself
+        // (rather than deferring to LittleProxy's own resolution) to catch DNS rebinding. A
+        // reserved, never-resolvable TLD (RFC 2606) keeps this deterministic without depending on
+        // network access: resolution fails either way, so it fails closed to the blocked page.
         InetSocketAddress addr = ForwardProxyServer.overrideFor(
-                "user-with-no-cached-hosts-" + newId(), "example.com:443", "10.1.1.1");
-        assertThat(addr).isNull();
+                "user-with-no-cached-hosts-" + newId(), "definitely-nonexistent-host.invalid:443", "10.1.1.1");
+        assertThat(addr).isNotNull();
+        assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
     }
 }
