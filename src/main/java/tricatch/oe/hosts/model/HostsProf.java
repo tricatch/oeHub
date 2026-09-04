@@ -11,8 +11,10 @@ public class HostsProf {
     private int sortOrder;
     private String visibility;
     private String parentId;
+    private Long lastEditedBy;
     private LocalDateTime updatedAt;
     private String userId;
+    private String lastEditorUserId;
 
     public String getHostsId() { return hostsId; }
     public void setHostsId(String hostsId) { this.hostsId = hostsId; }
@@ -38,6 +40,9 @@ public class HostsProf {
     public String getParentId() { return parentId; }
     public void setParentId(String parentId) { this.parentId = parentId; }
 
+    public Long getLastEditedBy() { return lastEditedBy; }
+    public void setLastEditedBy(Long lastEditedBy) { this.lastEditedBy = lastEditedBy; }
+
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
@@ -48,4 +53,7 @@ public class HostsProf {
     public void setUserId(String userId) {
         this.userId = userId;
     }
+
+    public String getLastEditorUserId() { return lastEditorUserId; }
+    public void setLastEditorUserId(String lastEditorUserId) { this.lastEditorUserId = lastEditorUserId; }
 }

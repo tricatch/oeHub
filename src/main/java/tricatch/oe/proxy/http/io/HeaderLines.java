@@ -493,6 +493,16 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
             int clColon = startsWithIgnoreCase(buf, len, HTTP.HEADER.CONTENT_LENGTH);
             if (clColon >= 0) {
                 contentLengthCount++;
+                // A negative Content-Length would otherwise be parsed as-is and then fail the
+                // ">= 0" check in determine*BodyStreamType(), silently downgrading a request/response
+                // that actually has a body to HttpStream.NONE — desynchronizing this keep-alive
+                // connection's framing from here on. Reject it outright instead.
+                if (clColon < len - 1) {
+                    Long clValue = trimHeaderValueAsLong(buf, len, clColon + 1);
+                    if (clValue == null || clValue < 0) {
+                        throw new IllegalArgumentException("Ambiguous framing: invalid Content-Length value");
+                    }
+                }
                 continue;
             }
 

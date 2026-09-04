@@ -54,6 +54,11 @@ public abstract class MapperTestBase {
         FACTORY = new SqlSessionFactoryBuilder().build(cfg);
         initSchema();
 
+        // Mirrors OeHubApplication.main()'s boot order: ReverseProxyServer.init() loads/creates
+        // the OidUtil HMAC secret before anything can call setVirtualHosts()/getVirtualHosts()
+        // (see ProxyController), which OidUtil.encode/decode now require.
+        tricatch.oe.proxy.ReverseProxyServer.init(FACTORY);
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 Files.walk(DB_DIR)
@@ -92,6 +97,7 @@ public abstract class MapperTestBase {
                     sort_order    INT          NOT NULL DEFAULT 0,
                     visibility    VARCHAR(16)  NOT NULL DEFAULT 'public',
                     parent_id     VARCHAR(32)  NULL,
+                    last_edited_by BIGINT      NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
                     CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
@@ -115,6 +121,7 @@ public abstract class MapperTestBase {
                     sort_order    INT          NOT NULL DEFAULT 0,
                     visibility    VARCHAR(16)  NOT NULL DEFAULT 'public',
                     parent_id     VARCHAR(32)  NULL,
+                    last_edited_by BIGINT      NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
                     CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)

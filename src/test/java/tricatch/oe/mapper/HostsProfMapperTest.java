@@ -220,6 +220,10 @@ class HostsProfMapperTest extends MapperTestBase {
             assertThat(mapper.findByHostsId(original.getHostsId()).getHostsContent()).isEqualTo("updated content");
             assertThat(mapper.findByHostsId(ref.getHostsId()).getHostsContent()).isEqualTo("updated content");
 
+            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — last_edited_by만 collab으로 반영
+            assertThat(mapper.findByHostsId(original.getHostsId()).getUserId()).isEqualTo(owner.getUserId());
+            assertThat(mapper.findByHostsId(ref.getHostsId()).getLastEditorUserId()).isEqualTo(collab.getUserId());
+
             // owner의 참조 목록
             var ownerRefs = mapper.findReferencesByUserNo(owner.getUserNo());
             assertThat(ownerRefs).hasSize(1);

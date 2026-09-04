@@ -11,6 +11,8 @@ import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.representer.Representer;
 import tricatch.oe.hub.config.AppHome;
+import tricatch.oe.hub.mapper.HubConfMapper;
+import tricatch.oe.hub.model.HubConf;
 import tricatch.oe.proxy.cfg.Config;
 import tricatch.oe.proxy.cfg.VirtualHost;
 import tricatch.oe.proxy.event.HttpEventManager;
@@ -54,10 +56,37 @@ public class ReverseProxyServer {
     private static final String KEY_IP_IDENTIFIER_ENABLED = "identifier.ip.enabled";
     private static volatile boolean ipIdentifierEnabled = true;
 
+    // Server-only secret behind X-OeHub-Oid — see OidUtil. Generated once and persisted the same
+    // way JwtService persists its signing key, so it survives restarts but never leaves this server.
+    private static final String KEY_OID_SECRET = "oid.secret";
+
     public static void init(SqlSessionFactory factory) {
         sqlSessionFactory = factory;
         var stored = new ProxyConfService(factory).get(KEY_IP_IDENTIFIER_ENABLED, null);
         ipIdentifierEnabled = !"false".equals(stored);
+        OidUtil.init(loadOrCreateOidSecret(factory));
+    }
+
+    private static byte[] loadOrCreateOidSecret(SqlSessionFactory factory) {
+        try (var session = factory.openSession()) {
+            var mapper = session.getMapper(HubConfMapper.class);
+            var conf = mapper.findByConfKey(KEY_OID_SECRET);
+            if (conf != null) {
+                return java.util.Base64.getDecoder().decode(conf.getConfVal());
+            }
+            var secret = new byte[32];
+            new java.security.SecureRandom().nextBytes(secret);
+
+            var toSave = new HubConf();
+            toSave.setConfKey(KEY_OID_SECRET);
+            toSave.setConfVal(java.util.Base64.getEncoder().encodeToString(secret));
+            toSave.setUpdatedAt(java.time.LocalDateTime.now());
+            mapper.upsert(toSave);
+            session.commit();
+            return secret;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize OID secret", e);
+        }
     }
 
     public static boolean isIpIdentifierEnabled() {

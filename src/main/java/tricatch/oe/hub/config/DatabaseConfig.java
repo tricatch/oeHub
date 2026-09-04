@@ -15,17 +15,23 @@ import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.proxy.mapper.ProxyConfMapper;
 import tricatch.oe.proxy.mapper.ProxyVhostMapper;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 public class DatabaseConfig {
 
     public static SqlSessionFactory buildSqlSessionFactory() {
-        var dbPath = AppHome.oeHubDir().resolve("data").resolve("oeHub-h2");
+        var dataDir = AppHome.oeHubDir().resolve("data");
+        var dbPath = dataDir.resolve("oeHub-h2");
 
         var ds = new JdbcDataSource();
         ds.setURL("jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE");
         ds.setUser("sa");
-        ds.setPassword("oeHub");
+        ds.setPassword(loadOrCreateDbPassword(dataDir));
 
         var env = new Environment("default", new JdbcTransactionFactory(), ds);
         var config = new Configuration(env);
@@ -42,6 +48,28 @@ public class DatabaseConfig {
         var factory = new SqlSessionFactoryBuilder().build(config);
         initSchema(factory);
         return factory;
+    }
+
+    // A fixed literal password here would be a documented credential for the local H2 TCP/web
+    // server (which listens independently of oeHub's own login) — anyone who can read the H2
+    // source or this class could connect and read the whole database, including password hashes,
+    // bypassing oeHub's auth entirely. Generate one at first run instead and persist it next to
+    // the database file, same trust boundary as the file itself.
+    private static String loadOrCreateDbPassword(Path dataDir) {
+        var pwFile = dataDir.resolve(".h2-password");
+        try {
+            if (Files.exists(pwFile)) {
+                return Files.readString(pwFile, StandardCharsets.UTF_8).trim();
+            }
+            Files.createDirectories(dataDir);
+            var bytes = new byte[24];
+            new SecureRandom().nextBytes(bytes);
+            var password = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+            Files.writeString(pwFile, password, StandardCharsets.UTF_8);
+            return password;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load/create H2 database password", e);
+        }
     }
 
     private static void initSchema(SqlSessionFactory factory) {
@@ -76,6 +104,7 @@ public class DatabaseConfig {
                     sort_order        INT            NOT NULL DEFAULT 0,
                     visibility        VARCHAR(16)    NOT NULL DEFAULT 'public',
                     parent_id         VARCHAR(32)    NULL,
+                    last_edited_by    BIGINT         NULL,
                     updated_at        TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
                     CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
@@ -123,6 +152,7 @@ public class DatabaseConfig {
                     sort_order        INT            NOT NULL DEFAULT 0,
                     visibility        VARCHAR(16)    NOT NULL DEFAULT 'public',
                     parent_id         VARCHAR(32)    NULL,
+                    last_edited_by    BIGINT         NULL,
                     updated_at        TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
                     CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)

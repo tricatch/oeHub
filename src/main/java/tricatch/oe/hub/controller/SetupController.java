@@ -28,6 +28,10 @@ public class SetupController {
     private static final Logger logger = LoggerFactory.getLogger(SetupController.class);
 
     private static volatile boolean setupComplete = false;
+    // Guards the admin-existence-check + insert in processSetup so two concurrent first-run
+    // submissions can't both pass the check and create two admin accounts (only one JVM ever
+    // runs this, so a plain in-process lock is enough — no need for DB-level locking).
+    private static final Object SETUP_LOCK = new Object();
 
     private final SqlSessionFactory sqlSessionFactory;
     private final SettingsController settings;
@@ -94,21 +98,30 @@ public class SetupController {
             return;
         }
 
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var now = LocalDateTime.now();
-            var hubUser = new HubUser();
-            hubUser.setUserId(userId);
-            hubUser.setPassword(PasswordUtil.hash(password));
-            hubUser.setRole("adm");
-            hubUser.setUpdatedAt(now);
-            hubUser.setCreateAt(now);
-            session.getMapper(HubUserMapper.class).insert(hubUser);
+        synchronized (SETUP_LOCK) {
+            try (var session = sqlSessionFactory.openSession()) {
+                if (session.getMapper(HubConfMapper.class).findByConfKey("admin") != null) {
+                    ctx.render("templates/setup.pebble", buildModel("setup.error.admin.already.configured", "", "generate"));
+                    return;
+                }
 
-            var conf = new HubConf();
-            conf.setConfKey("admin");
-            conf.setConfVal(userId);
-            conf.setUpdatedAt(now);
-            session.getMapper(HubConfMapper.class).upsert(conf);
+                var now = LocalDateTime.now();
+                var hubUser = new HubUser();
+                hubUser.setUserId(userId);
+                hubUser.setPassword(PasswordUtil.hash(password));
+                hubUser.setRole("adm");
+                hubUser.setUpdatedAt(now);
+                hubUser.setCreateAt(now);
+                session.getMapper(HubUserMapper.class).insert(hubUser);
+
+                var conf = new HubConf();
+                conf.setConfKey("admin");
+                conf.setConfVal(userId);
+                conf.setUpdatedAt(now);
+                session.getMapper(HubConfMapper.class).upsert(conf);
+
+                session.commit();
+            }
         }
 
         refreshSetupState();

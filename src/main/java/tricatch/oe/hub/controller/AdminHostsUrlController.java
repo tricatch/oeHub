@@ -58,7 +58,7 @@ public class AdminHostsUrlController {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUrlMapper.class);
-            var url = mapper.findById(urlId);
+            var url = mapper.findByIdGlobal(urlId);
             if (url == null) { ctx.status(404); return; }
             if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
             if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
@@ -72,7 +72,7 @@ public class AdminHostsUrlController {
     public void apiDelete(Context ctx) {
         var urlId = ctx.pathParam("urlId");
         try (var session = sqlSessionFactory.openSession(true)) {
-            var deleted = session.getMapper(HostsUrlMapper.class).deleteById(urlId);
+            var deleted = session.getMapper(HostsUrlMapper.class).deleteByIdGlobal(urlId);
             if (deleted == 0) { ctx.status(404); return; }
         }
         ctx.status(204);
@@ -83,7 +83,7 @@ public class AdminHostsUrlController {
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUrlMapper.class);
             for (int i = 0; i < ids.size(); i++) {
-                var url = mapper.findById((String) ids.get(i));
+                var url = mapper.findByIdGlobal((String) ids.get(i));
                 if (url == null) continue;
                 url.setSortOrder(i);
                 url.setUpdatedAt(LocalDateTime.now());

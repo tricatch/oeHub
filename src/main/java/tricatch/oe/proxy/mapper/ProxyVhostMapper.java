@@ -12,11 +12,13 @@ public interface ProxyVhostMapper {
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
                h.selected, h.sort_order, h.visibility,
-               h.parent_id, COALESCE(p.updated_at, h.updated_at) AS updated_at,
-               u.user_id
+               h.parent_id, COALESCE(p.last_edited_by, h.last_edited_by) AS last_edited_by,
+               COALESCE(p.updated_at, h.updated_at) AS updated_at,
+               u.user_id, e.user_id AS last_editor_user_id
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
+        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.last_edited_by, h.last_edited_by)
         WHERE h.user_no = #{userNo}
         ORDER BY h.sort_order ASC, h.updated_at ASC
         """)
@@ -49,11 +51,13 @@ public interface ProxyVhostMapper {
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
                h.selected, h.sort_order, h.visibility,
-               h.parent_id, COALESCE(p.updated_at, h.updated_at) AS updated_at,
-               u.user_id
+               h.parent_id, COALESCE(p.last_edited_by, h.last_edited_by) AS last_edited_by,
+               COALESCE(p.updated_at, h.updated_at) AS updated_at,
+               u.user_id, e.user_id AS last_editor_user_id
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
+        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.last_edited_by, h.last_edited_by)
         WHERE h.vhost_id = #{vhostId}
         """)
     ProxyVhost findByVhostId(String vhostId);
@@ -104,7 +108,11 @@ public interface ProxyVhostMapper {
     @Update("UPDATE PROXY_VHOST SET vhost_content = #{vhostContent}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
     void updateContent(@Param("vhostId") String vhostId, @Param("userNo") Long userNo, @Param("vhostContent") String vhostContent, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE PROXY_VHOST SET vhost_content = #{vhostContent}, user_no = -#{userNo}, updated_at = #{updatedAt} WHERE vhost_id = #{parentId} AND user_no < 0")
+    // user_no stays the original creator's — this row's owner is looked up as -user_no elsewhere
+    // (findByUserNo/findByVhostId), and reassigning it on every collaborator edit both
+    // mis-attributes ownership and can collide with the uq_proxy_vhost_user_profile unique
+    // constraint. last_edited_by is the dedicated column for who last touched shared content.
+    @Update("UPDATE PROXY_VHOST SET vhost_content = #{vhostContent}, last_edited_by = #{userNo}, updated_at = #{updatedAt} WHERE vhost_id = #{parentId} AND user_no < 0")
     void updateContentByParentId(@Param("parentId") String parentId, @Param("userNo") Long userNo, @Param("vhostContent") String vhostContent, @Param("updatedAt") LocalDateTime updatedAt);
 
     @Update("UPDATE PROXY_VHOST SET vhost_profile = #{vhostProfile}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
