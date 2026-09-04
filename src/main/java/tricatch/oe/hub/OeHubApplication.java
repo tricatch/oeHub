@@ -209,6 +209,12 @@ public class OeHubApplication {
                 }
             });
             config.routes.before("/api/*", ctx -> {
+                // oeProxy CA certificate download is deliberately public — a device installing
+                // the root CA to trust the SSL reverse proxy may not have (or need) an oeHub
+                // session yet. See the route registration below for the full rationale.
+                if ("/api/proxy/ca".equals(ctx.path())) {
+                    return;
+                }
                 if (AuthController.currentUser(ctx) == null) {
                     ctx.status(401).result("Unauthorized");
                     ctx.skipRemainingHandlers();

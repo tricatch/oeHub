@@ -78,6 +78,23 @@ public class ForwardProxyServer {
     private static volatile String whitelistText = "";
     private static volatile List<String> whitelistPatterns = List.of();
 
+    // Per-account auth throttle: this callback (org.littleshoot.proxy.ProxyAuthenticator) gets
+    // only userName/password, no client IP, so — unlike AuthController's per-IP login lockout —
+    // this is keyed by the attempted userId. Otherwise bcrypt cost is the only thing slowing an
+    // online brute-force attempt against any HUB_USR account through this always-on, 0.0.0.0-bound
+    // proxy port. In-memory only, same trade-off as AuthController's lockout.
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final java.time.Duration ATTEMPT_WINDOW = java.time.Duration.ofMinutes(15);
+    private static final java.time.Duration LOCKOUT_DURATION = java.time.Duration.ofMinutes(15);
+
+    private static final class AuthAttempts {
+        int count;
+        java.time.Instant windowStart;
+        java.time.Instant lockedUntil;
+    }
+
+    private static final ConcurrentHashMap<String, AuthAttempts> authAttemptsByUser = new ConcurrentHashMap<>();
+
     public static int getPort() {
         return PORT;
     }
@@ -118,6 +135,34 @@ public class ForwardProxyServer {
         return false;
     }
 
+    /**
+     * True when the destination literally names this proxy host's own loopback interface.
+     * Always enforced — unlike isWhitelisted(), an empty whitelist never permits this. A
+     * client tunneling to e.g. 127.0.0.1:<h2-console-port> from the oeHub host itself defeats
+     * a downstream service's "reject non-local requesters" check, since that check sees the
+     * connection as local. Only checked against literal IPs/"localhost" (no DNS lookup here)
+     * so ordinary hostnames — including LAN devices an oeHosts profile intentionally targets —
+     * cost nothing extra per request; a hostname that itself resolves to a loopback address
+     * (DNS rebinding) is not caught by this check.
+     */
+    static boolean isLoopbackTarget(String host) {
+        if (host == null || host.isBlank()) return false;
+        var h = host.trim();
+        if (h.equalsIgnoreCase("localhost") || h.toLowerCase(java.util.Locale.ROOT).endsWith(".localhost")) {
+            return true;
+        }
+        if (!looksLikeIpLiteral(h)) return false;
+        try {
+            return InetAddress.getByName(h).isLoopbackAddress();
+        } catch (UnknownHostException e) {
+            return false;
+        }
+    }
+
+    private static boolean looksLikeIpLiteral(String h) {
+        return h.matches("\\d{1,3}(\\.\\d{1,3}){3}") || h.contains(":");
+    }
+
     public static synchronized void start() {
         if (server != null) return;
 
@@ -144,7 +189,7 @@ public class ForwardProxyServer {
                             public HttpResponse clientToProxyRequest(HttpObject httpObject) {
                                 if (httpObject instanceof HttpRequest request) {
                                     var host = targetHost(request);
-                                    if (!isWhitelisted(host)) {
+                                    if (isLoopbackTarget(host) || !isWhitelisted(host)) {
                                         // CONNECT (HTTPS): if the blocked-page server is up, let the tunnel
                                         // succeed here and redirect it there in overrideFor() below, so the
                                         // client completes a real TLS handshake and renders the 403 page
@@ -180,18 +225,52 @@ public class ForwardProxyServer {
 
     private static boolean authenticate(String userId, String password) {
         if (userId == null || password == null) return false;
+        var key = userId.toLowerCase();
+        if (isAuthLocked(key)) {
+            logger.debug("Forward proxy auth blocked (locked out) for userId={}", userId);
+            return false;
+        }
         try (var session = sqlSessionFactory.openSession()) {
             var user = session.getMapper(HubUserMapper.class).findByUserId(userId);
             if (user == null || !PasswordUtil.matches(password, user.getPassword())) {
+                recordAuthFailure(key);
                 logger.debug("Forward proxy auth failed for userId={}", userId);
                 return false;
             }
+            recordAuthSuccess(key);
             refreshUserHosts(user);
             return true;
         } catch (Exception e) {
             logger.warn("Forward proxy auth error for userId={}: {}", userId, e.getMessage());
             return false;
         }
+    }
+
+    private static boolean isAuthLocked(String key) {
+        var a = authAttemptsByUser.get(key);
+        if (a == null) return false;
+        synchronized (a) {
+            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
+        }
+    }
+
+    private static void recordAuthFailure(String key) {
+        var a = authAttemptsByUser.computeIfAbsent(key, k -> new AuthAttempts());
+        synchronized (a) {
+            var now = java.time.Instant.now();
+            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
+                a.windowStart = now;
+                a.count = 0;
+            }
+            a.count++;
+            if (a.count >= MAX_FAILED_ATTEMPTS) {
+                a.lockedUntil = now.plus(LOCKOUT_DURATION);
+            }
+        }
+    }
+
+    private static void recordAuthSuccess(String key) {
+        authAttemptsByUser.remove(key);
     }
 
     /** Recomputes and caches the given user's merged host->ip map from their selected oeHosts profiles. */
@@ -312,10 +391,13 @@ public class ForwardProxyServer {
 
     /** Looks up host:port in the user's cached map; returns null (=normal DNS) when there's no override. */
     static InetSocketAddress overrideFor(String userId, String hostAndPort, String localServerIp) {
-        // Only reachable here for a non-whitelisted host when the CONNECT was deliberately let
-        // through by clientToProxyRequest because BlockedPageServer is up (see there) - redirect
-        // the tunnel to it instead of the real destination.
-        if (!isWhitelisted(hostOnly(hostAndPort))) {
+        // Only reachable here for a blocked host (loopback target, or non-whitelisted) when the
+        // CONNECT was deliberately let through by clientToProxyRequest because BlockedPageServer
+        // is up (see there) - redirect the tunnel to it instead of the real destination. Must
+        // mirror clientToProxyRequest's block condition exactly, or a host that satisfies one
+        // check but not the other would fall through to a real connection below.
+        var target = hostOnly(hostAndPort);
+        if (isLoopbackTarget(target) || !isWhitelisted(target)) {
             return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }
 
@@ -332,6 +414,15 @@ public class ForwardProxyServer {
         if (PROXY_SVR_PLACEHOLDER.equals(ip)) {
             if (localServerIp == null) return null;
             ip = localServerIp;
+        } else if (isLoopbackTarget(ip)) {
+            // A user's own oeHosts profile is free-text content they authored (mergeHosts()
+            // parses arbitrary "ip hostname" lines from it) - a line like "127.0.0.1 evil.local"
+            // would otherwise let them CONNECT to a hostname that passes both checks above,
+            // then have this override map silently redirect the tunnel to this server's own
+            // loopback interface, the same SSRF pivot isLoopbackTarget(target) blocks for the
+            // literal-host case. PROXY_SVR_PLACEHOLDER is exempt: it resolves to this server's
+            // real network-facing IP as seen by the client, not its loopback interface.
+            return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }
 
         try {

@@ -270,6 +270,9 @@ public class PassRequestExecutor implements Stopable {
 
                 }
 
+                // Apply configured per-location header add/remove rules before forwarding upstream.
+                applyHeaderRules(requestHeaders, virtualPath);
+
                 //write-req-header
                 serverOut.writeHeaders(requestHeaders);
 
@@ -409,6 +412,21 @@ public class PassRequestExecutor implements Stopable {
             resource.close();
         } catch (Exception e) {
             logger.debug("Error closing {}: {}", label, e.getMessage());
+        }
+    }
+
+    private void applyHeaderRules(HeaderLines requestHeaders, VirtualPath virtualPath) {
+        List<String> removeHeader = virtualPath.getRemoveHeader();
+        if (removeHeader != null) {
+            for (String name : removeHeader) {
+                requestHeaders.removeHeadersNamed(name);
+            }
+        }
+        List<String> addHeader = virtualPath.getAddHeader();
+        if (addHeader != null) {
+            for (String headerLine : addHeader) {
+                requestHeaders.setHeaderLine(headerLine);
+            }
         }
     }
 

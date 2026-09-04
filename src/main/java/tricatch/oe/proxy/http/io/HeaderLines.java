@@ -105,6 +105,33 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
     public boolean hasHeader(byte[] headerNameBytes) {
         return findHeaderLine(headerNameBytes) != null;
     }
+
+    /**
+     * Remove every header line matching this name (case-insensitive). Used to apply
+     * per-location "remove header" rules before forwarding a request/response.
+     * @param headerName header name, without the trailing colon
+     */
+    public void removeHeadersNamed(String headerName) {
+        byte[] headerNameBytes = headerName.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (int i = size() - 1; i >= 1; i--) {
+            ByteBuffer headerBuffer = get(i);
+            if (startsWithIgnoreCase(headerBuffer.getBuffer(), headerBuffer.getLength(), headerNameBytes) >= 0) {
+                remove(i);
+            }
+        }
+    }
+
+    /**
+     * Set a header line built from a "Name: Value" string, replacing any existing header
+     * with the same name. Used to apply per-location "add header" rules before forwarding.
+     * @param headerLine full header line, e.g. "X-Custom-Header: value"
+     */
+    public void setHeaderLine(String headerLine) {
+        int colon = headerLine.indexOf(':');
+        if (colon <= 0) return;
+        removeHeadersNamed(headerLine.substring(0, colon).trim());
+        add(new ByteBuffer(headerLine.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
     
     /**
      * Check if HTTP method is valid
@@ -452,6 +479,10 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
             throw new IllegalArgumentException("Invalid HTTP method: " + method);
         }
 
+        // Reject malformed header syntax (obs-fold, whitespace before colon) that a backend
+        // could interpret differently than this proxy — see validateHeaderSyntax() for why.
+        validateHeaderSyntax();
+
         // Reject ambiguous Content-Length/Transfer-Encoding framing before it's ever forwarded
         // upstream — the classic CL.TE/TE.CL/CL.CL request-smuggling setup.
         validateFraming();
@@ -471,6 +502,47 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         return new HttpRequest(method, path, version, host, connection, contentLength, httpStream, this);
     }
     
+    /**
+     * Rejects malformed header-line syntax that a backend server could parse differently than
+     * this proxy does, letting the two disagree about where headers begin/end (the same class
+     * of ambiguity validateFraming() closes for Content-Length/Transfer-Encoding, extended to
+     * header syntax itself):
+     * <ul>
+     *   <li>obs-fold — a header line beginning with a space/tab is legacy line-folding
+     *       (RFC 7230 §3.2.4) that must be rejected rather than treated as its own header;</li>
+     *   <li>whitespace between the field-name and the colon (e.g. "Foo : bar") — RFC 9112 §5.1
+     *       requires a recipient to reject this outright rather than strip the whitespace,
+     *       since some servers honor the header and others don't.</li>
+     * </ul>
+     * @throws IllegalArgumentException if any header line has malformed syntax
+     */
+    private void validateHeaderSyntax() {
+        for (int i = 1; i < size(); i++) {
+            ByteBuffer headerBuffer = get(i);
+            byte[] buf = headerBuffer.getBuffer();
+            int len = headerBuffer.getLength();
+            if (len == 0) continue;
+
+            if (buf[0] == ' ' || buf[0] == '\t') {
+                throw new IllegalArgumentException("Malformed header: obsolete line folding is not supported");
+            }
+
+            int colon = -1;
+            for (int j = 0; j < len; j++) {
+                if (buf[j] == ':') {
+                    colon = j;
+                    break;
+                }
+                if (buf[j] == ' ' || buf[j] == '\t') {
+                    throw new IllegalArgumentException("Malformed header: whitespace before colon in header field-name");
+                }
+            }
+            if (colon <= 0) {
+                throw new IllegalArgumentException("Malformed header: missing colon");
+            }
+        }
+    }
+
     /**
      * Rejects a request whose Content-Length/Transfer-Encoding framing is ambiguous. A
      * conforming client never needs to send more than one Content-Length header, both
@@ -639,6 +711,10 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid status code: " + statusCodeStr);
         }
+
+        // Reject malformed header syntax from the upstream response too — see
+        // validateHeaderSyntax() for why.
+        validateHeaderSyntax();
 
         // Reject ambiguous Content-Length/Transfer-Encoding framing from the upstream response
         // too — the request side already guards against CL.TE/TE.CL/CL.CL smuggling, but a

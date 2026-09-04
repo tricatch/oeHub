@@ -39,7 +39,9 @@ public class AdminUserController {
             var mapper = session.getMapper(HubUserMapper.class);
             var model = new HashMap<String, Object>();
             model.put("user", AuthController.currentUser(ctx));
-            model.put("users", mapper.findAll());
+            var users = mapper.findAll();
+            for (var u : users) u.setPassword(null);
+            model.put("users", users);
             ctx.render("templates/oehub/users.pebble", model);
         }
     }
