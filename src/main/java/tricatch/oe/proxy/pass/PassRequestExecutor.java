@@ -82,6 +82,7 @@ public class PassRequestExecutor implements Stopable {
     private int reqCounter = 0;
     private VirtualHosts virtualHosts = null;
     private String clientId = null;
+    private String ownerOid = null;
     private String currentLocale = "en";
     private String currentHost = null;
     private String currentMethod = null;
@@ -115,6 +116,14 @@ public class PassRequestExecutor implements Stopable {
     
     public String getClientId(){
         return this.clientId;
+    }
+
+    // Resolved owner oid for the current/most-recent request on this connection (see
+    // ReverseProxyServer.resolveOid()) — used to tag HttpEvents with their true owner instead
+    // of the raw client IP, so the live monitor can't cross-leak traffic between two accounts
+    // sharing an egress IP. null until the first successful getVirtualHosts() call.
+    public String getOwnerOid(){
+        return this.ownerOid;
     }
 
     public String getCurrentLocale(){
@@ -198,9 +207,12 @@ public class PassRequestExecutor implements Stopable {
 
                 this.oidHeader = requestHeaders.getHeaderValueAsString(HTTP.HEADER.OEHUB_OID);
                 this.virtualHosts = ReverseProxyServer.getVirtualHosts(this.clientId, this.oidHeader);
+                this.ownerOid = ReverseProxyServer.resolveOid(this.clientId, this.oidHeader);
 
-                // Enqueue REQ header HttpEvent
-                HttpEvent reqHeaderEvent = new HttpEvent(this.clientId, this.rid, HttpEventType.REQ_HEADER);
+                // Enqueue REQ header HttpEvent — tagged by resolved owner oid, not raw client
+                // IP, so two accounts sharing an egress IP can't see each other's live traffic
+                // in the monitor (see ReverseProxyServer.resolveOid()).
+                HttpEvent reqHeaderEvent = new HttpEvent(this.ownerOid, this.rid, HttpEventType.REQ_HEADER);
                 reqHeaderEvent.setHeaders(requestHeaders);
                 HttpEventManager.getInstance().enqueue(reqHeaderEvent);
 
@@ -282,7 +294,7 @@ public class PassRequestExecutor implements Stopable {
                 }
 
                 // Relay request body to server if exists
-                HttpStream.Connection connection = RelayBody.relayRequestBody(this.clientId, rid, HttpStream.Flow.REQ, httpRequest, clientIn, serverOut);
+                HttpStream.Connection connection = RelayBody.relayRequestBody(this.ownerOid, rid, HttpStream.Flow.REQ, httpRequest, clientIn, serverOut);
                 if (connection == HttpStream.Connection.CLOSE) {
                     this.stop = true;
                 }
@@ -415,16 +427,35 @@ public class PassRequestExecutor implements Stopable {
         }
     }
 
+    // Header names applyHeaderRules() must never let a per-location add/remove rule touch.
+    // requestHeaders.parseHttpRequest() (called before applyHeaderRules(), see run()) already
+    // read Content-Length/Transfer-Encoding off the ORIGINAL headers to run validateFraming()
+    // and to decide httpRequest.getHttpStream() — the body-framing mode RelayBody.relayRequestBody()
+    // then relays by. A location rule that added/removed one of these after that point would
+    // desync what the rewritten headers *declare* to the backend from what body framing is
+    // *actually* relayed, silently reintroducing the exact CL/TE ambiguity validateFraming()
+    // exists to reject — this vhost config is attacker-controllable (any authenticated user's
+    // own vhost, see ReverseProxyServer's YAML-loading comment), so this isn't just a
+    // misconfiguration guard.
+    private static final java.util.Set<String> HEADER_RULES_PROTECTED_NAMES = java.util.Set.of(
+            "content-length", "transfer-encoding", "connection"
+    );
+
     private void applyHeaderRules(HeaderLines requestHeaders, VirtualPath virtualPath) {
         List<String> removeHeader = virtualPath.getRemoveHeader();
         if (removeHeader != null) {
             for (String name : removeHeader) {
+                if (name == null || HEADER_RULES_PROTECTED_NAMES.contains(name.trim().toLowerCase(Locale.ROOT))) continue;
                 requestHeaders.removeHeadersNamed(name);
             }
         }
         List<String> addHeader = virtualPath.getAddHeader();
         if (addHeader != null) {
             for (String headerLine : addHeader) {
+                if (headerLine == null) continue;
+                int colon = headerLine.indexOf(':');
+                if (colon <= 0) continue;
+                if (HEADER_RULES_PROTECTED_NAMES.contains(headerLine.substring(0, colon).trim().toLowerCase(Locale.ROOT))) continue;
                 requestHeaders.setHeaderLine(headerLine);
             }
         }

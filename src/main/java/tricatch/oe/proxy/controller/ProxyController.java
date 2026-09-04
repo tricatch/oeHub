@@ -67,7 +67,12 @@ public class ProxyController {
         ctx.res().setHeader("Connection", "keep-alive");
         ctx.res().setHeader("X-Accel-Buffering", "no");
 
-        String clientId = ctx.ip();
+        // Subscribed by the viewer's own account oid, not raw client IP: under NAT/CGNAT/shared
+        // egress, two different oeHub accounts can share an IP, and HttpEvents are now tagged
+        // with their true owner oid (see ReverseProxyServer.resolveOid()) for exactly this
+        // reason — matching on IP here would let this account's monitor view another tenant's
+        // live traffic (headers, cookies, bodies) whenever their proxied traffic shares this IP.
+        String clientId = AuthController.currentUser(ctx).getOid();
         String channelId = clientId + "/hub-" + System.nanoTime();
 
         OutputStream out = ctx.res().getOutputStream();

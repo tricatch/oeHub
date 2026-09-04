@@ -136,14 +136,16 @@ public class ForwardProxyServer {
     }
 
     /**
-     * True when the destination literally names this proxy host's own loopback interface.
-     * Always enforced — unlike isWhitelisted(), an empty whitelist never permits this. A
-     * client tunneling to e.g. 127.0.0.1:<h2-console-port> from the oeHub host itself defeats
-     * a downstream service's "reject non-local requesters" check, since that check sees the
-     * connection as local. Only checked against literal IPs/"localhost" (no DNS lookup here)
-     * so ordinary hostnames — including LAN devices an oeHosts profile intentionally targets —
-     * cost nothing extra per request; a hostname that itself resolves to a loopback address
-     * (DNS rebinding) is not caught by this check.
+     * True when the destination literally names this proxy host's own loopback interface, or
+     * the unspecified/"any" address (0.0.0.0 / ::) — which several OSes (Linux included) treat
+     * as "this host" on an outbound connect() the same as loopback. Always enforced — unlike
+     * isWhitelisted(), an empty whitelist never permits this. A client tunneling to e.g.
+     * 127.0.0.1:<h2-console-port> from the oeHub host itself defeats a downstream service's
+     * "reject non-local requesters" check, since that check sees the connection as local. Only
+     * checked against literal IPs/"localhost" (no DNS lookup here) so ordinary hostnames —
+     * including LAN devices an oeHosts profile intentionally targets — cost nothing extra per
+     * request; a hostname that itself resolves to a loopback address (DNS rebinding) is not
+     * caught by this check.
      */
     static boolean isLoopbackTarget(String host) {
         if (host == null || host.isBlank()) return false;
@@ -153,14 +155,19 @@ public class ForwardProxyServer {
         }
         if (!looksLikeIpLiteral(h)) return false;
         try {
-            return InetAddress.getByName(h).isLoopbackAddress();
+            var addr = InetAddress.getByName(h);
+            return addr.isLoopbackAddress() || addr.isAnyLocalAddress();
         } catch (UnknownHostException e) {
             return false;
         }
     }
 
+    // Digits/dots/colons only — every legacy numeric form InetAddress.getByName() parses as a
+    // literal without a DNS lookup (dotted-quad "127.0.0.1", shorthand "127.1", pure-decimal
+    // "2130706433", IPv6) matches this, while a real hostname always contains a letter or
+    // hyphen and never reaches getByName() here at all.
     private static boolean looksLikeIpLiteral(String h) {
-        return h.matches("\\d{1,3}(\\.\\d{1,3}){3}") || h.contains(":");
+        return h.matches("[0-9.:]+");
     }
 
     public static synchronized void start() {

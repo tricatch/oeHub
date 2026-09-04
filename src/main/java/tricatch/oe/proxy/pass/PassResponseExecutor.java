@@ -102,9 +102,11 @@ public class PassResponseExecutor implements Stopable {
                     );
                 }
 
-                // Enqueue RES header HttpEvent
-                String clientId = this.passRequestExecutor.getClientId();
-                HttpEvent resHeaderEvent = new HttpEvent(clientId, this.rid, HttpEventType.RES_HEADER);
+                // Enqueue RES header HttpEvent — tagged by resolved owner oid, not raw client
+                // IP, so two accounts sharing an egress IP can't see each other's live traffic
+                // in the monitor (see ReverseProxyServer.resolveOid()).
+                String ownerOid = this.passRequestExecutor.getOwnerOid();
+                HttpEvent resHeaderEvent = new HttpEvent(ownerOid, this.rid, HttpEventType.RES_HEADER);
                 resHeaderEvent.setHeaders(responseHeaders);
                 HttpEventManager.getInstance().enqueue(resHeaderEvent);
 
@@ -130,7 +132,7 @@ public class PassResponseExecutor implements Stopable {
                 responseHeaderSent = true;
 
                 // Relay response body to client
-                HttpStream.Connection connection = RelayBody.relayResponseBody(clientId, rid, HttpStream.Flow.RES, response, serverIn, clientOut);
+                HttpStream.Connection connection = RelayBody.relayResponseBody(ownerOid, rid, HttpStream.Flow.RES, response, serverIn, clientOut);
                 if (connection == HttpStream.Connection.CLOSE) {
                     passRequestExecutor.setStop(true);
                 }

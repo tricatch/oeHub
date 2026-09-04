@@ -212,19 +212,33 @@ public class ReverseProxyServer {
         oidVirtualHostsMap.remove(OidUtil.encode(userNo));
     }
 
+    /**
+     * Resolves the owner oid for a request the same way getVirtualHosts() does — X-OeHub-Oid
+     * header first, then the (togglable) IP-based fallback — without requiring a vhost lookup
+     * to succeed. Used to tag each HttpEvent enqueued for a request/response with its true
+     * owner, so the live traffic monitor (ProxyController.monitorEvent) can filter by account
+     * instead of raw client IP: under NAT/CGNAT/shared egress, two different oeHub accounts can
+     * share one IP, and IP-only matching would let one account's monitor view see the other's
+     * live traffic (headers, cookies, bodies). Returns null when ownership can't be resolved —
+     * callers should simply not attribute/route the event rather than fail the request over it.
+     */
+    public static String resolveOid(String clientIp, String oidHeader) {
+        if (oidHeader != null && !oidHeader.isBlank()) {
+            Long userNo = OidUtil.decode(oidHeader);
+            return userNo == null ? null : OidUtil.encode(userNo);
+        }
+        return ipIdentifierEnabled ? ipOidMap.get(clientIp) : null;
+    }
+
     public static VirtualHosts getVirtualHosts(String clientIp, String oidHeader) throws NotFoundProxyVirtualHostsException {
         // X-OeHub-Oid header takes precedence over the IP-based owner lookup,
         // since a shared/proxied client IP can otherwise resolve to the wrong owner.
         // The IP-based fallback itself can be turned off entirely via settings when
         // IP identification is untrustworthy (see ipIdentifierEnabled).
-        String oid;
-        if (oidHeader != null && !oidHeader.isBlank()) {
-            Long userNo = OidUtil.decode(oidHeader);
-            if (userNo == null) throw new NotFoundProxyVirtualHostsException("Invalid X-OeHub-Oid header: " + oidHeader);
-            oid = OidUtil.encode(userNo);
-        } else {
-            oid = ipIdentifierEnabled ? ipOidMap.get(clientIp) : null;
+        if (oidHeader != null && !oidHeader.isBlank() && OidUtil.decode(oidHeader) == null) {
+            throw new NotFoundProxyVirtualHostsException("Invalid X-OeHub-Oid header: " + oidHeader);
         }
+        String oid = resolveOid(clientIp, oidHeader);
         if (oid == null) throw new NotFoundProxyVirtualHostsException("No owner mapped for IP: " + clientIp);
         VirtualHosts virtualHosts = oidVirtualHostsMap.get(oid);
         if (virtualHosts == null) {

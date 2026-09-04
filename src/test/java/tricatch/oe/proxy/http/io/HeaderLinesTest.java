@@ -142,4 +142,115 @@ class HeaderLinesTest {
         HeaderLines lines = requestLines("POST /x HTTP/1.1", "Host: a", "Transfer-Encoding: identity, chunked");
         assertThatIllegalArgumentException().isThrownBy(lines::parseHttpRequest);
     }
+
+    // ── header-syntax validation (obs-fold / whitespace-before-colon) ──────────────────
+
+    @Test
+    void request_wellFormedHeaders_areAccepted() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", "X-Foo: bar");
+        assertThatNoException().isThrownBy(lines::parseHttpRequest);
+    }
+
+    @Test
+    void request_colonInHeaderValue_doesNotFalsePositive() {
+        // The colon-search must stop at the field-name/value boundary, not object to a colon
+        // appearing later in the value itself.
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a",
+                "Cookie: session=abc; expires=Wed, 21 Oct 2026 07:28:00 GMT");
+        assertThatNoException().isThrownBy(lines::parseHttpRequest);
+    }
+
+    @Test
+    void request_emptyHeaderValue_isAccepted() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", "X-Empty:");
+        assertThatNoException().isThrownBy(lines::parseHttpRequest);
+    }
+
+    @Test
+    void request_whitespaceBeforeColon_isRejected() {
+        // RFC 9112 5.1: a recipient MUST reject this rather than strip the whitespace, since
+        // some servers honor the header under its name and others don't.
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", "X-Foo : bar");
+        assertThatIllegalArgumentException().isThrownBy(lines::parseHttpRequest);
+    }
+
+    @Test
+    void request_obsFoldContinuationLine_isRejected() {
+        // RFC 7230 3.2.4: a header line beginning with SP/HTAB is legacy line-folding, which
+        // must be rejected rather than treated as its own independent header.
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", " continuation-of-previous-value");
+        assertThatIllegalArgumentException().isThrownBy(lines::parseHttpRequest);
+    }
+
+    @Test
+    void request_headerLineMissingColon_isRejected() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", "NotAHeaderLine");
+        assertThatIllegalArgumentException().isThrownBy(lines::parseHttpRequest);
+    }
+
+    @Test
+    void response_whitespaceBeforeColon_isRejected() {
+        HeaderLines lines = responseLines("HTTP/1.1 200 OK", "X-Foo : bar");
+        assertThatIllegalArgumentException().isThrownBy(() -> lines.parseHttpResponse(false));
+    }
+
+    @Test
+    void response_obsFoldContinuationLine_isRejected() {
+        HeaderLines lines = responseLines("HTTP/1.1 200 OK", " continuation-of-previous-value");
+        assertThatIllegalArgumentException().isThrownBy(() -> lines.parseHttpResponse(false));
+    }
+
+    // ── removeHeadersNamed / setHeaderLine (per-location header add/remove rules) ──────
+
+    @Test
+    void removeHeadersNamed_removesAllMatchingLines_caseInsensitively() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", "X-Foo: 1", "x-foo: 2", "X-Bar: keep");
+        lines.removeHeadersNamed("X-Foo");
+        assertThat(lines.hasHeader("X-Foo".getBytes())).isFalse();
+        assertThat(lines.getHeaderValueAsString("X-Bar".getBytes())).isEqualTo("keep");
+    }
+
+    @Test
+    void removeHeadersNamed_neverRemovesRequestLine() {
+        HeaderLines lines = requestLines("GET /X-Foo HTTP/1.1", "Host: a");
+        lines.removeHeadersNamed("GET");
+        assertThat(lines.size()).isEqualTo(2);
+    }
+
+    @Test
+    void setHeaderLine_addsNewHeader() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a");
+        lines.setHeaderLine("X-Custom: injected");
+        assertThat(lines.getHeaderValueAsString("X-Custom".getBytes())).isEqualTo("injected");
+    }
+
+    @Test
+    void setHeaderLine_replacesExistingHeaderOfSameName() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a", "X-Custom: old");
+        lines.setHeaderLine("X-Custom: new");
+        assertThat(lines.getHeaderValueAsString("X-Custom".getBytes())).isEqualTo("new");
+        // exactly one X-Custom line remains, not two
+        int count = 0;
+        for (int i = 1; i < lines.size(); i++) {
+            if (lines.get(i).toString().toLowerCase().startsWith("x-custom")) count++;
+        }
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void setHeaderLine_rejectsEmbeddedCrlf_toPreventHeaderInjection() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a");
+        int sizeBefore = lines.size();
+        lines.setHeaderLine("X-Custom: value\r\nX-Injected: evil");
+        assertThat(lines.size()).isEqualTo(sizeBefore);
+        assertThat(lines.hasHeader("X-Injected".getBytes())).isFalse();
+    }
+
+    @Test
+    void setHeaderLine_ignoresMalformedLineWithNoColon() {
+        HeaderLines lines = requestLines("GET /x HTTP/1.1", "Host: a");
+        int sizeBefore = lines.size();
+        lines.setHeaderLine("NotAHeaderLine");
+        assertThat(lines.size()).isEqualTo(sizeBefore);
+    }
 }

@@ -43,6 +43,24 @@ public class AuthController {
 
     private final java.util.concurrent.ConcurrentHashMap<String, LoginAttempts> loginAttemptsByIp = new java.util.concurrent.ConcurrentHashMap<>();
 
+    // Per-IP registration throttle: self-registration otherwise checks only userId format and
+    // password strength — nothing stops one IP from scripting unlimited account creation, which
+    // would let an attacker mint fresh accounts to route around ForwardProxyServer's per-account
+    // auth lockout (each new account starts with a clean lockout counter) or just abuse
+    // resources. Separate counters/thresholds from the login throttle since the abuse pattern
+    // (repeated POSTs regardless of outcome, not necessarily failures) differs.
+    private static final int MAX_REGISTRATIONS_PER_WINDOW = 5;
+    private static final java.time.Duration REGISTER_WINDOW = java.time.Duration.ofHours(1);
+    private static final java.time.Duration REGISTER_LOCKOUT_DURATION = java.time.Duration.ofHours(1);
+
+    private static final class RegisterAttempts {
+        int count;
+        java.time.Instant windowStart;
+        java.time.Instant lockedUntil;
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, RegisterAttempts> registerAttemptsByIp = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final SqlSessionFactory sqlSessionFactory;
     private final JwtService        jwtService;
 
@@ -76,6 +94,29 @@ public class AuthController {
 
     private void recordLoginSuccess(String ip) {
         loginAttemptsByIp.remove(ip);
+    }
+
+    private boolean isRegisterLocked(String ip) {
+        var a = registerAttemptsByIp.get(ip);
+        if (a == null) return false;
+        synchronized (a) {
+            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
+        }
+    }
+
+    private void recordRegisterAttempt(String ip) {
+        var a = registerAttemptsByIp.computeIfAbsent(ip, k -> new RegisterAttempts());
+        synchronized (a) {
+            var now = java.time.Instant.now();
+            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(REGISTER_WINDOW) > 0) {
+                a.windowStart = now;
+                a.count = 0;
+            }
+            a.count++;
+            if (a.count >= MAX_REGISTRATIONS_PER_WINDOW) {
+                a.lockedUntil = now.plus(REGISTER_LOCKOUT_DURATION);
+            }
+        }
     }
 
     /** Issues a JWT for hubUser and sets the oe_auth cookie - shared by processLogin and
@@ -199,6 +240,13 @@ public class AuthController {
     }
 
     public void processRegister(Context ctx) {
+        String ip = ctx.ip();
+        if (isRegisterLocked(ip)) {
+            ctx.status(429).render("templates/register.pebble", Map.of("error", "auth.error.register.too.many.attempts", "userId", ""));
+            return;
+        }
+        recordRegisterAttempt(ip);
+
         var userId        = ctx.formParam("userId");
         var password        = ctx.formParam("password");
         var confirmPassword = ctx.formParam("confirmPassword");

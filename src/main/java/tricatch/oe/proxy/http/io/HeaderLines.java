@@ -124,9 +124,14 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
     /**
      * Set a header line built from a "Name: Value" string, replacing any existing header
      * with the same name. Used to apply per-location "add header" rules before forwarding.
+     * A CR or LF anywhere in headerLine is rejected outright rather than forwarded — this
+     * string comes from admin-editable vhost config (attacker-controllable: any authenticated
+     * user's own vhost), and writeHeaders() would otherwise serialize an embedded CRLF as real
+     * extra header lines on the wire, letting one configured header inject others.
      * @param headerLine full header line, e.g. "X-Custom-Header: value"
      */
     public void setHeaderLine(String headerLine) {
+        if (headerLine.indexOf('\r') >= 0 || headerLine.indexOf('\n') >= 0) return;
         int colon = headerLine.indexOf(':');
         if (colon <= 0) return;
         removeHeadersNamed(headerLine.substring(0, colon).trim());
