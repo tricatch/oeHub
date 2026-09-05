@@ -194,7 +194,10 @@ public class PassResponseExecutor implements Stopable {
                     this.rid, passRequestExecutor.getCurrentHost(), vp.getTarget(), vp.getPath());
             HtmlUtil.writeGatewayTimeoutResponse(clientOut, ex, passRequestExecutor.getCurrentLocale());
         } catch (IOException io) {
-            logger.error("{}, Failed to write 504 response: {}", this.rid, io.getMessage(), io);
+            // Best-effort courtesy write to a client that may already be gone (e.g. it gave up
+            // and disconnected around the same time the upstream timed out) - the stack trace
+            // adds nothing since there's no one left to receive the response either way.
+            logger.error("{}, Failed to write 504 response: {}", this.rid, io.getMessage());
         }
     }
 
@@ -208,7 +211,8 @@ public class PassResponseExecutor implements Stopable {
                     this.rid, passRequestExecutor.getCurrentHost(), vp.getTarget(), vp.getPath(), ioCause);
             HtmlUtil.writeBadGatewayResponse(clientOut, ex, passRequestExecutor.getCurrentLocale());
         } catch (IOException io) {
-            logger.error("{}, Failed to write 502 response: {}", this.rid, io.getMessage(), io);
+            // Same best-effort rationale as writeGatewayTimeoutIfPossible() above.
+            logger.error("{}, Failed to write 502 response: {}", this.rid, io.getMessage());
         }
     }
 
