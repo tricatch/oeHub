@@ -1,11 +1,12 @@
 package tricatch.oe.hub.config;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
-import org.h2.jdbcx.JdbcDataSource;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hosts.mapper.HostsConfMapper;
@@ -24,14 +25,27 @@ import java.util.Base64;
 
 public class DatabaseConfig {
 
+    // oeHub is a single-machine embedded app (H2 file + AUTO_SERVER, no network DB), so pool
+    // sizing only needs to cover this JVM's own request-handling threads, not a shared server
+    // fleet. MIN keeps a couple of connections warm to avoid reconnect latency on the first
+    // requests after idle periods; MAX caps how many concurrent physical connections (each an
+    // AUTO_SERVER TCP round trip) a request burst can open.
+    private static final int DB_POOL_MIN_IDLE = 2;
+    private static final int DB_POOL_MAX_SIZE = 10;
+
     public static SqlSessionFactory buildSqlSessionFactory() {
         var dataDir = AppHome.oeHubDir().resolve("data");
         var dbPath = dataDir.resolve("oeHub-h2");
 
-        var ds = new JdbcDataSource();
-        ds.setURL("jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE");
-        ds.setUser("sa");
-        ds.setPassword(loadOrCreateDbPassword(dataDir));
+        var hikariConfig = new HikariConfig();
+        hikariConfig.setPoolName("oeHub-h2-pool");
+        hikariConfig.setJdbcUrl("jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE");
+        hikariConfig.setUsername("sa");
+        hikariConfig.setPassword(loadOrCreateDbPassword(dataDir));
+        hikariConfig.setDriverClassName("org.h2.Driver");
+        hikariConfig.setMinimumIdle(DB_POOL_MIN_IDLE);
+        hikariConfig.setMaximumPoolSize(DB_POOL_MAX_SIZE);
+        var ds = new HikariDataSource(hikariConfig);
 
         var env = new Environment("default", new JdbcTransactionFactory(), ds);
         var config = new Configuration(env);
@@ -112,6 +126,10 @@ public class DatabaseConfig {
                     CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
                 )
                 """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_parent ON HOSTS_PFILE(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_last_edited_by ON HOSTS_PFILE(last_edited_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_CONF (
                     user_no     BIGINT,
@@ -160,6 +178,10 @@ public class DatabaseConfig {
                     CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)
                 )
                 """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_parent ON PROXY_VHOST(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_last_edited_by ON PROXY_VHOST(last_edited_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_CONF (
                     user_no     BIGINT,

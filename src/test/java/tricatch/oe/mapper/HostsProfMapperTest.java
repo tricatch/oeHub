@@ -177,14 +177,16 @@ class HostsProfMapperTest extends MapperTestBase {
     }
 
     @Test
-    void countByUserNoAndProfile() {
+    void findProfileNamesByUserNo() {
         var user = insertUser("mia");
+        var other = insertUser("noah");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
             mapper.insert(newHosts(user.getUserNo(), "My Profile", "content"));
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "My Profile")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "my profile")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "Other")).isEqualTo(0);
+            mapper.insert(newHosts(user.getUserNo(), "Second Profile", "content"));
+            mapper.insert(newHosts(other.getUserNo(), "Others Profile", "content"));
+            assertThat(mapper.findProfileNamesByUserNo(user.getUserNo()))
+                .containsExactlyInAnyOrder("My Profile", "Second Profile");
         }
     }
 

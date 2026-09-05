@@ -11,11 +11,21 @@ public interface ProxyConfMapper {
     @Select("SELECT user_no, conf_key, conf_val, updated_at FROM PROXY_CONF WHERE user_no = #{userNo} AND conf_key = #{confKey}")
     ProxyConf findByUserNoAndConfKey(@Param("userNo") Long userNo, @Param("confKey") String confKey);
 
-    @Insert("INSERT INTO PROXY_CONF (user_no, conf_key, conf_val, updated_at) VALUES (#{userNo}, #{confKey}, #{confVal}, #{updatedAt})")
-    void insert(ProxyConf conf);
-
-    @Update("UPDATE PROXY_CONF SET conf_val = #{confVal}, updated_at = #{updatedAt} WHERE conf_key = #{confKey} AND user_no IS NOT DISTINCT FROM #{userNo}")
-    void update(ProxyConf conf);
+    // user_no is nullable here (global vs. per-user config), and H2's shorthand
+    // "MERGE INTO t (cols) KEY(cols) VALUES(...)" never matches an existing row when a key
+    // column is NULL (verified: it always inserts, producing duplicate global rows on repeated
+    // upserts) - the ANSI MERGE ... USING ... ON form below with IS NOT DISTINCT FROM is required
+    // for a NULL-safe match, unlike HostsConfMapper/HubConfMapper's upsert where the key is
+    // always non-null.
+    @Update("""
+        MERGE INTO PROXY_CONF AS t
+        USING (VALUES (#{userNo}, #{confKey}, #{confVal}, #{updatedAt})) AS s(user_no, conf_key, conf_val, updated_at)
+        ON t.conf_key = s.conf_key AND t.user_no IS NOT DISTINCT FROM s.user_no
+        WHEN MATCHED THEN UPDATE SET t.conf_val = s.conf_val, t.updated_at = s.updated_at
+        WHEN NOT MATCHED THEN INSERT (user_no, conf_key, conf_val, updated_at)
+                            VALUES (s.user_no, s.conf_key, s.conf_val, s.updated_at)
+        """)
+    void upsert(ProxyConf conf);
 
     @Delete("DELETE FROM PROXY_CONF WHERE user_no = #{userNo}")
     void deleteAllByUserNo(Long userNo);

@@ -12,6 +12,8 @@ import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
+import tricatch.oe.hosts.mapper.HostsUaMapper;
+import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.proxy.mapper.ProxyConfMapper;
 import tricatch.oe.proxy.mapper.ProxyVhostMapper;
 
@@ -48,6 +50,8 @@ public abstract class MapperTestBase {
         cfg.addMapper(HubConfMapper.class);
         cfg.addMapper(HostsProfMapper.class);
         cfg.addMapper(HostsConfMapper.class);
+        cfg.addMapper(HostsUaMapper.class);
+        cfg.addMapper(HostsUrlMapper.class);
         cfg.addMapper(ProxyVhostMapper.class);
         cfg.addMapper(ProxyConfMapper.class);
 
@@ -103,6 +107,10 @@ public abstract class MapperTestBase {
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
                     CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
                 )""");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_parent ON HOSTS_PFILE(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_last_edited_by ON HOSTS_PFILE(last_edited_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_CONF (
                     user_no    BIGINT,
@@ -111,6 +119,26 @@ public abstract class MapperTestBase {
                     updated_at TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_hosts_conf UNIQUE (user_no, conf_key),
                     CONSTRAINT fk_hosts_conf_user FOREIGN KEY (user_no) REFERENCES HUB_USR(user_no)
+                )""");
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_UA (
+                    ua_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    ua_name    VARCHAR(128) NOT NULL,
+                    ua_value   VARCHAR(512) NOT NULL,
+                    sort_order INT          NOT NULL DEFAULT 0,
+                    user_no    BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
+                    updated_at TIMESTAMP    NOT NULL
+                )""");
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_URL (
+                    url_id     VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    url_name   VARCHAR(128) NOT NULL,
+                    url_value  VARCHAR(512) NOT NULL,
+                    sort_order INT          NOT NULL DEFAULT 0,
+                    user_no    BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
+                    updated_at TIMESTAMP    NOT NULL
                 )""");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
@@ -127,6 +155,10 @@ public abstract class MapperTestBase {
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
                     CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)
                 )""");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_parent ON PROXY_VHOST(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_last_edited_by ON PROXY_VHOST(last_edited_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_CONF (
                     user_no    BIGINT,
@@ -151,6 +183,8 @@ public abstract class MapperTestBase {
                 conn.createStatement().execute("DELETE FROM HOSTS_CONF");
                 conn.createStatement().execute("DELETE FROM PROXY_VHOST");
                 conn.createStatement().execute("DELETE FROM HOSTS_PFILE");
+                conn.createStatement().execute("DELETE FROM HOSTS_UA");
+                conn.createStatement().execute("DELETE FROM HOSTS_URL");
                 conn.createStatement().execute("DELETE FROM HUB_CONF");
                 conn.createStatement().execute("DELETE FROM HUB_USR");
             } finally {

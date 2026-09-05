@@ -126,7 +126,10 @@ public interface HostsProfMapper {
     @Select("SELECT COUNT(*) FROM HOSTS_PFILE WHERE parent_id = #{parentId}")
     int countReferencesByParentId(@Param("parentId") String parentId);
 
-    @Select("SELECT COUNT(*) FROM HOSTS_PFILE WHERE user_no = #{userNo} AND LOWER(hosts_profile) = LOWER(#{hostsProfile})")
-    int countByUserNoAndProfile(@Param("userNo") Long userNo, @Param("hostsProfile") String hostsProfile);
+    // Lightweight name-only projection (skips the CLOB content column) for bulk uniqueness
+    // checks in HostsProfService.nextUniqueName - avoids one COUNT round trip per candidate
+    // name when resolving collisions.
+    @Select("SELECT hosts_profile FROM HOSTS_PFILE WHERE user_no = #{userNo}")
+    List<String> findProfileNamesByUserNo(Long userNo);
 
 }

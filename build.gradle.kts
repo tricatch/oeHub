@@ -61,6 +61,7 @@ dependencies {
     implementation("io.pebbletemplates:pebble:4.1.1")
     implementation("org.mybatis:mybatis:3.5.19")
     implementation("com.h2database:h2:2.4.240")
+    implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     implementation("io.github.tricatch:gotpache-keytool:0.1.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.85")

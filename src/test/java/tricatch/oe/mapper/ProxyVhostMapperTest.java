@@ -210,14 +210,16 @@ class ProxyVhostMapperTest extends MapperTestBase {
     }
 
     @Test
-    void countByUserNoAndProfile() {
+    void findProfileNamesByUserNo() {
         var user = insertUser("oscar");
+        var other = insertUser("nathan");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             mapper.insert(newVhost(user.getUserNo(), "My Vhost", "content"));
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "My Vhost")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "my vhost")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "other")).isEqualTo(0);
+            mapper.insert(newVhost(user.getUserNo(), "Second Vhost", "content"));
+            mapper.insert(newVhost(other.getUserNo(), "Others Vhost", "content"));
+            assertThat(mapper.findProfileNamesByUserNo(user.getUserNo()))
+                .containsExactlyInAnyOrder("My Vhost", "Second Vhost");
         }
     }
 
