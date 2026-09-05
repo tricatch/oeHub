@@ -30,17 +30,18 @@ class OidUtilTest extends MapperTestBase {
     @Test
     void decode_tamperedIdPortion_isRejected() {
         var oid = OidUtil.encode(123L);
-        // Flip the first hex character (part of the id, not the tag) - the tag no longer
+        // Flip the first base32 character (part of the id, not the tag) - the tag no longer
         // authenticates the new id.
-        var tampered = flipHexChar(oid, 0);
+        var tampered = flipBase32Char(oid, 0);
         assertThat(OidUtil.decode(tampered)).isNull();
     }
 
     @Test
     void decode_tamperedTagPortion_isRejected() {
         var oid = OidUtil.encode(123L);
-        // Id is 8 bytes = 16 hex chars; the tag starts right after.
-        var tampered = flipHexChar(oid, 16);
+        // Id occupies bits 0-63 of the 128-bit payload; char 13 covers bits 65-69, comfortably
+        // inside the tag (bits 64-127), so this can't be mistaken for an id-portion tamper.
+        var tampered = flipBase32Char(oid, 13);
         assertThat(OidUtil.decode(tampered)).isNull();
     }
 
@@ -49,8 +50,9 @@ class OidUtilTest extends MapperTestBase {
         // Simulates an attacker who knows/guesses a target user_no but not the server secret,
         // so cannot produce a valid HMAC tag - this is exactly the attack OidUtil.decode() must
         // defeat per its class-level contract.
-        var idHex = "0000000000000001"; // user_no = 1, as 8 bytes hex
-        var forged = idHex + "0000000000000000"; // zero tag
+        var raw = new byte[16];
+        raw[7] = 1; // id bytes = user_no 1, big-endian; tag bytes left zero
+        var forged = OidUtil.toBase32(raw);
         assertThat(OidUtil.decode(forged)).isNull();
     }
 
@@ -58,14 +60,15 @@ class OidUtilTest extends MapperTestBase {
     void decode_wrongLength_isRejected() {
         var oid = OidUtil.encode(123L);
         assertThat(OidUtil.decode(oid.substring(0, oid.length() - 2))).isNull();
-        assertThat(OidUtil.decode(oid + "00")).isNull();
+        assertThat(OidUtil.decode(oid + "AA")).isNull();
     }
 
     @Test
-    void decode_nonHexCharacters_isRejected() {
+    void decode_nonBase32Characters_isRejected() {
         var oid = OidUtil.encode(123L);
-        var withNonHex = "zz" + oid.substring(2);
-        assertThat(OidUtil.decode(withNonHex)).isNull();
+        // '0' and '1' aren't in the RFC 4648 base32 alphabet (reserved to avoid confusion with O/I).
+        var withNonBase32 = "01" + oid.substring(2);
+        assertThat(OidUtil.decode(withNonBase32)).isNull();
     }
 
     @Test
@@ -74,9 +77,17 @@ class OidUtilTest extends MapperTestBase {
         assertThat(OidUtil.decode("")).isNull();
     }
 
-    private static String flipHexChar(String hex, int index) {
-        char c = hex.charAt(index);
-        char flipped = c == '0' ? '1' : '0';
-        return hex.substring(0, index) + flipped + hex.substring(index + 1);
+    @Test
+    void encode_producesTwentySixCharBase32Oid() {
+        // 16 raw bytes (8 id + 8 HMAC tag) at 5 bits/char = ceil(128/5) = 26 chars, vs. 32 for
+        // the previous hex encoding - shorter header value, same unforgeability guarantee.
+        var oid = OidUtil.encode(123L);
+        assertThat(oid).hasSize(26).matches("[A-Z2-7]+");
+    }
+
+    private static String flipBase32Char(String oid, int index) {
+        char c = oid.charAt(index);
+        char flipped = c == 'A' ? 'B' : 'A';
+        return oid.substring(0, index) + flipped + oid.substring(index + 1);
     }
 }

@@ -12,6 +12,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.representer.Representer;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.mapper.HubConfMapper;
+import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubConf;
 import tricatch.oe.proxy.cfg.Config;
 import tricatch.oe.proxy.cfg.VirtualHost;
@@ -227,7 +228,30 @@ public class ReverseProxyServer {
             Long userNo = OidUtil.decode(oidHeader);
             return userNo == null ? null : OidUtil.encode(userNo);
         }
-        return ipIdentifierEnabled ? ipOidMap.get(clientIp) : null;
+        if (ipIdentifierEnabled) {
+            String oid = ipOidMap.get(clientIp);
+            if (oid != null) return oid;
+        }
+        // Single-user local setup: a client with no OID header and no recorded IP owner is
+        // unresolvable in general, but on a loopback connection with exactly one oeHub account
+        // there is no ambiguity about whose vhosts to serve - skip the OID handshake entirely
+        // rather than force a solo local user to go fetch/set an X-OeHub-Oid header.
+        return isLoopbackAddress(clientIp) ? resolveSoleLocalUserOid() : null;
+    }
+
+    private static boolean isLoopbackAddress(String ip) {
+        return ip != null && (ip.startsWith("127.") || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip));
+    }
+
+    private static String resolveSoleLocalUserOid() {
+        if (sqlSessionFactory == null) return null;
+        try (var session = sqlSessionFactory.openSession()) {
+            var users = session.getMapper(HubUserMapper.class).findAll();
+            return users.size() == 1 ? OidUtil.encode(users.get(0).getUserNo()) : null;
+        } catch (Exception e) {
+            logger.warn("Failed to resolve sole local-user owner for loopback fallback: {}", e.getMessage());
+            return null;
+        }
     }
 
     public static VirtualHosts getVirtualHosts(String clientIp, String oidHeader) throws NotFoundProxyVirtualHostsException {

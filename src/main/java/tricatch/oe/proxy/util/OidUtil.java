@@ -18,8 +18,13 @@ public class OidUtil {
     private static final String HMAC_ALG = "HmacSHA256";
     private static final int TAG_BYTES = 8;
     private static final int ID_BYTES = 8;
-    private static final int LENGTH = (ID_BYTES + TAG_BYTES) * 2; // hex-encoded
-    private static final char[] HEX = "0123456789ABCDEF".toCharArray();
+    private static final int RAW_BYTES = ID_BYTES + TAG_BYTES;
+    // Base32 (RFC 4648, unpadded): 5 bits/char instead of hex's 4, so the header value shrinks
+    // from 32 to 26 chars for the same 16-byte payload while staying case-insensitive and safe
+    // to put straight into an HTTP header with no escaping.
+    private static final int LENGTH = (RAW_BYTES * 8 + 4) / 5; // = 26
+    private static final char[] BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
+    private static final int[] BASE32_LOOKUP = buildBase32Lookup();
 
     private static volatile SecretKeySpec macKey;
 
@@ -30,10 +35,10 @@ public class OidUtil {
     public static String encode(long userNo) {
         byte[] idBytes = longToBytes(userNo);
         byte[] tag = hmac(idBytes);
-        byte[] out = new byte[ID_BYTES + TAG_BYTES];
+        byte[] out = new byte[RAW_BYTES];
         System.arraycopy(idBytes, 0, out, 0, ID_BYTES);
         System.arraycopy(tag, 0, out, ID_BYTES, TAG_BYTES);
-        return toHex(out);
+        return toBase32(out);
     }
 
     // Returns the user_no only if oid is well-formed AND its HMAC tag verifies against the
@@ -43,7 +48,7 @@ public class OidUtil {
         if (oid == null || oid.length() != LENGTH) return null;
         byte[] raw;
         try {
-            raw = fromHex(oid);
+            raw = fromBase32(oid);
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -80,22 +85,47 @@ public class OidUtil {
         return v;
     }
 
-    private static String toHex(byte[] bytes) {
-        var out = new char[bytes.length * 2];
-        for (int i = 0; i < bytes.length; i++) {
-            out[i * 2] = HEX[(bytes[i] >> 4) & 0xF];
-            out[i * 2 + 1] = HEX[bytes[i] & 0xF];
-        }
-        return new String(out);
+    private static int[] buildBase32Lookup() {
+        var table = new int[128];
+        Arrays.fill(table, -1);
+        for (int i = 0; i < BASE32_ALPHABET.length; i++) table[BASE32_ALPHABET[i]] = i;
+        return table;
     }
 
-    private static byte[] fromHex(String s) {
-        var out = new byte[s.length() / 2];
-        for (int i = 0; i < out.length; i++) {
-            int hi = Character.digit(s.charAt(i * 2), 16);
-            int lo = Character.digit(s.charAt(i * 2 + 1), 16);
-            if (hi < 0 || lo < 0) throw new IllegalArgumentException("Invalid hex in OID");
-            out[i] = (byte) ((hi << 4) | lo);
+    /** Package-visible (not just private) so tests can build forged raw payloads directly. */
+    static String toBase32(byte[] data) {
+        var sb = new StringBuilder(LENGTH);
+        int buffer = 0, bitsLeft = 0;
+        for (byte b : data) {
+            buffer = (buffer << 8) | (b & 0xFF);
+            bitsLeft += 8;
+            while (bitsLeft >= 5) {
+                bitsLeft -= 5;
+                sb.append(BASE32_ALPHABET[(buffer >> bitsLeft) & 0x1F]);
+            }
+        }
+        if (bitsLeft > 0) {
+            sb.append(BASE32_ALPHABET[(buffer << (5 - bitsLeft)) & 0x1F]);
+        }
+        return sb.toString();
+    }
+
+    // Caller has already checked s.length() == LENGTH, so this always yields exactly RAW_BYTES
+    // bytes, with the last (LENGTH*5 - RAW_BYTES*8) bits of the final character discarded as
+    // padding, mirroring what toBase32() left zero-filled there.
+    private static byte[] fromBase32(String s) {
+        var out = new byte[RAW_BYTES];
+        int buffer = 0, bitsLeft = 0, index = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = Character.toUpperCase(s.charAt(i));
+            int val = c < BASE32_LOOKUP.length ? BASE32_LOOKUP[c] : -1;
+            if (val < 0) throw new IllegalArgumentException("Invalid base32 character in OID");
+            buffer = (buffer << 5) | val;
+            bitsLeft += 5;
+            if (bitsLeft >= 8) {
+                bitsLeft -= 8;
+                out[index++] = (byte) ((buffer >> bitsLeft) & 0xFF);
+            }
         }
         return out;
     }
