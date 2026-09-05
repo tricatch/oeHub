@@ -39,6 +39,9 @@
 .settings-main .form-text {
   font-size: 0.78rem;
 }
+.settings-main .form-control::placeholder {
+  color: #adb5bd;
+}
 .settings-main .oe-info-section {
   margin-bottom: 4rem;
 }

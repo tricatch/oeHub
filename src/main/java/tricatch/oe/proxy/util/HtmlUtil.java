@@ -8,7 +8,6 @@ import tricatch.oe.hub.i18n.Messages;
 import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.exception.BadGatewayException;
 import tricatch.oe.proxy.exception.GatewayTimeoutException;
-import tricatch.oe.proxy.exception.UntrustedUpstreamCertificateException;
 import tricatch.oe.proxy.http.HTTP;
 import tricatch.oe.proxy.http.io.HttpStreamWriter;
 
@@ -72,9 +71,6 @@ public class HtmlUtil {
             ctx.put("requestHost",  ex.getRequestHost());
             ctx.put("routePath",    ex.getRoutePath());
             ctx.put("targetUrl",    ex.getTargetUrl());
-            // Only surface a specific reason for the one case a visitor can act on (ask an admin
-            // to approve the certificate) - other causes stay generic to avoid leaking internals.
-            ctx.put("errorMessage", isUntrustedCertificate(ex) ? msg(locale).get("error.502.untrusted.cert") : null);
             StringWriter writer = new StringWriter();
             template.evaluate(writer, ctx);
             html = writer.toString();
@@ -208,13 +204,6 @@ public class HtmlUtil {
         out.write(HTTP.CRLF);
         out.write(body);
         out.flush();
-    }
-
-    private static boolean isUntrustedCertificate(Throwable t) {
-        for (Throwable cause = t; cause != null; cause = cause.getCause()) {
-            if (cause instanceof UntrustedUpstreamCertificateException) return true;
-        }
-        return false;
     }
 
     private static String escapeHtml(String s) {

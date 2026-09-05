@@ -65,7 +65,7 @@
 
     {# ── CA Certificate ── #}
     <div class="oe-info-section">
-      <table class="oe-info-table mb-0">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
         <colgroup><col style="width:110px;"><col></colgroup>
         <thead>
           <tr>
@@ -200,7 +200,7 @@
 
     {# ── oeProxy Identifier ── #}
     <div class="oe-info-section">
-      <table class="oe-info-table mb-0">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
         <colgroup><col style="width:110px;"><col></colgroup>
         <thead>
           <tr>
@@ -228,7 +228,7 @@
 
     {# ── Forward Proxy (LittleProxy) ── #}
     <div class="oe-info-section">
-      <table class="oe-info-table mb-0">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
         <colgroup><col style="width:110px;"><col></colgroup>
         <thead>
           <tr>
@@ -263,36 +263,9 @@
       </table>
     </div>
 
-    {# ── Upstream Trusted Certificates ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
-          <tr>
-            <th>{{ msg['settings.upstreamcerts.title'] }}</th>
-            <th class="text-end">
-              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveUpstreamTrustedCerts" type="button" title="{{ msg['btn.save'] }}">
-                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.upstreamcerts.label'] }}</td>
-            <td>
-              <textarea id="upstreamTrustedCerts" class="form-control form-control-sm" rows="4"
-                        placeholder="{{ msg['settings.upstreamcerts.placeholder'] }}">{{ upstreamTrustedCerts }}</textarea>
-              <div class="form-text">{{ msg['settings.upstreamcerts.help'] }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
     {# ── oeOID Domains ── #}
     <div class="oe-info-section">
-      <table class="oe-info-table mb-0">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
         <colgroup><col style="width:110px;"><col></colgroup>
         <thead>
           <tr>
@@ -355,15 +328,6 @@
     const res = await fetch('/api/admin/settings/fwdproxy-whitelist', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({whitelist})
-    });
-    if (res.ok) showToast(MSG['settings.saved']);
-  });
-
-  document.getElementById('btnSaveUpstreamTrustedCerts').addEventListener('click', async () => {
-    const trustedCerts = document.getElementById('upstreamTrustedCerts').value;
-    const res = await fetch('/api/admin/settings/upstream-trusted-certs', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({trustedCerts})
     });
     if (res.ok) showToast(MSG['settings.saved']);
   });

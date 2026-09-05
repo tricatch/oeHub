@@ -292,7 +292,6 @@ public class OeHubApplication {
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
             config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
             config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
-            config.routes.post("/api/admin/settings/upstream-trusted-certs", settings::apiSaveUpstreamTrustedCerts);
             config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
             config.routes.post("/oehub/settings/ca/import",   settings::importCa);
 
@@ -485,7 +484,6 @@ public class OeHubApplication {
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
         ReverseProxyServer.init(sqlSessionFactory);
         ForwardProxyServer.init(sqlSessionFactory);
-        tricatch.oe.proxy.cert.TrustedUpstreamCerts.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
         try {

@@ -1,24 +1,15 @@
 package tricatch.oe.proxy.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import tricatch.oe.proxy.cert.TrustedUpstreamCerts;
-import tricatch.oe.proxy.exception.UntrustedUpstreamCertificateException;
-
 import javax.net.ssl.*;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.security.KeyStore;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
-import java.util.HexFormat;
 
 public class SocketUtils {
-
-    private static final Logger logger = LoggerFactory.getLogger(SocketUtils.class);
 
     public static Socket createHttp(String host, int port, int connectTimeout, int readTimeout) throws IOException {
 
@@ -50,29 +41,14 @@ public class SocketUtils {
 
                     @Override
                     public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-                        try {
-                            defaultTrustManager.checkServerTrusted(chain, authType);
-                            // Chain-validated against the JVM's default trust store, but that alone
-                            // doesn't confirm the certificate is actually for `domain` - a CA will
-                            // happily issue a valid chain for any domain its owner controls. Without
-                            // this check, an attacker who can redirect the TCP connection (DNS/ARP
-                            // spoofing, a compromised router) could present any CA-trusted cert for a
-                            // domain *they* own and MITM the upstream connection. The fingerprint-pinned
-                            // path below is intentionally exempt: an admin who pins an exact SHA-256
-                            // fingerprint has already vouched for that specific certificate, and
-                            // self-signed/internal certs commonly lack a SAN matching the vhost's domain.
-                            verifyHostname(chain[0], domain);
-                            return;
-                        } catch (CertificateException chainValidationFailure) {
-                            String fingerprint = sha256Fingerprint(chain[0]);
-                            if (TrustedUpstreamCerts.isTrusted(host, fingerprint)) {
-                                return; // admin-approved pinned fingerprint for this host
-                            }
-                            logger.warn("Rejected untrusted upstream certificate - host={}, sha256={} " +
-                                            "(not in the trusted-upstream-certs allowlist; approve it in oeHub settings if this is expected)",
-                                    host, fingerprint);
-                            throw new UntrustedUpstreamCertificateException(host, fingerprint);
-                        }
+                        // Chain-validated against the JVM's default trust store, but that alone
+                        // doesn't confirm the certificate is actually for `domain` - a CA will
+                        // happily issue a valid chain for any domain its owner controls. Without
+                        // this check, an attacker who can redirect the TCP connection (DNS/ARP
+                        // spoofing, a compromised router) could present any CA-trusted cert for a
+                        // domain *they* own and MITM the upstream connection.
+                        defaultTrustManager.checkServerTrusted(chain, authType);
+                        verifyHostname(chain[0], domain);
                     }
 
                     @Override
@@ -161,15 +137,6 @@ public class SocketUtils {
             return cert.getSubjectX500Principal().getName();
         } catch (Exception e) {
             return "<unknown>";
-        }
-    }
-
-    private static String sha256Fingerprint(X509Certificate cert) throws CertificateException {
-        try {
-            var digest = MessageDigest.getInstance("SHA-256").digest(cert.getEncoded());
-            return HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            throw new CertificateException("Failed to compute certificate fingerprint", e);
         }
     }
 

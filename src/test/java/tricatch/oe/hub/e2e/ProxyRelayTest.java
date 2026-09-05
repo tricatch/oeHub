@@ -11,13 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
-import com.sun.net.httpserver.HttpsConfigurator;
-import com.sun.net.httpserver.HttpsServer;
-import io.github.tricatch.gotpache.cert.RootCertificateCreator;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.jupiter.api.Timeout;
 
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManagerFactory;
@@ -40,12 +35,9 @@ import java.nio.file.Files;
 import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -91,8 +83,6 @@ class ProxyRelayTest {
     private static final String MERGE_DOMAIN_B = "e2e-merge-b.oe.test";
     private static final String SELF_DOMAIN = "e2e-self.oe.test";
     private static final String MONITOR_DOMAIN = "e2e-monitor.oe.test";
-    private static final String HTTPS_BACKEND_DOMAIN = "e2e-https-backend.oe.test";
-    private static final String HTTPS_STUB_BODY = "hello-from-e2e-https-stub-backend";
     private static final String GATEWAY_TIMEOUT_DOMAIN = "e2e-gwtimeout.oe.test";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -100,8 +90,6 @@ class ProxyRelayTest {
     private E2eServer server;
     private HttpServer httpStubBackend;
     private ServerSocket wsStubBackend;
-    private HttpsServer httpsStubBackend;
-    private X509Certificate httpsStubCertificate;
     private HttpClient http;
     private CookieManager cookieManager;
     private String csrfToken;
@@ -160,35 +148,6 @@ class ProxyRelayTest {
         wsAcceptLoop.setDaemon(true);
         wsAcceptLoop.start();
 
-        // A self-signed HTTPS backend, for proving the proxy can relay to an upstream vhost
-        // location of its own (host: https://...) once its certificate is admin-approved (see
-        // reverseProxyRelaysToTrustedSelfSignedHttpsBackend()). RootCertificateCreator is the
-        // same helper SocketUtilsUpstreamTrustTest uses to build one at the unit level.
-        if (Security.getProvider("BC") == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
-        var selfSignedCert = new RootCertificateCreator().generateRootCertificate("e2e-https-stub-backend");
-        httpsStubCertificate = selfSignedCert.getCertificate();
-        var httpsKeyStore = KeyStore.getInstance("PKCS12");
-        httpsKeyStore.load(null, null);
-        httpsKeyStore.setKeyEntry("server", selfSignedCert.getPrivateKey(), "changeit".toCharArray(),
-            new Certificate[]{httpsStubCertificate});
-        var httpsKmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        httpsKmf.init(httpsKeyStore, "changeit".toCharArray());
-        var httpsServerContext = SSLContext.getInstance("TLS");
-        httpsServerContext.init(httpsKmf.getKeyManagers(), null, null);
-
-        httpsStubBackend = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        httpsStubBackend.setHttpsConfigurator(new HttpsConfigurator(httpsServerContext));
-        httpsStubBackend.createContext("/", exchange -> {
-            byte[] body = HTTPS_STUB_BODY.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, body.length);
-            try (var os = exchange.getResponseBody()) {
-                os.write(body);
-            }
-        });
-        httpsStubBackend.start();
-
         cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         http = HttpClient.newBuilder().cookieHandler(cookieManager).build();
     }
@@ -197,7 +156,6 @@ class ProxyRelayTest {
     void stopAll() throws IOException {
         if (httpStubBackend != null) httpStubBackend.stop(0);
         if (wsStubBackend != null) wsStubBackend.close();
-        if (httpsStubBackend != null) httpsStubBackend.stop(0);
         if (server != null) server.close();
     }
 
@@ -571,36 +529,6 @@ class ProxyRelayTest {
 
     @Test
     @Order(13)
-    void reverseProxyRelaysToTrustedSelfSignedHttpsBackend() throws Exception {
-        // Approve this self-signed backend's exact certificate fingerprint first -
-        // SocketUtils.createHttps rejects any upstream cert that doesn't chain-validate against
-        // the JVM's trust store *and* isn't explicitly pinned here (see the unit-level version of
-        // this same rejection/allowlist logic in SocketUtilsUpstreamTrustTest).
-        var fingerprint = HexFormat.of().formatHex(
-            MessageDigest.getInstance("SHA-256").digest(httpsStubCertificate.getEncoded()));
-        var trustResponse = postJson("/api/admin/settings/upstream-trusted-certs",
-            objectMapper.writeValueAsString(Map.of("trustedCerts", "127.0.0.1 " + fingerprint)));
-        assertThat(trustResponse.statusCode()).isEqualTo(200);
-
-        var yaml = "virtual:\n"
-            + "  - domain: " + HTTPS_BACKEND_DOMAIN + "\n"
-            + "    location:\n"
-            + "      - host: https://127.0.0.1:" + httpsStubBackend.getAddress().getPort() + "\n"
-            + "        path:\n"
-            + "          - /**\n";
-        var contentResponse = patchJson("/api/proxy/vhosts/" + vhostId + "/content",
-            objectMapper.writeValueAsString(Map.of("content", yaml)));
-        assertThat(contentResponse.statusCode()).isEqualTo(200);
-
-        try (var socket = openRelaySocket(HTTPS_BACKEND_DOMAIN)) {
-            var response = sendGet(socket, HTTPS_BACKEND_DOMAIN, "/");
-            assertThat(response.status()).isEqualTo(200);
-            assertThat(new String(response.body(), StandardCharsets.UTF_8)).isEqualTo(HTTPS_STUB_BODY);
-        }
-    }
-
-    @Test
-    @Order(14)
     @Timeout(value = 45, unit = TimeUnit.SECONDS)
     void reverseProxyRendersGatewayTimeoutPageWhenBackendNeverResponds() throws Exception {
         // A backend that accepts the TCP connection but never writes anything back forces the
