@@ -73,6 +73,39 @@ public class ForwardProxyServer {
     // mirroring the requestDomains semantics used by the oeOID Chrome extension (see background.js).
     private static final String KEY_WHITELIST = "fwdproxy.whitelist";
 
+    // A client whose own connection to this proxy is itself loopback (127.0.0.1/::1) is exempted
+    // from the loopback-target SSRF guards in overrideFor()/clientToProxyRequest() - it already
+    // has direct network access to every loopback-bound port on this machine, so tunneling to one
+    // through the proxy grants it nothing new. Not persisted/exposed anywhere; a plain code toggle.
+    private static final boolean EXEMPT_LOOPBACK_CLIENTS = true;
+
+    // Reason codes for the 403 page (HtmlUtil.renderFwdProxyForbidden picks its copy by this
+    // value); anything else (including missing/expired) falls back to the whitelist copy.
+    static final String BLOCK_REASON_LOOPBACK = "loopback";
+    static final String BLOCK_REASON_WHITELIST = "whitelist";
+    static final String BLOCK_REASON_UNRESOLVED = "unresolved";
+
+    // overrideFor() redirects a blocked CONNECT tunnel to BlockedPageServer as a *new*, separate
+    // TCP connection (LittleProxy dials 127.0.0.1:36981 itself) - so by the time BlockedPageServer
+    // renders the actual 403 page, it has no memory of why that particular tunnel was redirected,
+    // only the Host header of whatever request flows through it. This map is the only thing the
+    // two sides share to correlate a block decision with its page: overrideFor() records the
+    // reason under the target hostname right before returning the redirect, and
+    // BlockedPageServer.handle() reads (and clears) it once it has the same hostname from the
+    // tunneled request. Best-effort only - two concurrent blocked requests for the same host with
+    // different reasons could race and show the wrong copy to one of them, which is an acceptable
+    // trade-off for what is purely explanatory page text, not a security decision.
+    private static final ConcurrentHashMap<String, String> blockReasonByHost = new ConcurrentHashMap<>();
+
+    private static void rememberBlockReason(String host, String reason) {
+        if (host != null) blockReasonByHost.put(host.toLowerCase(), reason);
+    }
+
+    /** Package-visible so BlockedPageServer can read the reason overrideFor() recorded for host. */
+    static String takeBlockReason(String host) {
+        return host == null ? null : blockReasonByHost.remove(host.toLowerCase());
+    }
+
     private static SqlSessionFactory sqlSessionFactory;
     private static HttpProxyServer server;
 
@@ -213,7 +246,18 @@ public class ForwardProxyServer {
                             public HttpResponse clientToProxyRequest(HttpObject httpObject) {
                                 if (httpObject instanceof HttpRequest request) {
                                     var host = targetHost(request);
-                                    if (isLoopbackTarget(host) || !isWhitelisted(host)) {
+                                    boolean whitelisted = isWhitelisted(host);
+                                    // A client whose own TCP connection to this proxy is itself loopback gains
+                                    // nothing by tunneling to this server's loopback interface through the
+                                    // proxy - it already has direct network access to every loopback-bound
+                                    // port on this machine. The SSRF pivot this guard exists for (see
+                                    // overrideFor()) only matters for a client that ISN'T already local.
+                                    // EXEMPT_LOOPBACK_CLIENTS is temporarily off - see its declaration.
+                                    boolean clientIsLoopback = EXEMPT_LOOPBACK_CLIENTS && isLoopbackTarget(clientIp(ctx));
+                                    boolean loopback = !clientIsLoopback && isLoopbackTarget(host);
+                                    logger.info("Forward proxy match: user={} method={} host={} whitelisted={} loopbackTarget={} clientIsLoopback={}",
+                                            authenticatedUser(ctx), request.method(), host, whitelisted, loopback, clientIsLoopback);
+                                    if (loopback || !whitelisted) {
                                         // CONNECT (HTTPS): if the blocked-page server is up, let the tunnel
                                         // succeed here and redirect it there in overrideFor() below, so the
                                         // client completes a real TLS handshake and renders the 403 page
@@ -221,9 +265,11 @@ public class ForwardProxyServer {
                                         // plain HTTP, which renders a short-circuit response fine either way)
                                         // block immediately.
                                         if (request.method() != HttpMethod.CONNECT || !BlockedPageServer.isRunning()) {
-                                            logger.info("Forward proxy blocked (not whitelisted): user={} host={}",
+                                            var reason = loopback ? BLOCK_REASON_LOOPBACK : BLOCK_REASON_WHITELIST;
+                                            logger.info("Forward proxy blocked ({}): user={} host={}",
+                                                    loopback ? "target is loopback/any-local" : "not whitelisted",
                                                     authenticatedUser(ctx), host);
-                                            return blockedResponse(request, host);
+                                            return blockedResponse(request, host, reason);
                                         }
                                     }
                                 }
@@ -232,7 +278,7 @@ public class ForwardProxyServer {
 
                             @Override
                             public InetSocketAddress proxyToServerResolutionStarted(String resolvingServerHostAndPort) {
-                                return overrideFor(authenticatedUser(ctx), resolvingServerHostAndPort, localServerIp(ctx));
+                                return overrideFor(authenticatedUser(ctx), resolvingServerHostAndPort, localServerIp(ctx), clientIp(ctx));
                             }
                         };
                     }
@@ -349,6 +395,14 @@ public class ForwardProxyServer {
         return null;
     }
 
+    /** The remote address of the client that connected to this (0.0.0.0-bound) forward-proxy port. */
+    private static String clientIp(ChannelHandlerContext ctx) {
+        if (ctx.channel().remoteAddress() instanceof InetSocketAddress remote) {
+            return remote.getAddress().getHostAddress();
+        }
+        return null;
+    }
+
     /** Extracts the bare target hostname (no port) from a client request, CONNECT or plain. */
     static String targetHost(HttpRequest request) {
         if (request.method() == HttpMethod.CONNECT) {
@@ -406,12 +460,12 @@ public class ForwardProxyServer {
         }
     }
 
-    /** Builds the 403 response for a non-whitelisted destination, styled like oeProxy's other error pages. */
-    private static HttpResponse blockedResponse(HttpRequest request, String host) {
+    /** Builds the 403 response for a blocked destination, styled like oeProxy's other error pages. */
+    private static HttpResponse blockedResponse(HttpRequest request, String host, String reason) {
         var locale = HtmlUtil.resolveLocale(
                 request.headers().get(HttpHeaderNames.COOKIE),
                 request.headers().get(HttpHeaderNames.ACCEPT_LANGUAGE));
-        var html = HtmlUtil.renderFwdProxyForbidden(host, locale);
+        var html = HtmlUtil.renderFwdProxyForbidden(host, reason, locale);
         var body = Unpooled.copiedBuffer(html, StandardCharsets.UTF_8);
         var response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, body);
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=utf-8");
@@ -423,14 +477,30 @@ public class ForwardProxyServer {
      * Looks up host:port in the user's cached map; falls back to resolving the host itself
      * (rebind-safe, see below) when there's no override.
      */
-    static InetSocketAddress overrideFor(String userId, String hostAndPort, String localServerIp) {
+    static InetSocketAddress overrideFor(String userId, String hostAndPort, String localServerIp, String clientIp) {
+        // A client whose own connection to this proxy is itself loopback gains nothing from
+        // reaching this server's loopback interface through the proxy - it already has direct
+        // network access to every loopback-bound port on this machine (that's exactly what "the
+        // client is on 127.0.0.1" means). The three isLoopbackTarget()/isLoopbackAddress() guards
+        // below exist to stop a genuinely remote client from using an authored oeHosts entry (or a
+        // rebinding DNS answer) as an SSRF pivot into this server's own loopback interface - that
+        // risk doesn't apply here, so this client is exempted from all three.
+        // EXEMPT_LOOPBACK_CLIENTS is temporarily off - see its declaration.
+        boolean clientIsLoopback = EXEMPT_LOOPBACK_CLIENTS && isLoopbackTarget(clientIp);
+
         // Only reachable here for a blocked host (loopback target, or non-whitelisted) when the
         // CONNECT was deliberately let through by clientToProxyRequest because BlockedPageServer
         // is up (see there) - redirect the tunnel to it instead of the real destination. Must
         // mirror clientToProxyRequest's block condition exactly, or a host that satisfies one
         // check but not the other would fall through to a real connection below.
         var target = hostOnly(hostAndPort);
-        if (isLoopbackTarget(target) || !isWhitelisted(target)) {
+        boolean targetIsLoopback = !clientIsLoopback && isLoopbackTarget(target);
+        boolean targetIsWhitelisted = isWhitelisted(target);
+        if (targetIsLoopback || !targetIsWhitelisted) {
+            logger.info("Forward proxy override: user={} host={} clientIsLoopback={} blocked=true ({})",
+                    userId, target, clientIsLoopback,
+                    targetIsLoopback ? "target is loopback/any-local, second check" : "not whitelisted, second check");
+            rememberBlockReason(target, targetIsLoopback ? BLOCK_REASON_LOOPBACK : BLOCK_REASON_WHITELIST);
             return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }
 
@@ -439,11 +509,13 @@ public class ForwardProxyServer {
         int port = hp.port();
 
         String ip = userId == null ? null : userHostMap.getOrDefault(userId, Map.of()).get(host.toLowerCase());
+        logger.info("Forward proxy override: user={} host={} hostMapHit={} ip={} clientIsLoopback={}",
+                userId, host, ip != null, ip, clientIsLoopback);
         if (ip != null) {
             if (PROXY_SVR_PLACEHOLDER.equals(ip)) {
                 if (localServerIp == null) return null;
                 ip = localServerIp;
-            } else if (isLoopbackTarget(ip)) {
+            } else if (!clientIsLoopback && isLoopbackTarget(ip)) {
                 // A user's own oeHosts profile is free-text content they authored (mergeHosts()
                 // parses arbitrary "ip hostname" lines from it) - a line like "127.0.0.1 evil.local"
                 // would otherwise let them CONNECT to a hostname that passes both checks above,
@@ -451,6 +523,9 @@ public class ForwardProxyServer {
                 // loopback interface, the same SSRF pivot isLoopbackTarget(target) blocks for the
                 // literal-host case. PROXY_SVR_PLACEHOLDER is exempt: it resolves to this server's
                 // real network-facing IP as seen by the client, not its loopback interface.
+                logger.info("Forward proxy override: user={} host={} blocked=true (hosts-profile entry points at loopback)",
+                        userId, host);
+                rememberBlockReason(host, BLOCK_REASON_LOOPBACK);
                 return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
             }
             try {
@@ -458,28 +533,42 @@ public class ForwardProxyServer {
                 InetAddress forced = InetAddress.getByAddress(host, addr);
                 return new InetSocketAddress(forced, port);
             } catch (UnknownHostException e) {
+                logger.info("Forward proxy override: user={} host={} overrideIp={} is itself unresolvable: {}",
+                        userId, host, ip, e.getMessage());
                 return null;
             }
         }
 
         // No host-map override: target isn't a literal IP/"localhost" (isLoopbackTarget(target)
-        // above already returned false), so resolve it ourselves and check the *resolved* address
-        // before connecting - otherwise an attacker-registered domain whose DNS answer is
-        // loopback/any-local (DNS rebinding) would sail through every string-based check here and
-        // reach this server's own loopback interface once LittleProxy resolves it independently.
-        // Pinning the address we just checked (rather than returning null and letting LittleProxy
-        // resolve again) also closes the TOCTOU window a rebinding DNS server could otherwise use.
+        // above already returned false unless the client is loopback), so resolve it ourselves and
+        // check the *resolved* address before connecting - otherwise an attacker-registered domain
+        // whose DNS answer is loopback/any-local (DNS rebinding) would sail through every
+        // string-based check here and reach this server's own loopback interface once LittleProxy
+        // resolves it independently. Pinning the address we just checked (rather than returning
+        // null and letting LittleProxy resolve again) also closes the TOCTOU window a rebinding DNS
+        // server could otherwise use.
         try {
             var future = DNS_RESOLVER.submit(() -> InetAddress.getByName(host));
             var resolved = future.get(DNS_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            if (resolved.isLoopbackAddress() || resolved.isAnyLocalAddress()) {
+            if (!clientIsLoopback && (resolved.isLoopbackAddress() || resolved.isAnyLocalAddress())) {
                 logger.info("Forward proxy blocked (DNS-rebind to loopback): host={} resolvedTo={}",
                         host, resolved.getHostAddress());
+                rememberBlockReason(host, BLOCK_REASON_LOOPBACK);
                 return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
             }
+            logger.info("Forward proxy override: user={} host={} hostMapHit=false resolvedViaRealDns={}",
+                    userId, host, resolved.getHostAddress());
             var forced = InetAddress.getByAddress(host, resolved.getAddress());
             return new InetSocketAddress(forced, port);
         } catch (Exception e) {
+            // Same fail-closed redirect as an actual whitelist/DNS-rebind block, but the cause
+            // here is just as often mundane (host not in any selected oeHosts profile and genuinely
+            // unresolvable, e.g. a fictitious/internal-only TLD, or DNS took longer than
+            // DNS_RESOLVE_TIMEOUT_MS) - log it so "why did my request get blocked?" is answerable
+            // from the log instead of indistinguishable from a real whitelist rejection.
+            logger.info("Forward proxy blocked (no hosts-profile override and real DNS lookup failed): " +
+                    "user={} host={}: {}", userId, host, e.getMessage());
+            rememberBlockReason(host, BLOCK_REASON_UNRESOLVED);
             return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }
     }

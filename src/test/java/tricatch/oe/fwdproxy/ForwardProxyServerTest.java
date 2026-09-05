@@ -172,7 +172,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_loopbackDestination_isRedirectedToBlockedPage() {
-        var addr = ForwardProxyServer.overrideFor("anyone", "127.0.0.1:9999", "10.1.1.1");
+        var addr = ForwardProxyServer.overrideFor("anyone", "127.0.0.1:9999", "10.1.1.1", "10.1.1.1");
         assertThat(addr).isNotNull();
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
     }
@@ -180,7 +180,7 @@ class ForwardProxyServerTest extends MapperTestBase {
     @Test
     void overrideFor_nonWhitelistedDestination_isRedirectedToBlockedPage() {
         ForwardProxyServer.setWhitelist("only-this.example.com");
-        var addr = ForwardProxyServer.overrideFor("anyone", "not-whitelisted.example.com:443", "10.1.1.1");
+        var addr = ForwardProxyServer.overrideFor("anyone", "not-whitelisted.example.com:443", "10.1.1.1", "10.1.1.1");
         assertThat(addr).isNotNull();
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
     }
@@ -192,8 +192,38 @@ class ForwardProxyServerTest extends MapperTestBase {
         // reserved, never-resolvable TLD (RFC 2606) keeps this deterministic without depending on
         // network access: resolution fails either way, so it fails closed to the blocked page.
         InetSocketAddress addr = ForwardProxyServer.overrideFor(
-                "user-with-no-cached-hosts-" + newId(), "definitely-nonexistent-host.invalid:443", "10.1.1.1");
+                "user-with-no-cached-hosts-" + newId(), "definitely-nonexistent-host.invalid:443", "10.1.1.1", "10.1.1.1");
         assertThat(addr).isNotNull();
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
+    }
+
+    @Test
+    void overrideFor_loopbackDestination_isAllowedWhenClientIsAlsoLoopback() {
+        // A client that's already connecting from 127.0.0.1 gains nothing from this SSRF pivot -
+        // it already has direct network access to this machine's loopback-bound ports - so the
+        // guard is exempted for it (see overrideFor()'s class-level reasoning).
+        var addr = ForwardProxyServer.overrideFor("anyone", "127.0.0.1:9999", "10.1.1.1", "127.0.0.1");
+        assertThat(addr).isNotNull();
+        assertThat(addr.getAddress().isLoopbackAddress()).isTrue(); // destination itself IS 127.0.0.1:9999
+        assertThat(addr.getPort()).isEqualTo(9999); // not redirected to BlockedPageServer's port
+    }
+
+    @Test
+    void overrideFor_hostsProfileEntryPointingAtLoopback_isAllowedWhenClientIsAlsoLoopback() {
+        var userId = "fwdloopback-" + newId();
+        var user = insertUserWithPassword(userId, "correct-horse-battery");
+
+        var hostsService = new tricatch.oe.hosts.service.HostsProfService(FACTORY);
+        var profile = hostsService.create(user.getUserNo());
+        hostsService.updateContent(profile.getHostsId(), user.getUserNo(), "127.0.0.1 foo.oe");
+        hostsService.toggleSelected(profile.getHostsId(), user.getUserNo());
+        ForwardProxyServer.refreshUserHosts(user);
+
+        var blockedForRemoteClient = ForwardProxyServer.overrideFor(userId, "foo.oe:443", "10.1.1.1", "203.0.113.9");
+        assertThat(blockedForRemoteClient.getPort()).isEqualTo(BlockedPageServer.getPort());
+
+        var addr = ForwardProxyServer.overrideFor(userId, "foo.oe:443", "10.1.1.1", "127.0.0.1");
+        assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
+        assertThat(addr.getPort()).isEqualTo(443); // not redirected to BlockedPageServer's port
     }
 }

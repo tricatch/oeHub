@@ -15,7 +15,13 @@
 
   <div class="status-code">403</div>
   <div class="status-label">{{ msg['error.403.label'] }}</div>
+  {% if reason == 'loopback' %}
+  <div class="status-desc">{{ msg['error.403.desc.loopback'] }}</div>
+  {% elseif reason == 'unresolved' %}
+  <div class="status-desc">{{ msg['error.403.desc.unresolved'] }}</div>
+  {% else %}
   <div class="status-desc">{{ msg['error.403.desc'] }}</div>
+  {% endif %}
 
   <div class="divider"></div>
 
@@ -25,9 +31,15 @@
   </table>
 
   <div class="section-label">{{ msg['error.what.to.do'] }}</div>
+  {% if reason == 'loopback' %}
+  <p class="page-note">{{ msg['error.403.note.loopback'] | raw }}</p>
+  {% elseif reason == 'unresolved' %}
+  <p class="page-note">{{ msg['error.403.note.unresolved'] | raw }}</p>
+  {% else %}
   <p class="page-note">
     {{ msg['error.403.note.prefix'] | raw }} <strong>{{ host }}</strong> {{ msg['error.403.note.suffix'] | raw }}
   </p>
+  {% endif %}
 
 </div>
 </body>
