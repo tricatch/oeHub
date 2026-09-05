@@ -252,7 +252,6 @@ public class ForwardProxyServer {
                                     // proxy - it already has direct network access to every loopback-bound
                                     // port on this machine. The SSRF pivot this guard exists for (see
                                     // overrideFor()) only matters for a client that ISN'T already local.
-                                    // EXEMPT_LOOPBACK_CLIENTS is temporarily off - see its declaration.
                                     boolean clientIsLoopback = EXEMPT_LOOPBACK_CLIENTS && isLoopbackTarget(clientIp(ctx));
                                     boolean loopback = !clientIsLoopback && isLoopbackTarget(host);
                                     logger.info("Forward proxy match: user={} method={} host={} whitelisted={} loopbackTarget={} clientIsLoopback={}",
@@ -485,7 +484,6 @@ public class ForwardProxyServer {
         // below exist to stop a genuinely remote client from using an authored oeHosts entry (or a
         // rebinding DNS answer) as an SSRF pivot into this server's own loopback interface - that
         // risk doesn't apply here, so this client is exempted from all three.
-        // EXEMPT_LOOPBACK_CLIENTS is temporarily off - see its declaration.
         boolean clientIsLoopback = EXEMPT_LOOPBACK_CLIENTS && isLoopbackTarget(clientIp);
 
         // Only reachable here for a blocked host (loopback target, or non-whitelisted) when the

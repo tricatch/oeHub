@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.4] - 2026-09-05
+
+### Changed
+- oeProxy: the `X-OeHub-Oid` header value is now HMAC-signed.
+
+### Fixed
+- oeProxy forward proxy: a destination that maps to this server's own loopback address is no longer silently redirected to the same generic "not whitelisted" 403 page — it now shows the actual reason (loopback target, unresolved host, or not whitelisted) with matching guidance.
+- oeProxy forward proxy: a client connecting from 127.0.0.1 is exempt from the loopback-destination SSRF guard, since it already has direct access to every loopback-bound port on the machine — fixes legitimate local-testing oeHosts entries (e.g. `${PROXY_SVR}`-less `127.0.0.1 mydomain`) being blocked.
+- Single-account local setups: a request with no `X-OeHub-Oid` header from a loopback client now resolves to that sole account automatically instead of failing with "no owner mapped".
+
 ## [0.9.3] - 2026-09-02
 
 ### Added
