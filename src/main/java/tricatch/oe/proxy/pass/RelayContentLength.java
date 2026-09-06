@@ -32,7 +32,10 @@ public class RelayContentLength {
             logger.debug("{}, {}, Relaying content-length body: {} bytes", rid, flow, contentLength);
         }
 
-        MonitorBodyCollector bodyCollector = new MonitorBodyCollector();
+        // No monitor tab watching this owner right now — skip the collector entirely rather than
+        // copying every relayed byte into it only to hand the finished event to DropConsumer.
+        boolean monitored = HttpEventManager.getInstance().hasSubscriber(clientId);
+        MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
 
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int remainingBytes = contentLength;
@@ -51,7 +54,7 @@ public class RelayContentLength {
             out.write(buffer, 0, bytesRead);
             out.flush();
 
-            bodyCollector.add(buffer, 0, bytesRead);
+            if (monitored) bodyCollector.add(buffer, 0, bytesRead);
 
             remainingBytes -= bytesRead;
 
@@ -62,12 +65,14 @@ public class RelayContentLength {
 
         out.flush();
 
-        byte[] bodyForEvent = bodyCollector.toEventBody(flow);
+        if (monitored) {
+            byte[] bodyForEvent = bodyCollector.toEventBody(flow);
 
-        HttpEvent bodyEvent = new HttpEvent(clientId, rid, flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
-        bodyEvent.setBody(bodyForEvent);
-        bodyEvent.setHttpStream(HttpStream.CONTENT_LENGTH);
-        HttpEventManager.getInstance().enqueue(bodyEvent);
+            HttpEvent bodyEvent = new HttpEvent(clientId, rid, flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
+            bodyEvent.setBody(bodyForEvent);
+            bodyEvent.setHttpStream(HttpStream.CONTENT_LENGTH);
+            HttpEventManager.getInstance().enqueue(bodyEvent);
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Content-length body relay completed", rid, flow);

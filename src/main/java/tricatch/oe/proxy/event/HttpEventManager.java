@@ -150,6 +150,18 @@ public class HttpEventManager {
     }
 
     /**
+     * Cheap upfront check so callers on the request/response hot path (body relay, header
+     * capture) can skip building a monitor payload entirely when nobody is watching this
+     * clientId, instead of paying the copy/allocation cost and then having dispatch() hand the
+     * event straight to DropConsumer.
+     */
+    public boolean hasSubscriber(String clientId) {
+        if (clientId == null) return false;
+        ChannelConsumers channelConsumers = clientConsumers.get(clientId);
+        return channelConsumers != null && !channelConsumers.isEmpty();
+    }
+
+    /**
      * Enqueue HttpEvent to pipeline
      * Request → HttpEvent 생성 → EventQueue → WorkerPool → IP Subscriber / DropConsumer
      */

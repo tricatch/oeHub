@@ -211,10 +211,13 @@ public class PassRequestExecutor implements Stopable {
 
                 // Enqueue REQ header HttpEvent — tagged by resolved owner oid, not raw client
                 // IP, so two accounts sharing an egress IP can't see each other's live traffic
-                // in the monitor (see ReverseProxyServer.resolveOid()).
-                HttpEvent reqHeaderEvent = new HttpEvent(this.ownerOid, this.rid, HttpEventType.REQ_HEADER);
-                reqHeaderEvent.setHeaders(requestHeaders);
-                HttpEventManager.getInstance().enqueue(reqHeaderEvent);
+                // in the monitor (see ReverseProxyServer.resolveOid()). Skipped entirely when no
+                // monitor tab is watching this owner, same as the body relay classes.
+                if (HttpEventManager.getInstance().hasSubscriber(this.ownerOid)) {
+                    HttpEvent reqHeaderEvent = new HttpEvent(this.ownerOid, this.rid, HttpEventType.REQ_HEADER);
+                    reqHeaderEvent.setHeaders(requestHeaders);
+                    HttpEventManager.getInstance().enqueue(reqHeaderEvent);
+                }
 
                 // Parse HTTP request
                 HttpRequest httpRequest = requestHeaders.parseHttpRequest();

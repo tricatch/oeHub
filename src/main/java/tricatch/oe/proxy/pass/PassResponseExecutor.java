@@ -104,11 +104,14 @@ public class PassResponseExecutor implements Stopable {
 
                 // Enqueue RES header HttpEvent — tagged by resolved owner oid, not raw client
                 // IP, so two accounts sharing an egress IP can't see each other's live traffic
-                // in the monitor (see ReverseProxyServer.resolveOid()).
+                // in the monitor (see ReverseProxyServer.resolveOid()). Skipped entirely when no
+                // monitor tab is watching this owner, same as the body relay classes.
                 String ownerOid = this.passRequestExecutor.getOwnerOid();
-                HttpEvent resHeaderEvent = new HttpEvent(ownerOid, this.rid, HttpEventType.RES_HEADER);
-                resHeaderEvent.setHeaders(responseHeaders);
-                HttpEventManager.getInstance().enqueue(resHeaderEvent);
+                if (HttpEventManager.getInstance().hasSubscriber(ownerOid)) {
+                    HttpEvent resHeaderEvent = new HttpEvent(ownerOid, this.rid, HttpEventType.RES_HEADER);
+                    resHeaderEvent.setHeaders(responseHeaders);
+                    HttpEventManager.getInstance().enqueue(resHeaderEvent);
+                }
 
                 //write-res-header
                 if (!isCurrentGeneration()) {

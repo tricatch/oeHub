@@ -40,7 +40,10 @@ public class RelayUntilClose {
         
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int totalBytesRelayed = 0;
-        MonitorBodyCollector bodyCollector = new MonitorBodyCollector();
+        // No monitor tab watching this owner right now — skip the collector entirely rather than
+        // copying every relayed byte into it only to hand the finished event to DropConsumer.
+        boolean monitored = HttpEventManager.getInstance().hasSubscriber(clientId);
+        MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
 
         while (true) {
             int bytesRead = in.read(buffer);
@@ -53,7 +56,7 @@ public class RelayUntilClose {
             out.write(buffer, 0, bytesRead);
             totalBytesRelayed += bytesRead;
 
-            bodyCollector.add(buffer, 0, bytesRead);
+            if (monitored) bodyCollector.add(buffer, 0, bytesRead);
 
             if (logger.isDebugEnabled()) {
                 logger.debug("{}, {}, Relayed {} bytes of body, total: {}"
@@ -64,17 +67,19 @@ public class RelayUntilClose {
                 );
             }
         }
-        
+
         out.flush();
 
-        byte[] bodyForEvent = bodyCollector.toEventBody(flow);
+        if (monitored) {
+            byte[] bodyForEvent = bodyCollector.toEventBody(flow);
 
-        // Enqueue body HttpEvent
-        HttpEvent bodyEvent = new HttpEvent(clientId, rid,
-            flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
-        bodyEvent.setBody(bodyForEvent);
-        bodyEvent.setHttpStream(HttpStream.UNTIL_CLOSE);
-        HttpEventManager.getInstance().enqueue(bodyEvent);
+            // Enqueue body HttpEvent
+            HttpEvent bodyEvent = new HttpEvent(clientId, rid,
+                flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
+            bodyEvent.setBody(bodyForEvent);
+            bodyEvent.setHttpStream(HttpStream.UNTIL_CLOSE);
+            HttpEventManager.getInstance().enqueue(bodyEvent);
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Until-close body relay completed, total bytes: {}"

@@ -42,7 +42,10 @@ public class RelayChunked {
         ByteBuffer chunkSizeBuffer = new ByteBuffer(HTTP.CHUNK_SIZE_LINE_LENGTH);
         ByteBuffer chunkTrailerBuffer = new ByteBuffer(HTTP.CHUNK_SIZE_LINE_LENGTH);
         byte[] chunkBodyBuffer = new byte[HTTP.BODY_BUFFER_SIZE];
-        MonitorBodyCollector bodyCollector = new MonitorBodyCollector();
+        // No monitor tab watching this owner right now — skip the collector entirely rather than
+        // copying every relayed byte into it only to hand the finished event to DropConsumer.
+        boolean monitored = HttpEventManager.getInstance().hasSubscriber(clientId);
+        MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
         boolean truncated = false;
 
         while (true) {
@@ -141,7 +144,7 @@ public class RelayChunked {
                 }
                 out.write(chunkBodyBuffer, 0, bytesRead);
 
-                bodyCollector.add(chunkBodyBuffer, 0, bytesRead);
+                if (monitored) bodyCollector.add(chunkBodyBuffer, 0, bytesRead);
 
                 remainingBytes -= bytesRead;
                 
@@ -170,14 +173,16 @@ public class RelayChunked {
         
         out.flush();
 
-        byte[] bodyForEvent = bodyCollector.toEventBody(flow);
+        if (monitored) {
+            byte[] bodyForEvent = bodyCollector.toEventBody(flow);
 
-        // Enqueue body HttpEvent
-        HttpEvent bodyEvent = new HttpEvent(clientId, rid,
-            flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
-        bodyEvent.setBody(bodyForEvent);
-        bodyEvent.setHttpStream(HttpStream.CHUNKED);
-        HttpEventManager.getInstance().enqueue(bodyEvent);
+            // Enqueue body HttpEvent
+            HttpEvent bodyEvent = new HttpEvent(clientId, rid,
+                flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
+            bodyEvent.setBody(bodyForEvent);
+            bodyEvent.setHttpStream(HttpStream.CHUNKED);
+            HttpEventManager.getInstance().enqueue(bodyEvent);
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Chunked body relay completed"

@@ -50,20 +50,25 @@ public class RelayWebSocket {
             writeFrame(out, frame);
             logFrame(rid, flow, "WRITE", frame);
 
-            byte[] payloadForEvent = frame.getPayload();
-            if (payloadForEvent != null && payloadForEvent.length > 0 && frame.getMaskingKey() != null) {
-                payloadForEvent = unmaskPayload(payloadForEvent, frame.getMaskingKey());
-            }
-            if (payloadForEvent == null) {
-                payloadForEvent = new byte[0];
-            }
+            // Checked per frame (not once before the loop) since a long-lived socket connection
+            // can outlast a monitor tab opening/closing mid-stream — the lookup itself is a cheap
+            // ConcurrentHashMap.get, far cheaper than the unmask copy it guards.
+            if (HttpEventManager.getInstance().hasSubscriber(clientId)) {
+                byte[] payloadForEvent = frame.getPayload();
+                if (payloadForEvent != null && payloadForEvent.length > 0 && frame.getMaskingKey() != null) {
+                    payloadForEvent = unmaskPayload(payloadForEvent, frame.getMaskingKey());
+                }
+                if (payloadForEvent == null) {
+                    payloadForEvent = new byte[0];
+                }
 
-            HttpEvent frameEvent = new HttpEvent(clientId, rid, HttpEventType.WS_FRAME);
-            frameEvent.setBody(payloadForEvent);
-            frameEvent.setHttpStream(HttpStream.WEBSOCKET);
-            frameEvent.setOpcode(frame.getOpcode());
-            frameEvent.setWsDirection(flow == HttpStream.Flow.REQ ? "REQ" : "RES");
-            HttpEventManager.getInstance().enqueue(frameEvent);
+                HttpEvent frameEvent = new HttpEvent(clientId, rid, HttpEventType.WS_FRAME);
+                frameEvent.setBody(payloadForEvent);
+                frameEvent.setHttpStream(HttpStream.WEBSOCKET);
+                frameEvent.setOpcode(frame.getOpcode());
+                frameEvent.setWsDirection(flow == HttpStream.Flow.REQ ? "REQ" : "RES");
+                HttpEventManager.getInstance().enqueue(frameEvent);
+            }
 
             if (frame.getOpcode() == 0x8) {
                 if (logger.isDebugEnabled()) {
