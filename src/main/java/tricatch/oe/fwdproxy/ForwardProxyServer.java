@@ -286,8 +286,8 @@ public class ForwardProxyServer {
 
                         ChannelHandlerContext liveServerCtx = LittleProxyInternals.liveProxyToServerContext(clientConnection);
                         if (liveServerCtx != null && liveServerCtx.channel().localAddress() instanceof InetSocketAddress local) {
-                            logger.debug("Self-loop registry register: port={} userNo={}", local.getPort(), userNo);
-                            SelfLoopOwnerRegistry.register(local.getPort(), userNo);
+                            logger.debug("Self-loop registry register: ip={} port={} userNo={}", local.getAddress().getHostAddress(), local.getPort(), userNo);
+                            SelfLoopOwnerRegistry.register(local.getAddress().getHostAddress(), local.getPort(), userNo);
                         }
                     }
                 })

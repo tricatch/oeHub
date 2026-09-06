@@ -44,6 +44,7 @@ public class ProxyController {
         var hubUser = AuthController.currentUser(ctx);
         var clientIp = ctx.ip();
         var localSvrOverride = confService.get("local_svr", hubUser.getUserNo());
+        var ipIdentifierEnabled = ReverseProxyServer.isIpIdentifierEnabled();
         var claimedOid = ReverseProxyServer.getClaimedOid(clientIp);
         var claimedBySelf = claimedOid != null && claimedOid.equals(hubUser.getOid());
         var claimedByUserId = (claimedOid != null && !claimedBySelf) ? ReverseProxyServer.getUserIdForOid(claimedOid) : null;
@@ -52,6 +53,7 @@ public class ProxyController {
         model.put("clientIp", clientIp);
         model.put("localSvr", localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp);
         model.put("oid", hubUser.getOid());
+        model.put("ipIdentifierEnabled", ipIdentifierEnabled);
         model.put("ipClaimedBySelf", claimedBySelf);
         model.put("ipClaimedByUserId", claimedByUserId);
         ctx.render("templates/oehub/proxy.pebble", model);
@@ -63,6 +65,15 @@ public class ProxyController {
     // itself (ctx.ip()), never from client input, so a caller cannot claim an IP other than the
     // one they're actually connecting from.
     public void apiTakeIp(Context ctx) {
+        // An admin can turn the IP-based fallback off entirely (Settings > oeProxy - Identifier)
+        // when it's unreliable; resolveOid() then never consults ClaimedIpRegistry at all, so a
+        // claim recorded while disabled would report success but never take effect. showProxy
+        // hides the button for this case too, but this request-time check covers a page left open
+        // across a setting change and any direct API call.
+        if (!ReverseProxyServer.isIpIdentifierEnabled()) {
+            ctx.status(409).json(Map.of("error", "ip_identifier_disabled"));
+            return;
+        }
         var hubUser = AuthController.currentUser(ctx);
         ReverseProxyServer.claimIp(ctx.ip(), hubUser.getUserNo());
         ctx.json(Map.of("ip", ctx.ip(), "ttlHours", ReverseProxyServer.claimedIpTtlHours()));
@@ -372,9 +383,9 @@ public class ProxyController {
         return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, null);
     }
 
-    // routeIp identifies the connecting client for the proxy's IP-to-owner lookup and must
-    // stay the real observed address; the ${LOCAL_SVR} substitution below is allowed to diverge
-    // from it via a user-set override (e.g. when routeIp is contaminated by an intermediate hop).
+    // routeIp is only used below for the ${LOCAL_SVR} substitution fallback (see resolveLocalSvr) -
+    // IP-to-owner identification now lives entirely in ClaimedIpRegistry via the explicit
+    // "Use This IP" flow (ProxyController.apiTakeIp), not in this method.
     // Returns false (and leaves the persisted "vhost" config untouched) if the merged YAML was
     // rejected by ReverseProxyServer — same validate-before-persist rule as apiConfSet's vhost
     // handling, so a bad merge never leaves the DB holding config that silently fails to reload.

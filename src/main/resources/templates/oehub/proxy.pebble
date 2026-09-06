@@ -95,7 +95,9 @@
     <div class="proxy-routes-status">
       {% if oid is not empty %}<span class="oe-myip-badge">OID: {{ oid }}</span>{% endif %}
       <span class="oe-myip-badge">IP: {{ clientIp }}</span>
-      {% if ipClaimedBySelf %}
+      {% if not ipIdentifierEnabled %}
+      <span class="oe-myip-badge" title="{{ msg['tooltip.ip.identifier.disabled'] }}">{{ msg['proxy.ip.identifier.disabled'] }}</span>
+      {% elseif ipClaimedBySelf %}
       <span class="oe-myip-badge" id="ipClaimStatus">{{ msg['proxy.ip.claimed.self'] }}</span>
       {% elseif ipClaimedByUserId is not empty %}
       <button class="oe-take-ip-btn oe-take-ip-btn-warn" id="btnTakeIp" title="{{ msg['tooltip.take.ip'] }}">{{ ipClaimedByUserId }} / {{ msg['proxy.take.ip.label'] }}</button>
@@ -572,6 +574,7 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
   // branch), so this simply doesn't bind in that case.
   document.getElementById('btnTakeIp')?.addEventListener('click', async (e) => {
     const res = await fetch('/api/proxy/take-ip', {method: 'POST'});
+    if (res.status === 409) { showToast(MSG['toast.ip.identifier.disabled']); return; }
     if (!res.ok) { showToast(MSG['toast.ip.claim.failed']); return; }
     // Claiming always wins the IP for this account - swap the button for the same "in use by
     // me" status a fresh page load would now render, without an actual reload.

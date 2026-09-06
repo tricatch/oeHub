@@ -21,7 +21,7 @@ class RelayUntilCloseTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayUntilClose.relay("client1", "rid1", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayUntilClose.relay("client1", "rid1", HttpStream.Flow.RES, in, out, false);
 
         assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);
         assertThat(rawOut.toByteArray()).isEqualTo(body);
@@ -38,7 +38,7 @@ class RelayUntilCloseTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayUntilClose.relay("client1", "rid2", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayUntilClose.relay("client1", "rid2", HttpStream.Flow.RES, in, out, false);
 
         assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);
         assertThat(rawOut.toByteArray()).isEqualTo(body);

@@ -30,19 +30,18 @@ public class RelayUntilClose {
      * @return HttpStream.Connection indicating whether connection should be closed
      * @throws IOException when I/O error occurs
      */
-    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Relaying until-close body"
                     , rid
                     , flow
             );
         }
-        
+
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int totalBytesRelayed = 0;
-        // No monitor tab watching this owner right now — skip the collector entirely rather than
-        // copying every relayed byte into it only to hand the finished event to DropConsumer.
-        boolean monitored = HttpEventManager.getInstance().hasSubscriber(clientId);
+        // monitored is decided once, at REQ_HEADER time, for this whole request (see
+        // PassRequestExecutor) - not re-checked here.
         MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
 
         while (true) {

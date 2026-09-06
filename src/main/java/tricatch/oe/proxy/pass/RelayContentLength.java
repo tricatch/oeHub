@@ -20,7 +20,7 @@ public class RelayContentLength {
 
     private static final Logger logger = LoggerFactory.getLogger(RelayContentLength.class);
 
-    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, Integer contentLength, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, Integer contentLength, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         if (contentLength == null || contentLength <= 0) {
             if (logger.isDebugEnabled()) {
                 logger.debug("{}, {}, No content length or zero content length", rid, flow);
@@ -32,9 +32,10 @@ public class RelayContentLength {
             logger.debug("{}, {}, Relaying content-length body: {} bytes", rid, flow, contentLength);
         }
 
-        // No monitor tab watching this owner right now — skip the collector entirely rather than
-        // copying every relayed byte into it only to hand the finished event to DropConsumer.
-        boolean monitored = HttpEventManager.getInstance().hasSubscriber(clientId);
+        // monitored is decided once, at REQ_HEADER time, for this whole request (see
+        // PassRequestExecutor) - not re-checked here - so a monitor tab that opens mid-relay
+        // can't produce a REQ_BODY/RES_BODY event with no corresponding header event for the
+        // monitor UI to attach it to.
         MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
 
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];

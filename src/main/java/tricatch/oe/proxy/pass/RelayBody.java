@@ -15,7 +15,7 @@ public class RelayBody {
 
     private static final Logger logger = LoggerFactory.getLogger(RelayBody.class);
 
-    public static HttpStream.Connection relayResponseBody(String clientId, String rid, HttpStream.Flow flow, HttpResponse response, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relayResponseBody(String clientId, String rid, HttpStream.Flow flow, HttpResponse response, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         HttpStream httpStream = response.getBodyStream();
 
         if (logger.isDebugEnabled()) {
@@ -31,16 +31,16 @@ public class RelayBody {
                 return HttpStream.Connection.KEEP_ALIVE;
 
             case CONTENT_LENGTH:
-                return RelayContentLength.relay(clientId, rid, flow, response.getContentLength(), in, out);
+                return RelayContentLength.relay(clientId, rid, flow, response.getContentLength(), in, out, monitored);
 
             case CHUNKED:
-                return RelayChunked.relay(clientId, rid, flow, in, out);
+                return RelayChunked.relay(clientId, rid, flow, in, out, monitored);
 
             case WEBSOCKET:
-                return RelayWebSocket.relay(clientId, rid, flow, in, out);
+                return RelayWebSocket.relay(clientId, rid, flow, in, out, monitored);
 
             case UNTIL_CLOSE:
-                return RelayUntilClose.relay(clientId, rid, flow, in, out);
+                return RelayUntilClose.relay(clientId, rid, flow, in, out, monitored);
 
             default:
                 logger.warn("{}, {}, Unknown body stream type: {}", rid, flow, httpStream);
@@ -48,7 +48,7 @@ public class RelayBody {
         }
     }
 
-    public static HttpStream.Connection relayRequestBody(String clientId, String rid, HttpStream.Flow flow, HttpRequest request, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relayRequestBody(String clientId, String rid, HttpStream.Flow flow, HttpRequest request, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         HttpStream httpStream = request.getHttpStream();
 
         if (logger.isDebugEnabled()) {
@@ -64,16 +64,16 @@ public class RelayBody {
                 return HttpStream.Connection.KEEP_ALIVE;
 
             case CONTENT_LENGTH:
-                return RelayContentLength.relay(clientId, rid, flow, request.getContentLength(), in, out);
+                return RelayContentLength.relay(clientId, rid, flow, request.getContentLength(), in, out, monitored);
 
             case CHUNKED:
-                return RelayChunked.relay(clientId, rid, flow, in, out);
+                return RelayChunked.relay(clientId, rid, flow, in, out, monitored);
 
             case WEBSOCKET:
-                return RelayWebSocket.relay(clientId, rid, flow, in, out);
+                return RelayWebSocket.relay(clientId, rid, flow, in, out, monitored);
 
             case UNTIL_CLOSE:
-                return RelayUntilClose.relay(clientId, rid, flow, in, out);
+                return RelayUntilClose.relay(clientId, rid, flow, in, out, monitored);
 
             default:
                 logger.warn("{}, {}, Unknown body stream type: {}", rid, flow, httpStream);

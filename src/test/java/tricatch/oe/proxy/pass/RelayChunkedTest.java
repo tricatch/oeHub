@@ -42,7 +42,7 @@ class RelayChunkedTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayChunked.relay("client1", "rid1", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayChunked.relay("client1", "rid1", HttpStream.Flow.RES, in, out, false);
 
         assertThat(result).isEqualTo(HttpStream.Connection.KEEP_ALIVE);
         assertThat(rawOut.toByteArray()).isEqualTo(encoded);
@@ -60,7 +60,7 @@ class RelayChunkedTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayChunked.relay("client1", "rid2", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayChunked.relay("client1", "rid2", HttpStream.Flow.RES, in, out, false);
 
         assertThat(result).isEqualTo(HttpStream.Connection.KEEP_ALIVE);
         assertThat(rawOut.toByteArray()).isEqualTo(encoded);
@@ -84,7 +84,7 @@ class RelayChunkedTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayChunked.relay("client1", "rid3", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayChunked.relay("client1", "rid3", HttpStream.Flow.RES, in, out, false);
 
         // A chunk-size parse failure leaves the connection desynced: it must never be reused.
         assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);
@@ -113,7 +113,7 @@ class RelayChunkedTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayChunked.relay("client1", "rid4", HttpStream.Flow.RES, in, out);
+        HttpStream.Connection result = RelayChunked.relay("client1", "rid4", HttpStream.Flow.RES, in, out, false);
 
         assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);
     }

@@ -204,10 +204,14 @@ public class ReverseProxyServer {
         oidVirtualHostsMap.put(oid, VirtualHostUtil.convert(virtualHost.getVirtual()));
     }
 
+    // Drops only the routing table. An IP claim is a deliberate, user-initiated action (see
+    // ClaimedIpRegistry.claim()/apiTakeIp) and must not be cleared as a side effect of unrelated
+    // vhost changes - it is released only by that same explicit action, either when the owner
+    // claims a different IP (claim() releases their own prior claim first) or when another account
+    // claims this same IP (claim()'s put() naturally overwrites the single owner a claimed IP maps
+    // to). See invalidateVirtualHosts() below for the analogous no-side-effect table clear.
     public static void clearVirtualHosts(Long userNo) {
-        String oid = OidUtil.encode(userNo);
-        ClaimedIpRegistry.release(oid);
-        oidVirtualHostsMap.remove(oid);
+        oidVirtualHostsMap.remove(OidUtil.encode(userNo));
     }
 
     // Drops only the cached routing table, leaving any IP claim intact — for invalidating an

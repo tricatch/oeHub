@@ -90,6 +90,13 @@ public class PassRequestExecutor implements Stopable {
     private String currentMethod = null;
     private String oidHeader = null;
 
+    // Decided once per request, right when the REQ_HEADER event is (or isn't) enqueued, and reused
+    // as-is for RES_HEADER and for both body relays of this same request - so a monitor tab that
+    // connects or disconnects mid-request can't split one request's events across "monitored" and
+    // "not monitored", which would otherwise leave the frontend an orphaned RES_HEADER/body event
+    // with no REQ_HEADER row to attach it to (see PassResponseExecutor.isMonitored()).
+    private boolean monitored = false;
+
     // Resolved at most once per accepted connection (not per request - a keep-alive connection
     // can carry many requests) from SelfLoopOwnerRegistry, for a ${PROXY_SVR}/loopback forward-proxy
     // self-loop connection that carries no X-OeHub-Oid header of its own (see SelfLoopOwnerRegistry).
@@ -140,6 +147,13 @@ public class PassRequestExecutor implements Stopable {
     // sharing an egress IP. null until the first successful getVirtualHosts() call.
     public String getOwnerOid(){
         return this.ownerOid;
+    }
+
+    // Same monitored decision REQ_HEADER/the request body relay already used for this request -
+    // see the field comment on `monitored` for why RES_HEADER/the response body relay must reuse
+    // it rather than independently re-checking HttpEventManager.hasSubscriber().
+    public boolean isMonitored(){
+        return this.monitored;
     }
 
     public String getCurrentLocale(){
@@ -228,9 +242,13 @@ public class PassRequestExecutor implements Stopable {
                 // comment on selfLoopOidHeader for why this is looked up here, not at accept time).
                 if ((this.oidHeader == null || this.oidHeader.isBlank()) && !this.selfLoopChecked) {
                     this.selfLoopChecked = true;
-                    Long selfLoopUserNo = SelfLoopOwnerRegistry.take(this.clientSocket.getPort());
+                    // this.clientId (the accepted socket's peer IP) must match the IP the
+                    // forward-proxy's own self-loop connection actually used - see
+                    // SelfLoopOwnerRegistry's javadoc for why a bare port match isn't safe on its
+                    // own (both proxy ports are reachable from the LAN, not just loopback).
+                    Long selfLoopUserNo = SelfLoopOwnerRegistry.take(this.clientId, this.clientSocket.getPort());
                     this.selfLoopOidHeader = selfLoopUserNo != null ? OidUtil.encode(selfLoopUserNo) : null;
-                    logger.debug("{}, self-loop registry lookup: port={}, userNo={}", rid, this.clientSocket.getPort(), selfLoopUserNo);
+                    logger.debug("{}, self-loop registry lookup: ip={}, port={}, userNo={}", rid, this.clientId, this.clientSocket.getPort(), selfLoopUserNo);
                 }
                 if ((this.oidHeader == null || this.oidHeader.isBlank()) && this.selfLoopOidHeader != null) {
                     this.oidHeader = this.selfLoopOidHeader;
@@ -242,7 +260,8 @@ public class PassRequestExecutor implements Stopable {
                 // IP, so two accounts sharing an egress IP can't see each other's live traffic
                 // in the monitor (see ReverseProxyServer.resolveOid()). Skipped entirely when no
                 // monitor tab is watching this owner, same as the body relay classes.
-                if (HttpEventManager.getInstance().hasSubscriber(this.ownerOid)) {
+                this.monitored = HttpEventManager.getInstance().hasSubscriber(this.ownerOid);
+                if (this.monitored) {
                     HttpEvent reqHeaderEvent = new HttpEvent(this.ownerOid, this.rid, HttpEventType.REQ_HEADER);
                     reqHeaderEvent.setHeaders(requestHeaders);
                     HttpEventManager.getInstance().enqueue(reqHeaderEvent);
@@ -326,7 +345,7 @@ public class PassRequestExecutor implements Stopable {
                 }
 
                 // Relay request body to server if exists
-                HttpStream.Connection connection = RelayBody.relayRequestBody(this.ownerOid, rid, HttpStream.Flow.REQ, httpRequest, clientIn, serverOut);
+                HttpStream.Connection connection = RelayBody.relayRequestBody(this.ownerOid, rid, HttpStream.Flow.REQ, httpRequest, clientIn, serverOut, this.monitored);
                 if (connection == HttpStream.Connection.CLOSE) {
                     this.stop = true;
                 }

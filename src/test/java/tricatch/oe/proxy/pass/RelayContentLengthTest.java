@@ -21,7 +21,7 @@ class RelayContentLengthTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayContentLength.relay("client1", "rid1", HttpStream.Flow.RES, body.length, in, out);
+        HttpStream.Connection result = RelayContentLength.relay("client1", "rid1", HttpStream.Flow.RES, body.length, in, out, false);
 
         assertThat(result).isEqualTo(HttpStream.Connection.KEEP_ALIVE);
         assertThat(rawOut.toByteArray()).isEqualTo(body);
@@ -37,7 +37,7 @@ class RelayContentLengthTest {
         ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         HttpStreamWriter out = new HttpStreamWriter(rawOut);
 
-        HttpStream.Connection result = RelayContentLength.relay("client1", "rid2", HttpStream.Flow.RES, 10000, in, out);
+        HttpStream.Connection result = RelayContentLength.relay("client1", "rid2", HttpStream.Flow.RES, 10000, in, out, false);
 
         // A truncated body means the connection is dead/desynced and must not be reused.
         assertThat(result).isEqualTo(HttpStream.Connection.CLOSE);

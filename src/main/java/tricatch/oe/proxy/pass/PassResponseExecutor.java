@@ -107,7 +107,8 @@ public class PassResponseExecutor implements Stopable {
                 // in the monitor (see ReverseProxyServer.resolveOid()). Skipped entirely when no
                 // monitor tab is watching this owner, same as the body relay classes.
                 String ownerOid = this.passRequestExecutor.getOwnerOid();
-                if (HttpEventManager.getInstance().hasSubscriber(ownerOid)) {
+                boolean monitored = this.passRequestExecutor.isMonitored();
+                if (monitored) {
                     HttpEvent resHeaderEvent = new HttpEvent(ownerOid, this.rid, HttpEventType.RES_HEADER);
                     resHeaderEvent.setHeaders(responseHeaders);
                     HttpEventManager.getInstance().enqueue(resHeaderEvent);
@@ -135,7 +136,7 @@ public class PassResponseExecutor implements Stopable {
                 responseHeaderSent = true;
 
                 // Relay response body to client
-                HttpStream.Connection connection = RelayBody.relayResponseBody(ownerOid, rid, HttpStream.Flow.RES, response, serverIn, clientOut);
+                HttpStream.Connection connection = RelayBody.relayResponseBody(ownerOid, rid, HttpStream.Flow.RES, response, serverIn, clientOut, monitored);
                 if (connection == HttpStream.Connection.CLOSE) {
                     passRequestExecutor.setStop(true);
                 }

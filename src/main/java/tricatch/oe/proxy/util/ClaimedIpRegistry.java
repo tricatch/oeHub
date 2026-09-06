@@ -27,18 +27,31 @@ public class ClaimedIpRegistry {
             .expireAfterWrite(TTL)
             .build();
 
+    // Guards the release-then-put pair in claim() so it behaves as one atomic "move" operation.
+    // Without this, two near-simultaneous claim() calls for the same oid (e.g. a double-click, or
+    // the same account claiming from two devices within milliseconds of each other) could
+    // interleave as release()+release()+put(ipA)+put(ipB), leaving two IPs both mapped to the
+    // same oid - exactly the "two IPs both routing to them indefinitely" case this class exists
+    // to prevent. Claims are a rare, explicit, low-frequency admin action (not a hot request-path
+    // operation), so a plain lock costs nothing meaningful here.
+    private static final Object CLAIM_LOCK = new Object();
+
     private ClaimedIpRegistry() {}
 
     public static void claim(String ip, String oid) {
         if (ip == null || oid == null) return;
-        release(oid);
-        IP_TO_OID.put(ip, oid);
+        synchronized (CLAIM_LOCK) {
+            release(oid);
+            IP_TO_OID.put(ip, oid);
+        }
     }
 
     /** Drops this owner's claim, whichever IP currently holds it (if any). */
     public static void release(String oid) {
         if (oid == null) return;
-        IP_TO_OID.asMap().values().removeIf(oid::equals);
+        synchronized (CLAIM_LOCK) {
+            IP_TO_OID.asMap().values().removeIf(oid::equals);
+        }
     }
 
     public static String get(String ip) {

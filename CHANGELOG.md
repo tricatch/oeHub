@@ -19,6 +19,8 @@ All notable changes to this project are documented in this file.
 ### Fixed
 - oeProxy forward proxy: a destination that maps to this server's own loopback address is no longer silently redirected to the same generic "not whitelisted" 403 page — it now shows the actual reason (loopback target, unresolved host, or not whitelisted) with matching guidance.
 - oeProxy forward proxy: a client connecting from 127.0.0.1 is exempt from the loopback-destination SSRF guard, since it already has direct access to every loopback-bound port on the machine — fixes legitimate local-testing oeHosts entries (e.g. `${PROXY_SVR}`-less `127.0.0.1 mydomain`) being blocked.
+- oeProxy forward proxy: self-loop owner attribution now also requires the accepted reverse-proxy connection's actual peer IP to match the IP the forward proxy's own outbound connection used, closing a window where a different host on the same network could otherwise be attributed to another account's self-loop request by reusing its ephemeral source port.
+- oeProxy: fixed the live traffic monitor occasionally showing a response event with no matching request row — the "is a monitor tab watching this account" check is now decided once per request and reused for both the request and response sides (and the response body relay), instead of being independently re-checked at each point.
 
 ## [0.9.3] - 2026-09-02
 
