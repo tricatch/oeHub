@@ -27,21 +27,12 @@ public class ProxyConfService {
     public void set(String confKey, Long userNo, String value) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyConfMapper.class);
-            var conf = userNo != null
-                ? mapper.findByUserNoAndConfKey(userNo, confKey)
-                : mapper.findGlobal(confKey);
-            if (conf == null) {
-                var newConf = new ProxyConf();
-                newConf.setUserNo(userNo);
-                newConf.setConfKey(confKey);
-                newConf.setConfVal(value);
-                newConf.setUpdatedAt(LocalDateTime.now());
-                mapper.insert(newConf);
-            } else {
-                conf.setConfVal(value);
-                conf.setUpdatedAt(LocalDateTime.now());
-                mapper.update(conf);
-            }
+            var conf = new ProxyConf();
+            conf.setUserNo(userNo);
+            conf.setConfKey(confKey);
+            conf.setConfVal(value);
+            conf.setUpdatedAt(LocalDateTime.now());
+            mapper.upsert(conf);
             session.commit();
         }
     }

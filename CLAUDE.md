@@ -49,6 +49,12 @@
 - The `tricatch.oe.proxy` package is a low-level networking layer. Do **not** modify files in this package for style, comment cleanup, or refactoring unless the change is directly required by a bug fix or feature task.
 - This restriction covers all sub-packages: `proxy.pass`, `proxy.http`, `proxy.event`, `proxy.server`, `proxy.cfg`, `proxy.util`, etc.
 
+## Forward Proxy — LittleProxy Reflection Dependency
+
+- `tricatch.oe.proxy.util.LittleProxyInternals` reaches into `littleproxy` internals via reflection to work around a bug in that library (see the class's own javadoc for the mechanism and exact field names — do not duplicate those details here, they belong in one place).
+- Whenever the `littleproxy` dependency version changes (in `build.gradle.kts`), re-verify `LittleProxyInternals` first, using a standalone reproduction outside the app (a real CONNECT request through a real `DefaultHttpProxyServer` instance) rather than testing through the full app — a reflection failure degrades silently (see below) and is easy to miss otherwise.
+- A reflection failure must never throw: `LittleProxyInternals` logs a warning once and returns null, so self-loop owner resolution (see `SelfLoopOwnerRegistry`) simply stops firing while the `X-OeHub-Oid` header and "Use This IP" fallbacks keep working. Preserve this fallback behavior when touching this class.
+
 ## HTML Templates
 
 - Use the Pebble template engine. (`src/main/resources/templates/`)
@@ -87,3 +93,10 @@
 1. Add the SVG file to `static/icon/lucide/`
 2. Add a semantic class in `icon.css` with the `url()` path
 3. Use the semantic class name in templates
+
+## Dependencies — License Listing
+
+- Whenever a new third-party library is added to `build.gradle.kts` (backend) or bundled as a static frontend asset, add a corresponding row to `src/main/resources/templates/oehub/licenses.pebble`.
+- Each row includes: library name (linked to its homepage/repo), the exact version in use, and a license badge (`license-badge badge-apache`, `badge-mit`, `badge-mpl`, etc., matching the library's actual license).
+- Keep rows in alphabetical order by library name.
+- When a dependency's version is bumped, update its version cell in the same row.

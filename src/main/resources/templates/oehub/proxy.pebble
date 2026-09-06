@@ -65,7 +65,7 @@
       <div id="cmEditor"></div>
     </div>
     <div class="oe-editor-meta" id="editorMeta">
-      <span><span id="metaUpdated"></span> / <span id="metaCreator"></span></span>
+      <span><span id="metaUpdated"></span> / <span id="metaCreator"></span><span id="metaEditor"></span></span>
     </div>
   </div>
 
@@ -93,7 +93,17 @@
     <div class="d-none" id="configEmptyState">{{ msg['proxy.config.empty'] }}</div>
     <div id="cmMergedConfig"></div>
     <div class="proxy-routes-status">
-      <span class="oe-myip-badge">{% if oid is not empty %}OID: {{ oid }}{% else %}IP: {{ clientIp }}{% endif %}</span>
+      {% if oid is not empty %}<span class="oe-myip-badge">OID: {{ oid }}</span>{% endif %}
+      <span class="oe-myip-badge">IP: {{ clientIp }}</span>
+      {% if not ipIdentifierEnabled %}
+      <span class="oe-myip-badge" title="{{ msg['tooltip.ip.identifier.disabled'] }}">{{ msg['proxy.ip.identifier.disabled'] }}</span>
+      {% elseif ipClaimedBySelf %}
+      <span class="oe-myip-badge" id="ipClaimStatus">{{ msg['proxy.ip.claimed.self'] }}</span>
+      {% elseif ipClaimedByUserId is not empty %}
+      <button class="oe-take-ip-btn oe-take-ip-btn-warn" id="btnTakeIp" title="{{ msg['tooltip.take.ip'] }}">{{ ipClaimedByUserId }} / {{ msg['proxy.take.ip.label'] }}</button>
+      {% else %}
+      <button class="oe-take-ip-btn" id="btnTakeIp" title="{{ msg['tooltip.take.ip'] }}">{{ msg['proxy.take.ip.label'] }}</button>
+      {% endif %}
     </div>
   </div>
 
@@ -364,10 +374,11 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       if (!r.ok) throw new Error('load failed');
       return r.text();
     }).then(raw => {
+      if (activeVhostId !== result.vhostId) return; // a newer selection has since taken over
       const sep = raw.indexOf('\n\n');
       setContent(sep >= 0 ? raw.slice(sep + 2) : raw);
       editor.resize(true);
-    }).catch(() => showToast(MSG['toast.load.failed']));
+    }).catch(() => { if (activeVhostId === result.vhostId) showToast(MSG['toast.load.failed']); });
   }
 
   // ── Auto-save ──────────────────────────────────────────────
@@ -417,6 +428,21 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
           saveStatus.textContent = MSG['status.saved'];
           setTimeout(() => { saveStatus.textContent = ''; }, 2000);
         }
+      } else if (res.status === 400) {
+        // The draft content was still saved server-side; only pushing it live (as part of the
+        // merged config) was rejected — e.g. a structurally invalid domain/location. Reflect the
+        // save so the editor doesn't re-send stale content, but call out that it isn't live yet.
+        const updated = await res.json();
+        const v = vhosts.find(x => x.vhostId === vhostId);
+        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
+        savedCrc = crc32(content);
+        if (vhostId === activeVhostId) {
+          updateEditorMeta(v);
+          saveStatus.textContent = MSG['status.save.notApplied'];
+          saveStatus.style.color = '#dc3545';
+          setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 4000);
+        }
+        showToast(MSG['toast.vhost.apply.failed']);
       } else if (vhostId === activeVhostId) {
         saveStatus.textContent = MSG['status.save.failed'];
         saveStatus.style.color = '#dc3545';
@@ -457,10 +483,13 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     if (nextEffective === LOCAL_SVR) { localSvrInput.value = LOCAL_SVR; return; }
     LOCAL_SVR = nextEffective;
     localSvrInput.value = LOCAL_SVR;
-    await fetch('/api/proxy/conf/local_svr', {
+    const res = await fetch('/api/proxy/conf/local_svr', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value})
     });
+    // The LOCAL_SVR value itself is always saved server-side even on this failure; only
+    // re-pushing the merged config with the new substitution was rejected.
+    if (!res.ok) { showToast(MSG['toast.vhost.apply.failed']); return; }
     mergeAndSave();
   });
 
@@ -490,6 +519,12 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       const v = vhosts.find(x => x.vhostId === vhostId);
       if (v) v.selected = updated.selected;
       mergeAndSave();
+    } else if (res.status === 400) {
+      // The toggle itself was still saved; only the resulting merge was rejected.
+      const updated = await res.json();
+      const v = vhosts.find(x => x.vhostId === vhostId);
+      if (v) v.selected = updated.selected;
+      showToast(MSG['toast.vhost.apply.failed']);
     }
   }
 
@@ -527,11 +562,29 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     document.getElementById('btnMonitor').disabled = !hasSelected;
     document.getElementById('btnSaveMergedVhost').disabled = selected.length < 2;
     mergedEditor.setValue(merged.replace(/\$\{LOCAL_SVR\}/g, LOCAL_SVR), -1);
-    await fetch('/api/proxy/conf/vhost', {
+    const res = await fetch('/api/proxy/conf/vhost', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: merged})
     });
+    if (!res.ok) showToast(MSG['toast.vhost.apply.failed']);
   }
+
+  // ── Use This IP (claims the current browsing IP for 8h - see ReverseProxyServer.resolveOid) ──
+  // No button in the DOM at all once already claimed by self (see proxy.pebble's ipClaimedBySelf
+  // branch), so this simply doesn't bind in that case.
+  document.getElementById('btnTakeIp')?.addEventListener('click', async (e) => {
+    const res = await fetch('/api/proxy/take-ip', {method: 'POST'});
+    if (res.status === 409) { showToast(MSG['toast.ip.identifier.disabled']); return; }
+    if (!res.ok) { showToast(MSG['toast.ip.claim.failed']); return; }
+    // Claiming always wins the IP for this account - swap the button for the same "in use by
+    // me" status a fresh page load would now render, without an actual reload.
+    const status = document.createElement('span');
+    status.className = 'oe-myip-badge';
+    status.id = 'ipClaimStatus';
+    status.textContent = MSG['proxy.ip.claimed.self'];
+    e.target.replaceWith(status);
+    showToast(MSG['toast.ip.claimed']);
+  });
 
   // ── Save merged routes as a new vhost profile ───────────────
   document.getElementById('btnSaveMergedVhost').addEventListener('click', async () => {
@@ -666,8 +719,15 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     const q = searchInputEl.value.trim();
     const container = document.getElementById('searchResults');
     if (!q) { container.innerHTML = ''; return; }
-    const res = await fetch('/api/proxy/vhosts/search?q=' + encodeURIComponent(q));
-    const results = await res.json();
+    let results;
+    try {
+      const res = await fetch('/api/proxy/vhosts/search?q=' + encodeURIComponent(q));
+      if (!res.ok) throw new Error('search failed');
+      results = await res.json();
+    } catch (e) {
+      showToast(MSG['toast.load.failed']);
+      return;
+    }
     container.innerHTML = '';
     if (results.length === 0) {
       container.innerHTML = '<div class="oe-search-empty">'+MSG['ui.no.results']+'</div>';
@@ -735,6 +795,10 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
   function updateEditorMeta(v) {
     document.getElementById('metaCreator').textContent = v ? (v.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = v ? (fmtDateTime(v.updatedAt) || '—') : '—';
+    const editorEl = document.getElementById('metaEditor');
+    editorEl.textContent = (v && v.lastEditorUserId && v.lastEditorUserId !== v.userId)
+      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + v.lastEditorUserId + ')'
+      : '';
   }
 
   function applyVisibilityStyle() {

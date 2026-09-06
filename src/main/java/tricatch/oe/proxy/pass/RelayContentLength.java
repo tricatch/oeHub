@@ -11,9 +11,7 @@ import tricatch.oe.proxy.event.HttpEvent;
 import tricatch.oe.proxy.event.HttpEventManager;
 import tricatch.oe.proxy.event.HttpEventType;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Class for handling content-length based HTTP body relay operations
@@ -22,7 +20,7 @@ public class RelayContentLength {
 
     private static final Logger logger = LoggerFactory.getLogger(RelayContentLength.class);
 
-    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, Integer contentLength, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, Integer contentLength, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         if (contentLength == null || contentLength <= 0) {
             if (logger.isDebugEnabled()) {
                 logger.debug("{}, {}, No content length or zero content length", rid, flow);
@@ -34,11 +32,15 @@ public class RelayContentLength {
             logger.debug("{}, {}, Relaying content-length body: {} bytes", rid, flow, contentLength);
         }
 
-        boolean exceedsLimit = contentLength > HTTP.MONITOR_BODY_LIMIT;
-        ByteArrayOutputStream bodyCollector = exceedsLimit ? null : new ByteArrayOutputStream(contentLength);
+        // monitored is decided once, at REQ_HEADER time, for this whole request (see
+        // PassRequestExecutor) - not re-checked here - so a monitor tab that opens mid-relay
+        // can't produce a REQ_BODY/RES_BODY event with no corresponding header event for the
+        // monitor UI to attach it to.
+        MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
 
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int remainingBytes = contentLength;
+        boolean truncated = false;
 
         while (remainingBytes > 0) {
             int bytesToRead = Math.min(buffer.length, remainingBytes);
@@ -46,15 +48,14 @@ public class RelayContentLength {
 
             if (bytesRead == -1) {
                 logger.warn("{}, {}, Unexpected end of stream while reading content-length body", rid, flow);
+                truncated = true;
                 break;
             }
 
             out.write(buffer, 0, bytesRead);
             out.flush();
 
-            if (bodyCollector != null) {
-                bodyCollector.write(buffer, 0, bytesRead);
-            }
+            if (monitored) bodyCollector.add(buffer, 0, bytesRead);
 
             remainingBytes -= bytesRead;
 
@@ -65,23 +66,21 @@ public class RelayContentLength {
 
         out.flush();
 
-        byte[] bodyForEvent;
-        if (exceedsLimit) {
-            String prefix = flow == HttpStream.Flow.REQ ? "Request" : "Response";
-            bodyForEvent = (prefix + " body exceeds " + (HTTP.MONITOR_BODY_LIMIT / 1024 / 1024) + "MB and is not supported for display.").getBytes(StandardCharsets.UTF_8);
-        } else {
-            bodyForEvent = bodyCollector.toByteArray();
-        }
+        if (monitored) {
+            byte[] bodyForEvent = bodyCollector.toEventBody(flow);
 
-        HttpEvent bodyEvent = new HttpEvent(clientId, rid, flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
-        bodyEvent.setBody(bodyForEvent);
-        bodyEvent.setHttpStream(HttpStream.CONTENT_LENGTH);
-        HttpEventManager.getInstance().enqueue(bodyEvent);
+            HttpEvent bodyEvent = new HttpEvent(clientId, rid, flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
+            bodyEvent.setBody(bodyForEvent);
+            bodyEvent.setHttpStream(HttpStream.CONTENT_LENGTH);
+            HttpEventManager.getInstance().enqueue(bodyEvent);
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Content-length body relay completed", rid, flow);
         }
 
-        return HttpStream.Connection.KEEP_ALIVE;
+        // A body that ended early (EOF before contentLength was fully read) leaves the connection
+        // desynced, so it must not be handed back for reuse.
+        return truncated ? HttpStream.Connection.CLOSE : HttpStream.Connection.KEEP_ALIVE;
     }
 }

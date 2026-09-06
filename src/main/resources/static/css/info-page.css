@@ -18,6 +18,7 @@
   padding-bottom: 0.4rem; border-bottom: 1px solid #e2f0d0;
 }
 .oe-info-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.oe-info-table-fixed { table-layout: fixed; }
 .oe-info-table th {
   text-align: left; padding: 0.45rem 0.75rem;
   height: 2.4rem; box-sizing: border-box; vertical-align: middle;

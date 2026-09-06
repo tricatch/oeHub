@@ -16,6 +16,11 @@ public interface HostsUaMapper {
     @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId}")
     HostsUa findById(String uaId);
 
+    // Scoped to global presets only — for the admin "global preset" endpoints, so an admin editing
+    // a preset by id can never reach into another user's personal preset (user_no IS NOT NULL).
+    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no IS NULL")
+    HostsUa findByIdGlobal(String uaId);
+
     @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no = #{userNo}")
     HostsUa findByIdAndUserNo(@Param("uaId") String uaId, @Param("userNo") Long userNo);
 
@@ -29,8 +34,15 @@ public interface HostsUaMapper {
     @Delete("DELETE FROM HOSTS_UA WHERE ua_id = #{uaId}")
     int deleteById(String uaId);
 
+    // Scoped counterpart of deleteById — see findByIdGlobal.
+    @Delete("DELETE FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no IS NULL")
+    int deleteByIdGlobal(String uaId);
+
     @Delete("DELETE FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no = #{userNo}")
     int deleteByIdAndUserNo(@Param("uaId") String uaId, @Param("userNo") Long userNo);
+
+    @Delete("DELETE FROM HOSTS_UA WHERE user_no = #{userNo}")
+    void deleteAllByUserNo(Long userNo);
 
     @Select("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM HOSTS_UA WHERE user_no IS NULL")
     int nextSortOrder();

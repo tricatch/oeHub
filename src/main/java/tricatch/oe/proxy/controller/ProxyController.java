@@ -44,12 +44,39 @@ public class ProxyController {
         var hubUser = AuthController.currentUser(ctx);
         var clientIp = ctx.ip();
         var localSvrOverride = confService.get("local_svr", hubUser.getUserNo());
+        var ipIdentifierEnabled = ReverseProxyServer.isIpIdentifierEnabled();
+        var claimedOid = ReverseProxyServer.getClaimedOid(clientIp);
+        var claimedBySelf = claimedOid != null && claimedOid.equals(hubUser.getOid());
+        var claimedByUserId = (claimedOid != null && !claimedBySelf) ? ReverseProxyServer.getUserIdForOid(claimedOid) : null;
         var model = new HashMap<String, Object>();
         model.put("user", hubUser);
         model.put("clientIp", clientIp);
         model.put("localSvr", localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp);
         model.put("oid", hubUser.getOid());
+        model.put("ipIdentifierEnabled", ipIdentifierEnabled);
+        model.put("ipClaimedBySelf", claimedBySelf);
+        model.put("ipClaimedByUserId", claimedByUserId);
         ctx.render("templates/oehub/proxy.pebble", model);
+    }
+
+    // "Use This IP" on the oeProxy page - lets an owner explicitly claim their current browsing
+    // IP for the reverse proxy's IP-based fallback (see ReverseProxyServer.resolveOid()), instead
+    // of relying only on the X-OeHub-Oid header. The IP is read server-side from the request
+    // itself (ctx.ip()), never from client input, so a caller cannot claim an IP other than the
+    // one they're actually connecting from.
+    public void apiTakeIp(Context ctx) {
+        // An admin can turn the IP-based fallback off entirely (Settings > oeProxy - Identifier)
+        // when it's unreliable; resolveOid() then never consults ClaimedIpRegistry at all, so a
+        // claim recorded while disabled would report success but never take effect. showProxy
+        // hides the button for this case too, but this request-time check covers a page left open
+        // across a setting change and any direct API call.
+        if (!ReverseProxyServer.isIpIdentifierEnabled()) {
+            ctx.status(409).json(Map.of("error", "ip_identifier_disabled"));
+            return;
+        }
+        var hubUser = AuthController.currentUser(ctx);
+        ReverseProxyServer.claimIp(ctx.ip(), hubUser.getUserNo());
+        ctx.json(Map.of("ip", ctx.ip(), "ttlHours", ReverseProxyServer.claimedIpTtlHours()));
     }
 
     public void showMonitor(Context ctx) {
@@ -67,7 +94,12 @@ public class ProxyController {
         ctx.res().setHeader("Connection", "keep-alive");
         ctx.res().setHeader("X-Accel-Buffering", "no");
 
-        String clientId = ctx.ip();
+        // Subscribed by the viewer's own account oid, not raw client IP: under NAT/CGNAT/shared
+        // egress, two different oeHub accounts can share an IP, and HttpEvents are now tagged
+        // with their true owner oid (see ReverseProxyServer.resolveOid()) for exactly this
+        // reason — matching on IP here would let this account's monitor view another tenant's
+        // live traffic (headers, cookies, bodies) whenever their proxied traffic shares this IP.
+        String clientId = AuthController.currentUser(ctx).getOid();
         String channelId = clientId + "/hub-" + System.nanoTime();
 
         OutputStream out = ctx.res().getOutputStream();
@@ -153,8 +185,22 @@ public class ProxyController {
         var body    = objectMapper.readValue(ctx.body(), Map.class);
         var updated = vhostService.updateContent(vhostId, hubUser.getUserNo(), (String) body.get("content"));
         if (updated == null) { ctx.status(404); return; }
-        if (updated.isSelected()) {
-            applyMergedConfig(hubUser.getUserNo(), ctx.ip());
+
+        // A shared (collabo) vhost's content lives on one canonical row; other collaborators who
+        // currently have it selected are otherwise left routing on a now-stale cached config until
+        // they trigger their own refresh. Drop their cache so their next request reloads it.
+        if (updated.getParentId() != null) {
+            for (Long collaboratorUserNo : vhostService.selectedCollaboratorUserNos(updated.getParentId(), hubUser.getUserNo())) {
+                ReverseProxyServer.invalidateVirtualHosts(collaboratorUserNo);
+            }
+        }
+
+        if (updated.isSelected() && !applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+            // The draft content above was still saved successfully; only pushing it live as part
+            // of the merged config failed. Return it anyway (with a 400) so the client can tell
+            // the two apart instead of reporting this as a plain save failure.
+            ctx.status(400).json(updated);
+            return;
         }
         ctx.json(updated);
     }
@@ -172,7 +218,11 @@ public class ProxyController {
         var hubUser = AuthController.currentUser(ctx);
         var updated = vhostService.toggleSelected(ctx.pathParam("vhostId"), hubUser.getUserNo());
         if (updated == null) { ctx.status(404); return; }
-        applyMergedConfig(hubUser.getUserNo(), ctx.ip());
+        if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+            // The selection toggle itself was still saved; only the resulting merge was rejected.
+            ctx.status(400).json(updated);
+            return;
+        }
         ctx.json(updated);
     }
 
@@ -249,6 +299,10 @@ public class ProxyController {
             v.setVhostContent((String) m.get("vhostContent"));
             v.setSelected(Boolean.TRUE.equals(m.get("selected")));
             v.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
+            // "collabo" only makes sense with a live parent reference, which an import can't
+            // recreate, so treat anything but an explicit "private" as public (import creates
+            // standalone entries, never collabo refs).
+            v.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
             return v;
         }).toList();
         ctx.json(vhostService.importVhosts(hubUser.getUserNo(), entries, merge));
@@ -262,7 +316,7 @@ public class ProxyController {
         var model = new HashMap<String, Object>();
         model.put("vhost",       vhost);
         model.put("owner",       vhostService.getOwnerUsername(vhostId));
-        model.put("contentJson", objectMapper.writeValueAsString(vhost.getVhostContent()));
+        model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(vhost.getVhostContent())));
         ctx.render("templates/oehub/proxy-share.pebble", model);
     }
 
@@ -289,55 +343,102 @@ public class ProxyController {
         var body  = objectMapper.readValue(ctx.body(), Map.class);
         var name  = ctx.pathParam("name");
         var value = (String) body.get("value");
-        confService.set(name, hubUser.getUserNo(), value);
+
         if ("vhost".equals(name)) {
-            if (value != null && !value.isBlank()) {
-                try {
-                    var localSvr = resolveLocalSvr(confService, hubUser.getUserNo(), ctx.ip());
-                    ReverseProxyServer.setVirtualHosts(ctx.ip(), hubUser.getUserNo(), substituteLocalSvr(value, localSvr));
-                } catch (Exception e) {
-                    logger.warn("Failed to apply virtual hosts for user {}: {}", hubUser.getUserNo(), e.getMessage());
-                }
-            } else {
-                ReverseProxyServer.clearVirtualHosts(ctx.ip(), hubUser.getUserNo());
+            try {
+                applyAndPersistVhostConfig(confService, hubUser.getUserNo(), ctx.ip(), value);
+            } catch (VhostApplyException e) {
+                ctx.status(400).result("Invalid vhost configuration: " + e.getCause().getMessage());
+                return;
             }
         } else if ("local_svr".equals(name)) {
-            // Re-push the currently selected vhosts so the new LOCAL_SVR override takes effect immediately.
-            applyMergedConfig(hubUser.getUserNo(), ctx.ip());
+            // Validate the new value by re-pushing the currently selected vhosts under it
+            // *before* persisting, so a value that fails to apply never ends up saved (same
+            // validate-before-persist rule as the "vhost" branch above).
+            if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip(), value)) {
+                ctx.status(400).result("Invalid vhost configuration");
+                return;
+            }
+            confService.set(name, hubUser.getUserNo(), value);
+        } else {
+            confService.set(name, hubUser.getUserNo(), value);
         }
         ctx.status(204);
     }
 
-    private void applyMergedConfig(Long userNo, String routeIp) {
-        applyMergedConfig(vhostService, confService, userNo, routeIp);
+    private boolean applyMergedConfig(Long userNo, String routeIp) {
+        return applyMergedConfig(vhostService, confService, userNo, routeIp, null);
+    }
+
+    // Used by apiConfSet's local_svr branch to validate a candidate override value against the
+    // currently selected vhosts before it's persisted, without touching the DB first.
+    private boolean applyMergedConfig(Long userNo, String routeIp, String localSvrOverride) {
+        return applyMergedConfig(vhostService, confService, userNo, routeIp, localSvrOverride);
     }
 
     // Recompute the merged vhost config from the user's currently selected virtual hosts
     // and push it live into the running proxy — usable from outside this controller
     // (e.g. on login) without needing a ProxyController instance.
-    public static void applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
-        applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp);
+    public static boolean applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
+        return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, null);
     }
 
-    // routeIp identifies the connecting client for the proxy's IP-to-owner lookup and must
-    // stay the real observed address; the ${LOCAL_SVR} substitution below is allowed to diverge
-    // from it via a user-set override (e.g. when routeIp is contaminated by an intermediate hop).
-    private static void applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp) {
+    // routeIp is only used below for the ${LOCAL_SVR} substitution fallback (see resolveLocalSvr) -
+    // IP-to-owner identification now lives entirely in ClaimedIpRegistry via the explicit
+    // "Use This IP" flow (ProxyController.apiTakeIp), not in this method.
+    // Returns false (and leaves the persisted "vhost" config untouched) if the merged YAML was
+    // rejected by ReverseProxyServer — same validate-before-persist rule as apiConfSet's vhost
+    // handling, so a bad merge never leaves the DB holding config that silently fails to reload.
+    // localSvrOverride, when non-null, is used in place of the persisted "local_svr" conf value
+    // (see resolveLocalSvr) so a candidate value can be validated before it's saved.
+    private static boolean applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp, String localSvrOverride) {
+        String merged;
         try {
             var selected = vhostService.listSelected(userNo);
-            var merged   = ReverseProxyServer.mergeVhostYaml(selected);
-            confService.set("vhost", userNo, merged != null ? merged : "");
-            if (merged != null && !merged.isBlank()) {
-                var localSvr = resolveLocalSvr(confService, userNo, routeIp);
-                ReverseProxyServer.setVirtualHosts(routeIp, userNo, substituteLocalSvr(merged, localSvr));
-            }
+            merged = ReverseProxyServer.mergeVhostYaml(selected);
         } catch (Exception e) {
-            logger.warn("Failed to apply merged config for user {}: {}", userNo, e.getMessage());
+            logger.warn("Failed to merge vhost config for user {}: {}", userNo, e.getMessage());
+            return false;
+        }
+        try {
+            applyAndPersistVhostConfig(confService, userNo, routeIp, merged, localSvrOverride);
+            return true;
+        } catch (VhostApplyException e) {
+            return false;
         }
     }
 
-    private static String resolveLocalSvr(ProxyConfService confService, Long userNo, String fallback) {
-        var override = confService.get("local_svr", userNo);
+    // Shared by apiConfSet's vhost handling and applyMergedConfig: live-apply first, and only
+    // persist the "vhost" config value if ReverseProxyServer actually accepted it, so a bad save
+    // never leaves the DB holding YAML that will keep failing to load (silently) on every future
+    // reload/restart. A null/blank value clears the live routing instead of applying anything.
+    private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml) throws VhostApplyException {
+        applyAndPersistVhostConfig(confService, userNo, routeIp, vhostYaml, null);
+    }
+
+    // localSvrOverride, when non-null, is used instead of the persisted "local_svr" conf value —
+    // lets a candidate override be validated (via setVirtualHosts) before it's saved to the DB.
+    private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml, String localSvrOverride) throws VhostApplyException {
+        try {
+            if (vhostYaml != null && !vhostYaml.isBlank()) {
+                var localSvr = resolveLocalSvr(confService, userNo, routeIp, localSvrOverride);
+                ReverseProxyServer.setVirtualHosts(userNo, substituteLocalSvr(vhostYaml, localSvr));
+            } else {
+                ReverseProxyServer.clearVirtualHosts(userNo);
+            }
+            confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "");
+        } catch (Exception e) {
+            logger.warn("Failed to apply vhost config for user {}: {}", userNo, e.getMessage());
+            throw new VhostApplyException(e);
+        }
+    }
+
+    private static class VhostApplyException extends Exception {
+        VhostApplyException(Throwable cause) { super(cause); }
+    }
+
+    private static String resolveLocalSvr(ProxyConfService confService, Long userNo, String fallback, String explicitOverride) {
+        var override = explicitOverride != null ? explicitOverride : confService.get("local_svr", userNo);
         return override != null && !override.isBlank() ? override : fallback;
     }
 

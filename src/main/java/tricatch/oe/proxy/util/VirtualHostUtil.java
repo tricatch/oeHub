@@ -29,12 +29,21 @@ public class VirtualHostUtil {
             List<VirtualPath> virtualPathListPattern = new ArrayList<>();
 
             List<VirtualLocation> virtualLocationList = virtualDomain.getLocation();
+            if (virtualLocationList == null) {
+                throw new IllegalArgumentException("domain '" + domain + "': 'location' is required");
+            }
             for (int p = 0; p < virtualLocationList.size(); p++) {
 
                 VirtualLocation virtualLocation = virtualLocationList.get(p);
 
+                if (virtualLocation.getHost() == null || virtualLocation.getHost().isBlank()) {
+                    throw new IllegalArgumentException("domain '" + domain + "': location[" + p + "].host is required");
+                }
                 URL target = URI.create(virtualLocation.getHost()).toURL();
                 List<String> pathList = virtualLocation.getPath();
+                if (pathList == null) {
+                    throw new IllegalArgumentException("domain '" + domain + "': location[" + p + "].path is required");
+                }
 
                 for (int u = 0; u < pathList.size(); u++) {
 

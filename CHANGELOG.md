@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.4] - 2026-09-05
+
+### Added
+- oeProxy: added a "Use This IP" action next to the OID/IP badge that explicitly claims the current browsing IP as an owner-identification fallback for 8 hours. The badge shows which account (if any) already holds the current IP, in red, before you claim it.
+- oeProxy forward proxy: a self-loop request — one that routes back into this server's own reverse proxy, via a `${PROXY_SVR}` oeHosts entry or a literal loopback address hardcoded directly in one — is now automatically attributed to the authenticated forward-proxy account, without needing an `X-OeHub-Oid` header.
+
+### Changed
+- oeProxy: the `X-OeHub-Oid` header value is now HMAC-signed.
+- oeProxy: the IP-based owner-identification fallback is now an explicit, time-bounded (8 hour) claim made via "Use This IP" instead of being registered implicitly whenever vhost config is applied or lazily reloaded from a cache miss; claiming a new IP for an account releases that account's previous claim.
+- oeProxy: live traffic monitoring no longer copies request/response bodies and headers into an event when no monitor tab is currently watching that account, removing that per-request overhead from all proxied traffic when the monitor isn't open.
+
+### Removed
+- oeProxy: the "single account + loopback client" automatic owner-identification shortcut has been removed — it broke as soon as a second account existed and gave no indication that identification was implicit rather than explicit. Use the new "Use This IP" action or the oeOID Chrome extension instead.
+
+### Fixed
+- oeProxy forward proxy: a destination that maps to this server's own loopback address is no longer silently redirected to the same generic "not whitelisted" 403 page — it now shows the actual reason (loopback target, unresolved host, or not whitelisted) with matching guidance.
+- oeProxy forward proxy: a client connecting from 127.0.0.1 is exempt from the loopback-destination SSRF guard, since it already has direct access to every loopback-bound port on the machine — fixes legitimate local-testing oeHosts entries (e.g. `${PROXY_SVR}`-less `127.0.0.1 mydomain`) being blocked.
+- oeProxy forward proxy: self-loop owner attribution now also requires the accepted reverse-proxy connection's actual peer IP to match the IP the forward proxy's own outbound connection used, closing a window where a different host on the same network could otherwise be attributed to another account's self-loop request by reusing its ephemeral source port.
+- oeProxy: fixed the live traffic monitor occasionally showing a response event with no matching request row — the "is a monitor tab watching this account" check is now decided once per request and reused for both the request and response sides (and the response body relay), instead of being independently re-checked at each point.
+
 ## [0.9.3] - 2026-09-02
 
 ### Added

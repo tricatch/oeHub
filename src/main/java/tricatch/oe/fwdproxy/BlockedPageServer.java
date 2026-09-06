@@ -123,8 +123,10 @@ public class BlockedPageServer {
                 else if (name.equalsIgnoreCase("Accept-Language")) acceptLanguage = value;
             }
 
+            var hostOnly = ForwardProxyServer.hostOnly(host);
+            var reason = ForwardProxyServer.takeBlockReason(hostOnly);
             var locale = HtmlUtil.resolveLocale(cookie, acceptLanguage);
-            var html = HtmlUtil.renderFwdProxyForbidden(ForwardProxyServer.hostOnly(host), locale);
+            var html = HtmlUtil.renderFwdProxyForbidden(hostOnly, reason, locale);
             var body = html.getBytes(StandardCharsets.UTF_8);
 
             var out = socket.getOutputStream();

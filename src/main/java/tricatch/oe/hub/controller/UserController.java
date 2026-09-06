@@ -120,7 +120,7 @@ public class UserController {
             ctx.status(400).json(Map.of("error", "password_required"));
             return;
         }
-        if (newPassword.length() < 4) {
+        if (newPassword.length() < 8) {
             ctx.status(400).json(Map.of("error", "password_too_short"));
             return;
         }
@@ -132,6 +132,7 @@ public class UserController {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HubUserMapper.class);
             var target = mapper.findByUserNo(hubUser.getUserNo());
+            if (target == null) { ctx.status(404); return; }
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
                 ctx.status(400).json(Map.of("error", "current_password_invalid"));
                 return;

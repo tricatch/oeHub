@@ -177,14 +177,16 @@ class HostsProfMapperTest extends MapperTestBase {
     }
 
     @Test
-    void countByUserNoAndProfile() {
+    void findProfileNamesByUserNo() {
         var user = insertUser("mia");
+        var other = insertUser("noah");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
             mapper.insert(newHosts(user.getUserNo(), "My Profile", "content"));
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "My Profile")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "my profile")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "Other")).isEqualTo(0);
+            mapper.insert(newHosts(user.getUserNo(), "Second Profile", "content"));
+            mapper.insert(newHosts(other.getUserNo(), "Others Profile", "content"));
+            assertThat(mapper.findProfileNamesByUserNo(user.getUserNo()))
+                .containsExactlyInAnyOrder("My Profile", "Second Profile");
         }
     }
 
@@ -219,6 +221,10 @@ class HostsProfMapperTest extends MapperTestBase {
 
             assertThat(mapper.findByHostsId(original.getHostsId()).getHostsContent()).isEqualTo("updated content");
             assertThat(mapper.findByHostsId(ref.getHostsId()).getHostsContent()).isEqualTo("updated content");
+
+            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — last_edited_by만 collab으로 반영
+            assertThat(mapper.findByHostsId(original.getHostsId()).getUserId()).isEqualTo(owner.getUserId());
+            assertThat(mapper.findByHostsId(ref.getHostsId()).getLastEditorUserId()).isEqualTo(collab.getUserId());
 
             // owner의 참조 목록
             var ownerRefs = mapper.findReferencesByUserNo(owner.getUserNo());

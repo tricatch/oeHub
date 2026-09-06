@@ -49,6 +49,20 @@ public class OeHubApplication {
     private static int appPort = DEFAULT_PORT;
     private static int h2ConsolePort = DEFAULT_PORT + 1;
 
+    private static final String CSRF_COOKIE_NAME = "oe_csrf";
+
+    private static String generateCsrfToken() {
+        var bytes = new byte[24];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static boolean constantTimeEquals(String a, String b) {
+        return java.security.MessageDigest.isEqual(
+            a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     private static int resolvePort() {
         String prop = System.getProperty("port");
         if (prop != null && !prop.isBlank()) {
@@ -78,7 +92,7 @@ public class OeHubApplication {
         var jwtService  = new JwtService(sqlSessionFactory);
         var settings    = new SettingsController(sqlSessionFactory, objectMapper);
         var auth        = new AuthController(sqlSessionFactory, jwtService);
-        var setup       = new SetupController(sqlSessionFactory, settings, objectMapper);
+        var setup       = new SetupController(sqlSessionFactory, settings, objectMapper, auth);
         var hosts       = new HostsController(sqlSessionFactory, settings, objectMapper);
         var proxy       = new ProxyController(sqlSessionFactory, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
@@ -98,6 +112,35 @@ public class OeHubApplication {
             } else {
                 config.staticFiles.add("/static", Location.CLASSPATH);
             }
+
+            // CSRF protection (double-submit cookie): a per-browser random token is set as a
+            // non-HttpOnly cookie so client JS can read and echo it back; every state-changing
+            // request must present the same value via header or form field. A cross-site page
+            // can trigger the request (form/fetch) but cannot read this origin's cookie to
+            // produce a matching token, so the request is rejected. Runs first so the token
+            // exists before any other filter or handler needs it.
+            config.routes.before(ctx -> {
+                String token = ctx.cookie(CSRF_COOKIE_NAME);
+                if (token == null || token.isBlank()) {
+                    token = generateCsrfToken();
+                    var sb = new StringBuilder(CSRF_COOKIE_NAME).append('=').append(token).append("; Path=/; SameSite=Lax");
+                    if ("https".equalsIgnoreCase(ctx.scheme())) sb.append("; Secure");
+                    ctx.res().addHeader("Set-Cookie", sb.toString());
+                }
+                ctx.attribute("csrfToken", token);
+            });
+            config.routes.before(ctx -> {
+                var method = ctx.req().getMethod();
+                if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method)) {
+                    String cookieToken = ctx.cookie(CSRF_COOKIE_NAME);
+                    String suppliedToken = ctx.header("X-CSRF-Token");
+                    if (suppliedToken == null) suppliedToken = ctx.formParam("_csrf");
+                    if (cookieToken == null || suppliedToken == null || !constantTimeEquals(cookieToken, suppliedToken)) {
+                        ctx.status(403).result("CSRF token missing or invalid");
+                        ctx.skipRemainingHandlers();
+                    }
+                }
+            });
 
             // Set locale from cookie (fallback: Accept-Language header, then "en")
             config.routes.before(ctx -> {
@@ -135,13 +178,15 @@ public class OeHubApplication {
                     ctx.skipRemainingHandlers();
                 }
             });
-            config.routes.before("/oehub/settings", ctx -> {
+            io.javalin.http.Handler settingsAdminOnly = ctx -> {
                 var user = AuthController.currentUser(ctx);
                 if (user == null || !"adm".equals(user.getRole())) {
                     ctx.status(403).result("Forbidden");
                     ctx.skipRemainingHandlers();
                 }
-            });
+            };
+            config.routes.before("/oehub/settings", settingsAdminOnly);
+            config.routes.before("/oehub/settings/*", settingsAdminOnly);
             config.routes.before("/oehub/admin/*", ctx -> {
                 var user = AuthController.currentUser(ctx);
                 if (user == null || !"adm".equals(user.getRole())) {
@@ -164,14 +209,41 @@ public class OeHubApplication {
                 }
             });
             config.routes.before("/api/*", ctx -> {
+                // oeProxy CA certificate download is deliberately public — a device installing
+                // the root CA to trust the SSL reverse proxy may not have (or need) an oeHub
+                // session yet. See the route registration below for the full rationale.
+                if ("/api/proxy/ca".equals(ctx.path())) {
+                    return;
+                }
                 if (AuthController.currentUser(ctx) == null) {
                     ctx.status(401).result("Unauthorized");
                     ctx.skipRemainingHandlers();
                 }
             });
+            // The /setup/* CRUD routes (hosts-url, hosts-ua, oid-domain-default, ca/generate,
+            // ca/import) exist so the first-run wizard can manage global presets and the CA
+            // before any admin account/session exists. They must lock down as soon as an admin
+            // account exists — not only once the whole wizard (admin + CA) is complete — otherwise
+            // there is a window after admin creation, before the CA step, where any unauthenticated
+            // caller could POST /setup/ca/import and install their own root CA as the trust root
+            // for the entire SSL reverse proxy. SetupController.processSetup logs the newly-created
+            // admin in immediately so the legitimate wizard flow keeps working once this closes.
+            config.routes.before("/setup/*", ctx -> {
+                if (SetupController.isAdminConfigured()) {
+                    var user = AuthController.currentUser(ctx);
+                    if (user == null || !"adm".equals(user.getRole())) {
+                        ctx.status(403).result("Forbidden");
+                        ctx.skipRemainingHandlers();
+                    }
+                }
+            });
 
             config.routes.after(ctx -> {
                 LocaleContext.clear();
+                // Prevents the app from being embedded in a foreign <iframe>/<frame>, which
+                // would otherwise allow clickjacking (e.g. an invisible overlay tricking a
+                // logged-in admin into clicking "grant admin" or "delete user").
+                ctx.header("X-Frame-Options", "DENY");
                 var path = ctx.path();
                 if (!path.startsWith("/css/") && !path.startsWith("/icon/") && !path.startsWith("/logo/") && !path.startsWith("/js/")) {
                     ctx.header("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -295,6 +367,9 @@ public class OeHubApplication {
             // oeProxy CA certificate download (no auth required — browser needs to install)
             config.routes.get("/api/proxy/ca", proxy::apiDownloadCa);
 
+            // oeProxy "Use This IP" - claim the current browsing IP for IP-based owner fallback
+            config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
+
             // oeProxy REST API
             config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
             config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);
@@ -342,14 +417,16 @@ public class OeHubApplication {
             config.routes.get("/share/proxy/{vhostId}/text",                proxy::apiShareText);
 
             config.routes.exception(Exception.class, (e, ctx) -> {
+                // Full detail (including e.getMessage(), which can contain internal paths or
+                // driver/library text) goes to the server log only - returning it to the client
+                // would leak implementation details to anonymous callers on any unauthenticated
+                // route (e.g. /login, /register, /setup).
                 logger.error("Uncaught exception on {}", ctx.path(), e);
-                var msg = e.getMessage() != null ? e.getMessage() : "Internal Server Error";
                 if (ctx.path().startsWith("/api/")) {
-                    ctx.status(500).result(msg);
+                    ctx.status(500).result("Internal Server Error");
                 } else {
                     var model = new HashMap<String, Object>();
                     model.put("requestPath", ctx.path());
-                    model.put("message", msg);
                     ctx.status(500).render("templates/error/error.pebble", model);
                 }
             });
@@ -372,6 +449,10 @@ public class OeHubApplication {
             enriched.put("msg", messages.asMap());
             enriched.put("msgJson", messages.toJson());
             enriched.put("currentLocale", locale);
+            // Set by the CSRF before-filter on this same request; read from the Context attribute
+            // (not ctx.cookie()) because a freshly-generated token isn't echoed back in the
+            // request's own Cookie header until the browser's next request.
+            enriched.put("csrfToken", ctx.attribute("csrfToken"));
             var writer = new java.io.StringWriter();
             try {
                 pebble.getTemplate(filePath).evaluate(writer, enriched);
@@ -399,7 +480,9 @@ public class OeHubApplication {
         writeH2Properties(oeHubDir, h2JdbcUrl());
         Server.createWebServer("-webPort", String.valueOf(h2ConsolePort),
                 "-properties", oeHubDir.toString()).start();
-        logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub  (user: sa / password: oeHub)", h2ConsolePort);
+        // Credentials intentionally not logged here (see DatabaseConfig) - keeps them out of log
+        // files/aggregation even though the /oehub/h2 route itself already requires admin login.
+        logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub", h2ConsolePort);
 
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
         ReverseProxyServer.init(sqlSessionFactory);

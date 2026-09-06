@@ -146,6 +146,7 @@ public class SettingsController {
             Files.createDirectories(caDir());
             Files.write(caCertPath(), certBytes);
             Files.write(caKeyPath(), keyBytes);
+            AppHome.restrictToOwner(caKeyPath());
             logger.info("CA certificate imported.");
             startProxyServer();
             renderSettings(ctx, "", "settings.ca.success.imported", "generate");
@@ -165,6 +166,7 @@ public class SettingsController {
         Files.createDirectories(caDir());
         Files.write(caCertPath(), certBytes);
         Files.write(caKeyPath(), keyBytes);
+        AppHome.restrictToOwner(caKeyPath());
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -185,6 +187,7 @@ public class SettingsController {
         KeyTool keyTool = new KeyTool();
         keyTool.writeCertificate(rootCert.getCertificate(), caDir().toString(), "ca.cer");
         keyTool.writePrivateKey(rootCert.getPrivateKey(), caDir().toString(), "ca.pfx");
+        AppHome.restrictToOwner(caKeyPath());
     }
 
     private void renderSettings(Context ctx, String caError, String caSuccess, String caActiveTab) {

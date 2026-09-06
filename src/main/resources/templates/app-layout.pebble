@@ -219,7 +219,7 @@
     var confirmVal = document.getElementById('cpConfirmPassword').value;
 
     if (!next) { showChangePasswordError(MSG['change.password.error.required']); return; }
-    if (next.length < 4) { showChangePasswordError(MSG['change.password.error.too.short']); return; }
+    if (next.length < 8) { showChangePasswordError(MSG['change.password.error.too.short']); return; }
     if (next !== confirmVal) { showChangePasswordError(MSG['change.password.error.mismatch']); return; }
 
     var res = await fetch('/api/user/change-password', {

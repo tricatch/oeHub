@@ -23,7 +23,7 @@ class ProxyConfMapperTest extends MapperTestBase {
     void insertGlobalAndFind() {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyConfMapper.class);
-            mapper.insert(conf(null, "proxy.port", "8080"));
+            mapper.upsert(conf(null, "proxy.port", "8080"));
             var found = mapper.findGlobal("proxy.port");
             assertThat(found).isNotNull();
             assertThat(found.getConfVal()).isEqualTo("8080");
@@ -36,7 +36,7 @@ class ProxyConfMapperTest extends MapperTestBase {
         var user = insertUser("alice");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyConfMapper.class);
-            mapper.insert(conf(user.getUserNo(), "proxy.mode", "transparent"));
+            mapper.upsert(conf(user.getUserNo(), "proxy.mode", "transparent"));
             var found = mapper.findByUserNoAndConfKey(user.getUserNo(), "proxy.mode");
             assertThat(found).isNotNull();
             assertThat(found.getConfVal()).isEqualTo("transparent");
@@ -49,11 +49,39 @@ class ProxyConfMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyConfMapper.class);
             var c = conf(null, "proxy.port", "8080");
-            mapper.insert(c);
+            mapper.upsert(c);
             c.setConfVal("9090");
             c.setUpdatedAt(LocalDateTime.now());
-            mapper.update(c);
+            mapper.upsert(c);
             assertThat(mapper.findGlobal("proxy.port").getConfVal()).isEqualTo("9090");
+        }
+    }
+
+    // Regression test for the NULL-key MERGE pitfall: H2's shorthand
+    // "MERGE INTO t (cols) KEY(cols) VALUES(...)" treats NULL != NULL and always inserts,
+    // which would silently duplicate the global row instead of updating it.
+    @Test
+    void upsertGlobal_repeatedCallsUpdateInPlace_doNotDuplicate() {
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(ProxyConfMapper.class);
+            mapper.upsert(conf(null, "proxy.port", "8080"));
+            mapper.upsert(conf(null, "proxy.port", "8443"));
+            mapper.upsert(conf(null, "proxy.port", "9090"));
+            assertThat(mapper.findGlobal("proxy.port").getConfVal()).isEqualTo("9090");
+        }
+    }
+
+    // A per-user upsert for the same conf_key must not collide with the global (user_no IS NULL)
+    // row for that key, and vice versa - the NULL-safe MERGE match must stay scoped by user_no.
+    @Test
+    void upsertUser_doesNotCollideWithGlobalRowForSameKey() {
+        var user = insertUser("carol");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(ProxyConfMapper.class);
+            mapper.upsert(conf(null, "proxy.port", "8080"));
+            mapper.upsert(conf(user.getUserNo(), "proxy.port", "3000"));
+            assertThat(mapper.findGlobal("proxy.port").getConfVal()).isEqualTo("8080");
+            assertThat(mapper.findByUserNoAndConfKey(user.getUserNo(), "proxy.port").getConfVal()).isEqualTo("3000");
         }
     }
 
@@ -69,8 +97,8 @@ class ProxyConfMapperTest extends MapperTestBase {
         var user = insertUser("bob");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyConfMapper.class);
-            mapper.insert(conf(user.getUserNo(), "k1", "v1"));
-            mapper.insert(conf(user.getUserNo(), "k2", "v2"));
+            mapper.upsert(conf(user.getUserNo(), "k1", "v1"));
+            mapper.upsert(conf(user.getUserNo(), "k2", "v2"));
             mapper.deleteAllByUserNo(user.getUserNo());
             assertThat(mapper.findByUserNoAndConfKey(user.getUserNo(), "k1")).isNull();
             assertThat(mapper.findByUserNoAndConfKey(user.getUserNo(), "k2")).isNull();

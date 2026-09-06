@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "tricatch.oe.hub"
-version = "0.9.3"
+version = "0.9.4"
 
 java {
     toolchain {
@@ -61,6 +61,7 @@ dependencies {
     implementation("io.pebbletemplates:pebble:4.1.1")
     implementation("org.mybatis:mybatis:3.5.19")
     implementation("com.h2database:h2:2.4.240")
+    implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     implementation("io.github.tricatch:gotpache-keytool:0.1.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.85")
@@ -68,6 +69,7 @@ dependencies {
     implementation("org.bouncycastle:bcutil-jdk18on:1.85")
     implementation("io.github.azagniotov:ant-style-path-matcher:1.0.0")
     implementation("io.github.littleproxy:littleproxy:2.9.0")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
@@ -75,11 +77,38 @@ dependencies {
     testImplementation("io.javalin:javalin-testtools:7.2.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.14.4")
     testImplementation("org.assertj:assertj-core:3.27.7")
+    testImplementation("com.microsoft.playwright:playwright:1.52.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.register<JavaExec>("installPlaywrightBrowsers") {
+    group = "verification"
+    description = "Downloads the browser binaries Playwright drives (run once before e2e tests)."
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "com.microsoft.playwright.CLI"
+    args("install")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("e2e")
+    }
+}
+
+tasks.register<Test>("e2eTest") {
+    group = "verification"
+    description = "Runs Playwright end-to-end UI tests (boots a real oeHub server via ProcessBuilder)."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("e2e")
+    }
+    testLogging { showStandardStreams = true }
+    shouldRunAfter(tasks.test)
 }
 
 tasks.jar {

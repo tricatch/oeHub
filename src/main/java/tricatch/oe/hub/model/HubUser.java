@@ -9,6 +9,7 @@ public class HubUser {
     private String userId;
     private String password;
     private String role;
+    private int tokenVersion;
     private LocalDateTime createAt;
     private LocalDateTime updatedAt;
     private LocalDateTime lastLoginAt;
@@ -26,6 +27,9 @@ public class HubUser {
 
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+
+    public int getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
 
     public LocalDateTime getCreateAt() { return createAt; }
     public void setCreateAt(LocalDateTime createAt) { this.createAt = createAt; }

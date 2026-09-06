@@ -2,6 +2,7 @@ package tricatch.oe.proxy.http.io;
 
 import tricatch.oe.proxy.http.HTTP;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
 
@@ -15,7 +16,7 @@ import java.io.OutputStream;
  * rationale. Each instance here is only ever driven by a single thread at a time,
  * so no synchronization is needed to begin with.
  */
-public class HttpStreamWriter {
+public class HttpStreamWriter implements Closeable {
 
     private static final int BUFFER_SIZE = 8192;
 

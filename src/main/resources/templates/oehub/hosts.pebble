@@ -81,7 +81,7 @@
       <div class="hosts-scheme-preview" id="mergedPreviewBody"></div>
     </div>
     <div class="oe-editor-meta" id="editorMeta">
-      <span><span id="metaUpdated"></span> / <span id="metaCreator"></span></span>
+      <span><span id="metaUpdated"></span> / <span id="metaCreator"></span><span id="metaEditor"></span></span>
       <span class="oe-myip-badge oe-editor-meta-ip">PROXY_SVR: {{ proxyIp }}</span>
     </div>
   </div>
@@ -464,10 +464,11 @@ const FWDPROXY_PORT = 36980;
       if (!r.ok) throw new Error('load failed');
       return r.text();
     }).then(raw => {
+      if (activeHostId !== result.hostsId) return; // a newer selection has since taken over
       const sep = raw.indexOf('\n\n');
       editor.setValue(sep >= 0 ? raw.slice(sep + 2) : raw, -1);
       editor.resize(true);
-    }).catch(() => showToast(MSG['toast.load.failed']));
+    }).catch(() => { if (activeHostId === result.hostsId) showToast(MSG['toast.load.failed']); });
   }
 
   // ── Auto-save ──────────────────────────────────────────────
@@ -689,8 +690,15 @@ const FWDPROXY_PORT = 36980;
     const q = searchInputEl.value.trim();
     const container = document.getElementById('searchResults');
     if (!q) { container.innerHTML = ''; return; }
-    const res = await fetch('/api/hosts/search?q=' + encodeURIComponent(q));
-    const results = await res.json();
+    let results;
+    try {
+      const res = await fetch('/api/hosts/search?q=' + encodeURIComponent(q));
+      if (!res.ok) throw new Error('search failed');
+      results = await res.json();
+    } catch (e) {
+      showToast(MSG['toast.load.failed']);
+      return;
+    }
     container.innerHTML = '';
     if (results.length === 0) {
       container.innerHTML = '<div class="oe-search-empty">'+MSG['ui.no.results']+'</div>';
@@ -1038,6 +1046,10 @@ const FWDPROXY_PORT = 36980;
   function updateEditorMeta(p) {
     document.getElementById('metaCreator').textContent = p ? (p.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = p ? (fmtDateTime(p.updatedAt) || '—') : '—';
+    const editorEl = document.getElementById('metaEditor');
+    editorEl.textContent = (p && p.lastEditorUserId && p.lastEditorUserId !== p.userId)
+      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + p.lastEditorUserId + ')'
+      : '';
   }
 
   function applyVisibilityStyle() {

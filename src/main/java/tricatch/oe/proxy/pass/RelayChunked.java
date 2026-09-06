@@ -31,7 +31,7 @@ public class RelayChunked {
      * @return HttpStream.Connection indicating whether connection should be closed
      * @throws IOException when I/O error occurs
      */
-    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Relaying chunked body"
                     , rid
@@ -42,8 +42,11 @@ public class RelayChunked {
         ByteBuffer chunkSizeBuffer = new ByteBuffer(HTTP.CHUNK_SIZE_LINE_LENGTH);
         ByteBuffer chunkTrailerBuffer = new ByteBuffer(HTTP.CHUNK_SIZE_LINE_LENGTH);
         byte[] chunkBodyBuffer = new byte[HTTP.BODY_BUFFER_SIZE];
-        java.io.ByteArrayOutputStream bodyCollector = new java.io.ByteArrayOutputStream();
-        
+        // monitored is decided once, at REQ_HEADER time, for this whole request (see
+        // PassRequestExecutor) - not re-checked here.
+        MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
+        boolean truncated = false;
+
         while (true) {
             // Read chunk size line
             int bytesRead = in.readLine(chunkSizeBuffer, HTTP.CHUNK_SIZE_LINE_LENGTH);
@@ -53,9 +56,10 @@ public class RelayChunked {
                         , rid
                         , flow
                 );
+                truncated = true;
                 break;
             }
-            
+
             int chunkSize;
             try {
                 chunkSize = parseHexChunkSize(chunkSizeBuffer.getBuffer(), chunkSizeBuffer.getLength());
@@ -65,6 +69,7 @@ public class RelayChunked {
                         , flow
                         , new String(chunkSizeBuffer.getBuffer(), 0, chunkSizeBuffer.getLength())
                 );
+                truncated = true;
                 break;
             }
 
@@ -90,6 +95,7 @@ public class RelayChunked {
                                 , rid
                                 , flow
                         );
+                        truncated = true;
                         break;
                     }
 
@@ -132,12 +138,12 @@ public class RelayChunked {
                             , rid
                             , flow
                     );
+                    truncated = true;
                     break;
                 }
                 out.write(chunkBodyBuffer, 0, bytesRead);
 
-                // Collect body data for logging
-                bodyCollector.write(chunkBodyBuffer, 0, bytesRead);
+                if (monitored) bodyCollector.add(chunkBodyBuffer, 0, bytesRead);
 
                 remainingBytes -= bytesRead;
                 
@@ -159,18 +165,23 @@ public class RelayChunked {
                 out.flush();
             } else {
                 logger.warn("{}, {}, Invalid chunk end marker", rid, flow);
+                truncated = true;
                 break;
             }
         }
         
         out.flush();
-        
-        // Enqueue body HttpEvent
-        HttpEvent bodyEvent = new HttpEvent(clientId, rid, 
-            flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
-        bodyEvent.setBody(bodyCollector.toByteArray());
-        bodyEvent.setHttpStream(HttpStream.CHUNKED);
-        HttpEventManager.getInstance().enqueue(bodyEvent);
+
+        if (monitored) {
+            byte[] bodyForEvent = bodyCollector.toEventBody(flow);
+
+            // Enqueue body HttpEvent
+            HttpEvent bodyEvent = new HttpEvent(clientId, rid,
+                flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
+            bodyEvent.setBody(bodyForEvent);
+            bodyEvent.setHttpStream(HttpStream.CHUNKED);
+            HttpEventManager.getInstance().enqueue(bodyEvent);
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Chunked body relay completed"
@@ -179,7 +190,9 @@ public class RelayChunked {
             );
         }
         
-        return HttpStream.Connection.KEEP_ALIVE;
+        // Any of the EOF/parse-error breaks above leaves the connection desynced or mid-frame,
+        // so it must not be handed back for reuse.
+        return truncated ? HttpStream.Connection.CLOSE : HttpStream.Connection.KEEP_ALIVE;
     }
 
     private static int parseHexChunkSize(byte[] buf, int len) {
@@ -192,7 +205,10 @@ public class RelayChunked {
         while (start < end && buf[start] == ' ') start++;
         while (end > start && buf[end - 1] == ' ') end--;
         if (start >= end) throw new NumberFormatException("Empty chunk size");
-        int result = 0;
+        // Accumulate in a long so an oversized chunk-size (e.g. 8 hex digits with the top bit
+        // set) is caught as "too large" instead of silently wrapping into a negative int, which
+        // would make the "remainingBytes > 0" read loop skip the chunk body entirely.
+        long result = 0;
         for (int i = start; i < end; i++) {
             byte b = buf[i];
             int digit;
@@ -201,7 +217,10 @@ public class RelayChunked {
             else if (b >= 'A' && b <= 'F') digit = b - 'A' + 10;
             else throw new NumberFormatException("Invalid hex char: " + (char) b);
             result = (result << 4) | digit;
+            if (result > Integer.MAX_VALUE) {
+                throw new NumberFormatException("Chunk size too large: exceeds " + Integer.MAX_VALUE);
+            }
         }
-        return result;
+        return (int) result;
     }
 }

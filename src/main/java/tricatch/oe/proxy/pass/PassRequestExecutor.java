@@ -21,9 +21,12 @@ import tricatch.oe.proxy.server.VirtualPath;
 import tricatch.oe.proxy.exception.BadGatewayException;
 import tricatch.oe.proxy.exception.NotFoundVhostException;
 import tricatch.oe.proxy.util.HtmlUtil;
+import tricatch.oe.proxy.util.OidUtil;
+import tricatch.oe.proxy.util.SelfLoopOwnerRegistry;
 import tricatch.oe.proxy.util.SocketUtils;
 import tricatch.oe.proxy.util.SysUtil;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketException;
@@ -31,12 +34,20 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
 public class PassRequestExecutor implements Stopable {
 
     private static final Logger logger = LoggerFactory.getLogger(PassRequestExecutor.class);
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher.Builder().build();
+
+    // WebSocket connections are long-lived and often sit idle between messages, so they get their
+    // own (longer) socket timeout instead of the configurable connectTimeout/readTimeout used for
+    // everything else. Not yet admin-configurable like those two — just named here for now so the
+    // value isn't a duplicated magic number.
+    private static final int WEBSOCKET_IDLE_TIMEOUT_MS = 1000 * 60 * 5;
 
     private Socket clientSocket;
     private HttpStreamReader clientIn = null;
@@ -46,6 +57,19 @@ public class PassRequestExecutor implements Stopable {
     private HttpStreamReader serverIn = null;
     private HttpStreamWriter serverOut = null;
     private VirtualPath preVirtualPath = null;
+
+    // clientOut is handed to a spawned PassResponseExecutor as well, and a target change can
+    // force-close the server socket it's blocked reading from, waking it into its own error path.
+    // At most one HTTP response may reach the client per connection, so whichever thread (this
+    // one or the child) hits an error first claims the write; the loser skips it rather than
+    // racing unsynchronized writes onto the shared HttpStreamWriter.
+    private final AtomicBoolean errorResponseClaimed = new AtomicBoolean(false);
+
+    // Bumped every time a new server socket/child PassResponseExecutor replaces the previous one
+    // (target change). A child captures the generation it was spawned for; if forceCloseServerSocket()
+    // wakes it with an error after a newer generation has already started, it can tell it's been
+    // superseded and must not write anything (error or otherwise) to the shared clientOut.
+    private final AtomicLong socketGeneration = new AtomicLong(0);
 
     private final int connectTimeout;
     private final int readTimeout;
@@ -60,9 +84,32 @@ public class PassRequestExecutor implements Stopable {
     private int reqCounter = 0;
     private VirtualHosts virtualHosts = null;
     private String clientId = null;
+    private String ownerOid = null;
     private String currentLocale = "en";
     private String currentHost = null;
+    private String currentMethod = null;
     private String oidHeader = null;
+
+    // Decided once per request, right when the REQ_HEADER event is (or isn't) enqueued, and reused
+    // as-is for RES_HEADER and for both body relays of this same request - so a monitor tab that
+    // connects or disconnects mid-request can't split one request's events across "monitored" and
+    // "not monitored", which would otherwise leave the frontend an orphaned RES_HEADER/body event
+    // with no REQ_HEADER row to attach it to (see PassResponseExecutor.isMonitored()).
+    private boolean monitored = false;
+
+    // Resolved at most once per accepted connection (not per request - a keep-alive connection
+    // can carry many requests) from SelfLoopOwnerRegistry, for a ${PROXY_SVR}/loopback forward-proxy
+    // self-loop connection that carries no X-OeHub-Oid header of its own (see SelfLoopOwnerRegistry).
+    // Deliberately NOT looked up right at connection-accept time: ForwardProxyServer.
+    // proxyToServerConnectionSucceeded() (which does the registration) races this connection's
+    // own accept() on the reverse-proxy side, and consistently loses it in practice (registration
+    // is a Netty-event-loop callback; accept() unblocks a waiting virtual thread directly). Looking
+    // it up here instead - only once the first request's headers have actually been read - is
+    // race-free by construction: the browser can't even start its TLS handshake (whose completion
+    // readHeaders() below waits on) until after the CONNECT response, which LittleProxy sends only
+    // once proxyToServerConnectionSucceeded() has already run and registered this port.
+    private String selfLoopOidHeader = null;
+    private boolean selfLoopChecked = false;
 
     public PassRequestExecutor(Socket clientSocket, int connectTimeout, int readTimeout){
 
@@ -94,6 +141,21 @@ public class PassRequestExecutor implements Stopable {
         return this.clientId;
     }
 
+    // Resolved owner oid for the current/most-recent request on this connection (see
+    // ReverseProxyServer.resolveOid()) — used to tag HttpEvents with their true owner instead
+    // of the raw client IP, so the live monitor can't cross-leak traffic between two accounts
+    // sharing an egress IP. null until the first successful getVirtualHosts() call.
+    public String getOwnerOid(){
+        return this.ownerOid;
+    }
+
+    // Same monitored decision REQ_HEADER/the request body relay already used for this request -
+    // see the field comment on `monitored` for why RES_HEADER/the response body relay must reuse
+    // it rather than independently re-checking HttpEventManager.hasSubscriber().
+    public boolean isMonitored(){
+        return this.monitored;
+    }
+
     public String getCurrentLocale(){
         return this.currentLocale;
     }
@@ -102,12 +164,39 @@ public class PassRequestExecutor implements Stopable {
         return this.currentHost;
     }
 
+    public String getCurrentMethod(){
+        return this.currentMethod;
+    }
+
+    public long getSocketGeneration(){
+        return this.socketGeneration.get();
+    }
+
+    // Called by PassResponseExecutor once a response comes back that did NOT confirm a
+    // WebSocket upgrade (status other than 101), to undo the eager timeout widening applied
+    // in the request loop as soon as an Upgrade: websocket request header was merely seen —
+    // otherwise a rejected upgrade would leave this keep-alive connection running with the
+    // much longer websocket idle timeout for every later request.
+    public void restoreConfiguredSoTimeout() throws SocketException {
+        if (this.clientSocket != null) this.clientSocket.setSoTimeout(this.readTimeout);
+        if (this.serverSocket != null) this.serverSocket.setSoTimeout(this.readTimeout);
+    }
+
     public VirtualPath getCurrentVirtualPath(){
         return this.preVirtualPath;
     }
 
     public Thread getThread(){
         return this.thisThread;
+    }
+
+    /**
+     * At most one caller may write the client-facing error response for this connection.
+     * @return true if the caller won the claim and may write to clientOut; false if another
+     *         thread already claimed it (the caller should skip writing).
+     */
+    public boolean claimErrorResponse(){
+        return errorResponseClaimed.compareAndSet(false, true);
     }
 
     @Override
@@ -147,16 +236,41 @@ public class PassRequestExecutor implements Stopable {
                 this.currentLocale = HtmlUtil.resolveLocale(cookieHeader, acceptLanguage);
 
                 this.oidHeader = requestHeaders.getHeaderValueAsString(HTTP.HEADER.OEHUB_OID);
+                // An explicit header (e.g. the oeOID extension) still wins - the self-loop
+                // registration only fills in for the common case where forward-proxied HTTPS
+                // traffic carries no header at all (see SelfLoopOwnerRegistry and the field
+                // comment on selfLoopOidHeader for why this is looked up here, not at accept time).
+                if ((this.oidHeader == null || this.oidHeader.isBlank()) && !this.selfLoopChecked) {
+                    this.selfLoopChecked = true;
+                    // this.clientId (the accepted socket's peer IP) must match the IP the
+                    // forward-proxy's own self-loop connection actually used - see
+                    // SelfLoopOwnerRegistry's javadoc for why a bare port match isn't safe on its
+                    // own (both proxy ports are reachable from the LAN, not just loopback).
+                    Long selfLoopUserNo = SelfLoopOwnerRegistry.take(this.clientId, this.clientSocket.getPort());
+                    this.selfLoopOidHeader = selfLoopUserNo != null ? OidUtil.encode(selfLoopUserNo) : null;
+                    logger.debug("{}, self-loop registry lookup: ip={}, port={}, userNo={}", rid, this.clientId, this.clientSocket.getPort(), selfLoopUserNo);
+                }
+                if ((this.oidHeader == null || this.oidHeader.isBlank()) && this.selfLoopOidHeader != null) {
+                    this.oidHeader = this.selfLoopOidHeader;
+                }
                 this.virtualHosts = ReverseProxyServer.getVirtualHosts(this.clientId, this.oidHeader);
+                this.ownerOid = ReverseProxyServer.resolveOid(this.clientId, this.oidHeader);
 
-                // Enqueue REQ header HttpEvent
-                HttpEvent reqHeaderEvent = new HttpEvent(this.clientId, this.rid, HttpEventType.REQ_HEADER);
-                reqHeaderEvent.setHeaders(requestHeaders);
-                HttpEventManager.getInstance().enqueue(reqHeaderEvent);
+                // Enqueue REQ header HttpEvent — tagged by resolved owner oid, not raw client
+                // IP, so two accounts sharing an egress IP can't see each other's live traffic
+                // in the monitor (see ReverseProxyServer.resolveOid()). Skipped entirely when no
+                // monitor tab is watching this owner, same as the body relay classes.
+                this.monitored = HttpEventManager.getInstance().hasSubscriber(this.ownerOid);
+                if (this.monitored) {
+                    HttpEvent reqHeaderEvent = new HttpEvent(this.ownerOid, this.rid, HttpEventType.REQ_HEADER);
+                    reqHeaderEvent.setHeaders(requestHeaders);
+                    HttpEventManager.getInstance().enqueue(reqHeaderEvent);
+                }
 
                 // Parse HTTP request
                 HttpRequest httpRequest = requestHeaders.parseHttpRequest();
                 this.currentHost = httpRequest.getHost();
+                this.currentMethod = httpRequest.getMethod();
 
                 if (logger.isDebugEnabled()) {
                     logger.debug("{}, {}, Request Headers\n{}"
@@ -179,14 +293,10 @@ public class PassRequestExecutor implements Stopable {
 
                 VirtualPath virtualPath = getVirtualPath(rid, httpRequest.getHost(), httpRequest.getPath());
 
-                boolean targetChanged = false;
-                if( preVirtualPath == null ) preVirtualPath = virtualPath;
-                else {
-                    //browser > keep-alive > route > target server
-                    String newTarget = virtualPath.getTarget().toString();
-                    String preTarget = preVirtualPath.getTarget().toString();
-                    if( !preTarget.equals(newTarget) ) targetChanged = true;
-                }
+                //browser > keep-alive > route > target server
+                boolean targetChanged = preVirtualPath == null
+                        || !preVirtualPath.getTarget().toString().equals(virtualPath.getTarget().toString());
+                preVirtualPath = virtualPath;
 
                 if (logger.isDebugEnabled()) {
                     logger.debug("{}, {}, targetChanged={}, targetServerSocket={}"
@@ -200,6 +310,12 @@ public class PassRequestExecutor implements Stopable {
                 //create socket - url matched
                 if (serverSocket == null || targetChanged) {
 
+                    // Bump the generation *before* tearing down the old socket, so a stale child
+                    // woken by forceCloseServerSocket() below immediately observes itself as
+                    // superseded via isCurrentGeneration() instead of racing the new socket's
+                    // (possibly slow, up to connectTimeout) setup.
+                    long myGeneration = socketGeneration.incrementAndGet();
+
                     //create new server socket - new target route
                     if (targetChanged && serverSocket != null) forceCloseServerSocket();
 
@@ -211,22 +327,25 @@ public class PassRequestExecutor implements Stopable {
                     if( tName.endsWith("x0") ) tName = tName.substring(0, tName.length()-1) + reqCounter;
 
                     child =  VThreadExecutor.run(
-                            new PassResponseExecutor(this, serverIn, clientOut)
+                            new PassResponseExecutor(this, serverIn, clientOut, myGeneration)
                             , tName
                         );
 
                 }
 
+                // Apply configured per-location header add/remove rules before forwarding upstream.
+                applyHeaderRules(requestHeaders, virtualPath);
+
                 //write-req-header
                 serverOut.writeHeaders(requestHeaders);
 
                 if (HttpStream.WEBSOCKET == httpRequest.getHttpStream()) {
-                    this.clientSocket.setSoTimeout(1000 * 60 * 5);
-                    this.serverSocket.setSoTimeout(1000 * 60 * 5);
+                    this.clientSocket.setSoTimeout(WEBSOCKET_IDLE_TIMEOUT_MS);
+                    this.serverSocket.setSoTimeout(WEBSOCKET_IDLE_TIMEOUT_MS);
                 }
 
                 // Relay request body to server if exists
-                HttpStream.Connection connection = RelayBody.relayRequestBody(this.clientId, rid, HttpStream.Flow.REQ, httpRequest, clientIn, serverOut);
+                HttpStream.Connection connection = RelayBody.relayRequestBody(this.ownerOid, rid, HttpStream.Flow.REQ, httpRequest, clientIn, serverOut, this.monitored);
                 if (connection == HttpStream.Connection.CLOSE) {
                     this.stop = true;
                 }
@@ -260,7 +379,7 @@ public class PassRequestExecutor implements Stopable {
                     , e
             );
             try {
-                if (clientOut != null) {
+                if (clientOut != null && claimErrorResponse()) {
                     HtmlUtil.writeBadGatewayResponse(clientOut, e, this.currentLocale);
                 }
             } catch (IOException io) {
@@ -279,7 +398,7 @@ public class PassRequestExecutor implements Stopable {
         } catch (NotFoundVhostException e) {
             logger.warn("{}, {}", uid, e.getMessage());
             try {
-                if (clientOut != null) {
+                if (clientOut != null && claimErrorResponse()) {
                     HtmlUtil.writeNotFoundVhostResponse(clientOut, e.getRequestHost(), e.getRequestPath(), this.currentLocale);
                 }
             } catch (IOException io) {
@@ -290,11 +409,22 @@ public class PassRequestExecutor implements Stopable {
         } catch (NotFoundProxyVirtualHostsException e) {
             logger.warn("{}, {}", uid, e.getMessage());
             try {
-                if (clientOut != null) {
+                if (clientOut != null && claimErrorResponse()) {
                     HtmlUtil.writeNoVhostsResponse(clientOut, this.clientId, this.oidHeader, this.currentLocale);
                 }
             } catch (IOException io) {
                 logger.error("{}, Failed to write no-vhosts response: {}", uid, io.getMessage(), io);
+            }
+        } catch (IllegalArgumentException e) {
+            // Malformed request line, or ambiguous Content-Length/Transfer-Encoding framing
+            // rejected by HeaderLines.validateFraming() to prevent request smuggling.
+            logger.warn("{}, Rejected malformed/ambiguous request: {}", uid, e.getMessage());
+            try {
+                if (clientOut != null && claimErrorResponse()) {
+                    HtmlUtil.writeBadRequestResponse(clientOut, e.getMessage());
+                }
+            } catch (IOException io) {
+                logger.error("{}, Failed to write 400 response: {}", uid, io.getMessage(), io);
             }
         } finally {
             VThreadExecutor.removeVirtualThread(Thread.currentThread());
@@ -311,13 +441,13 @@ public class PassRequestExecutor implements Stopable {
             logger.debug( "{}, vtEnd & closeSocket, vtRes={}", this.uid, child != null ? child.getName() : "none" );
         }
 
-        if( serverIn !=null ) try{ serverIn.close(); }catch(Exception e){ logger.debug("Error closing serverIn: {}", e.getMessage()); }
-        if( serverOut !=null ) try{ serverOut.close(); }catch(Exception e){ logger.debug("Error closing serverOut: {}", e.getMessage()); }
-        if( serverSocket !=null ) try{ serverSocket.close(); }catch(Exception e){ logger.debug("Error closing serverSocket: {}", e.getMessage()); }
+        closeQuietly(serverIn, "serverIn");
+        closeQuietly(serverOut, "serverOut");
+        closeQuietly(serverSocket, "serverSocket");
 
-        if( clientIn !=null ) try{  clientIn.close(); }catch (Exception e){ logger.debug("Error closing clientIn: {}", e.getMessage()); }
-        if( clientOut !=null ) try{ clientOut.close(); }catch(Exception e){ logger.debug("Error closing clientOut: {}", e.getMessage()); }
-        if( clientSocket !=null ) try{ clientSocket.close(); }catch(Exception e){ logger.debug("Error closing clientSocket: {}", e.getMessage()); }
+        closeQuietly(clientIn, "clientIn");
+        closeQuietly(clientOut, "clientOut");
+        closeQuietly(clientSocket, "clientSocket");
 
         serverIn = null;
         serverOut = null;
@@ -330,13 +460,56 @@ public class PassRequestExecutor implements Stopable {
 
     private void forceCloseServerSocket(){
 
-        if (serverIn != null)  try { serverIn.close();  } catch (Exception e) { logger.debug("Error closing previous serverIn: {}", e.getMessage()); }
-        if (serverOut != null) try { serverOut.close(); } catch (Exception e) { logger.debug("Error closing previous serverOut: {}", e.getMessage()); }
-        if (serverSocket != null) try { serverSocket.close(); } catch (Exception e) { logger.debug("Error closing previous serverSocket: {}", e.getMessage()); }
+        closeQuietly(serverIn, "previous serverIn");
+        closeQuietly(serverOut, "previous serverOut");
+        closeQuietly(serverSocket, "previous serverSocket");
 
         serverIn = null;
         serverOut = null;
         serverSocket = null;
+    }
+
+    private void closeQuietly(Closeable resource, String label) {
+        if (resource == null) return;
+        try {
+            resource.close();
+        } catch (Exception e) {
+            logger.debug("Error closing {}: {}", label, e.getMessage());
+        }
+    }
+
+    // Header names applyHeaderRules() must never let a per-location add/remove rule touch.
+    // requestHeaders.parseHttpRequest() (called before applyHeaderRules(), see run()) already
+    // read Content-Length/Transfer-Encoding off the ORIGINAL headers to run validateFraming()
+    // and to decide httpRequest.getHttpStream() — the body-framing mode RelayBody.relayRequestBody()
+    // then relays by. A location rule that added/removed one of these after that point would
+    // desync what the rewritten headers *declare* to the backend from what body framing is
+    // *actually* relayed, silently reintroducing the exact CL/TE ambiguity validateFraming()
+    // exists to reject — this vhost config is attacker-controllable (any authenticated user's
+    // own vhost, see ReverseProxyServer's YAML-loading comment), so this isn't just a
+    // misconfiguration guard.
+    private static final java.util.Set<String> HEADER_RULES_PROTECTED_NAMES = java.util.Set.of(
+            "content-length", "transfer-encoding", "connection"
+    );
+
+    private void applyHeaderRules(HeaderLines requestHeaders, VirtualPath virtualPath) {
+        List<String> removeHeader = virtualPath.getRemoveHeader();
+        if (removeHeader != null) {
+            for (String name : removeHeader) {
+                if (name == null || HEADER_RULES_PROTECTED_NAMES.contains(name.trim().toLowerCase(Locale.ROOT))) continue;
+                requestHeaders.removeHeadersNamed(name);
+            }
+        }
+        List<String> addHeader = virtualPath.getAddHeader();
+        if (addHeader != null) {
+            for (String headerLine : addHeader) {
+                if (headerLine == null) continue;
+                int colon = headerLine.indexOf(':');
+                if (colon <= 0) continue;
+                if (HEADER_RULES_PROTECTED_NAMES.contains(headerLine.substring(0, colon).trim().toLowerCase(Locale.ROOT))) continue;
+                requestHeaders.setHeaderLine(headerLine);
+            }
+        }
     }
 
     private VirtualPath getVirtualPath(String rid, String vhost, String uri) throws IOException {

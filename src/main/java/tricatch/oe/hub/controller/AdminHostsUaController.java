@@ -58,11 +58,11 @@ public class AdminHostsUaController {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
-            var ua = mapper.findById(uaId);
+            var ua = mapper.findByIdGlobal(uaId);
             if (ua == null) { ctx.status(404); return; }
-            if (body.containsKey("uaName")) ua.setUaName(((String) body.get("uaName")).trim());
-            if (body.containsKey("uaValue")) ua.setUaValue(((String) body.get("uaValue")).trim());
-            if (body.containsKey("sortOrder")) ua.setSortOrder(((Number) body.get("sortOrder")).intValue());
+            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
+            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
+            if (body.get("sortOrder") instanceof Number n) ua.setSortOrder(n.intValue());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ctx.json(ua);
@@ -72,7 +72,7 @@ public class AdminHostsUaController {
     public void apiDelete(Context ctx) {
         var uaId = ctx.pathParam("uaId");
         try (var session = sqlSessionFactory.openSession(true)) {
-            var deleted = session.getMapper(HostsUaMapper.class).deleteById(uaId);
+            var deleted = session.getMapper(HostsUaMapper.class).deleteByIdGlobal(uaId);
             if (deleted == 0) { ctx.status(404); return; }
         }
         ctx.status(204);
@@ -83,7 +83,7 @@ public class AdminHostsUaController {
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
             for (int i = 0; i < ids.size(); i++) {
-                var ua = mapper.findById((String) ids.get(i));
+                var ua = mapper.findByIdGlobal((String) ids.get(i));
                 if (ua == null) continue;
                 ua.setSortOrder(i);
                 ua.setUpdatedAt(LocalDateTime.now());

@@ -518,7 +518,7 @@
     // Response
     if(isImageResp(resH,d.resBody)&&d.resBody){
       var b64=bodyToBase64(d.resBody);
-      pRes.innerHTML=b64?'<img src="data:'+getImageMime(resH,d.resBody)+';base64,'+b64+'" alt="'+escHtml(MSG['monitor.detail.image.alt'])+'" style="max-width:100%;height:auto;">':MSG['monitor.detail.image.decode.failed'];
+      pRes.innerHTML=b64?'<img src="data:'+escHtml(getImageMime(resH,d.resBody))+';base64,'+b64+'" alt="'+escHtml(MSG['monitor.detail.image.alt'])+'" style="max-width:100%;height:auto;">':MSG['monitor.detail.image.decode.failed'];
       pRes.classList.toggle('is-empty', !b64);
     } else {
       var rb=decodeBody(d.resBody); pRes.textContent=rb?tryJson(rb):MSG['monitor.detail.no.response'];

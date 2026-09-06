@@ -28,19 +28,34 @@ public class SetupController {
     private static final Logger logger = LoggerFactory.getLogger(SetupController.class);
 
     private static volatile boolean setupComplete = false;
+    // Read by the /setup/* auth-gating filter in OeHubApplication to lock down ca/generate,
+    // ca/import, and the preset CRUD routes as soon as an admin account exists — independent of
+    // whether the CA step is done yet. See that filter's comment for why.
+    private static volatile boolean adminConfigured = false;
+    // Guards the admin-existence-check + insert in processSetup so two concurrent first-run
+    // submissions can't both pass the check and create two admin accounts (only one JVM ever
+    // runs this, so a plain in-process lock is enough — no need for DB-level locking).
+    private static final Object SETUP_LOCK = new Object();
 
     private final SqlSessionFactory sqlSessionFactory;
     private final SettingsController settings;
     private final ObjectMapper objectMapper;
+    private final AuthController authController;
 
-    public SetupController(SqlSessionFactory sqlSessionFactory, SettingsController settings, ObjectMapper objectMapper) {
+    public SetupController(SqlSessionFactory sqlSessionFactory, SettingsController settings, ObjectMapper objectMapper,
+                            AuthController authController) {
         this.sqlSessionFactory = sqlSessionFactory;
         this.settings = settings;
         this.objectMapper = objectMapper;
+        this.authController = authController;
     }
 
     public static boolean isSetupComplete() {
         return setupComplete;
+    }
+
+    public static boolean isAdminConfigured() {
+        return adminConfigured;
     }
 
     public void refreshSetupState() {
@@ -49,6 +64,7 @@ public class SetupController {
             adminOk = session.getMapper(HubConfMapper.class).findByConfKey("admin") != null;
         }
         boolean caOk = settings.isCaConfigured();
+        adminConfigured = adminOk;
         setupComplete = adminOk && caOk;
         logger.info("Setup state refreshed — admin={}, ca={}, complete={}", adminOk, caOk, setupComplete);
     }
@@ -85,7 +101,7 @@ public class SetupController {
             ctx.render("templates/setup.pebble", buildModel("auth.error.password.required", "", "generate"));
             return;
         }
-        if (password.length() < 4) {
+        if (password.length() < 8) {
             ctx.render("templates/setup.pebble", buildModel("auth.error.password.too.short", "", "generate"));
             return;
         }
@@ -94,24 +110,39 @@ public class SetupController {
             return;
         }
 
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var now = LocalDateTime.now();
-            var hubUser = new HubUser();
-            hubUser.setUserId(userId);
-            hubUser.setPassword(PasswordUtil.hash(password));
-            hubUser.setRole("adm");
-            hubUser.setUpdatedAt(now);
-            hubUser.setCreateAt(now);
-            session.getMapper(HubUserMapper.class).insert(hubUser);
+        synchronized (SETUP_LOCK) {
+            try (var session = sqlSessionFactory.openSession()) {
+                if (session.getMapper(HubConfMapper.class).findByConfKey("admin") != null) {
+                    ctx.render("templates/setup.pebble", buildModel("setup.error.admin.already.configured", "", "generate"));
+                    return;
+                }
 
-            var conf = new HubConf();
-            conf.setConfKey("admin");
-            conf.setConfVal(userId);
-            conf.setUpdatedAt(now);
-            session.getMapper(HubConfMapper.class).upsert(conf);
+                var now = LocalDateTime.now();
+                var hubUser = new HubUser();
+                hubUser.setUserId(userId);
+                hubUser.setPassword(PasswordUtil.hash(password));
+                hubUser.setRole("adm");
+                hubUser.setUpdatedAt(now);
+                hubUser.setCreateAt(now);
+                session.getMapper(HubUserMapper.class).insert(hubUser);
+
+                var conf = new HubConf();
+                conf.setConfKey("admin");
+                conf.setConfVal(userId);
+                conf.setUpdatedAt(now);
+                session.getMapper(HubConfMapper.class).upsert(conf);
+
+                session.commit();
+
+                refreshSetupState();
+                // Log the new admin in immediately: as soon as adminConfigured flips to true (just
+                // above), OeHubApplication's /setup/* filter requires an authenticated admin for
+                // the remaining wizard steps (CA generate/import, presets) — without this, the
+                // creator would be locked out of their own setup wizard.
+                authController.loginAs(ctx, hubUser, true);
+            }
         }
 
-        refreshSetupState();
         ctx.redirect("/setup");
     }
 
@@ -207,10 +238,10 @@ public class SetupController {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUrlMapper.class);
-            var url = mapper.findById(urlId);
+            var url = mapper.findByIdGlobal(urlId);
             if (url == null) { ctx.status(404); return; }
-            if (body.containsKey("urlName")) url.setUrlName(((String) body.get("urlName")).trim());
-            if (body.containsKey("urlValue")) url.setUrlValue(((String) body.get("urlValue")).trim());
+            if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
+            if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             ctx.json(url);
@@ -220,7 +251,7 @@ public class SetupController {
     public void apiSetupUrlDelete(Context ctx) {
         var urlId = ctx.pathParam("urlId");
         try (var session = sqlSessionFactory.openSession(true)) {
-            var deleted = session.getMapper(HostsUrlMapper.class).deleteById(urlId);
+            var deleted = session.getMapper(HostsUrlMapper.class).deleteByIdGlobal(urlId);
             if (deleted == 0) { ctx.status(404); return; }
         }
         ctx.status(204);
@@ -231,7 +262,7 @@ public class SetupController {
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUrlMapper.class);
             for (int i = 0; i < ids.size(); i++) {
-                var url = mapper.findById((String) ids.get(i));
+                var url = mapper.findByIdGlobal((String) ids.get(i));
                 if (url == null) continue;
                 url.setSortOrder(i);
                 url.setUpdatedAt(LocalDateTime.now());
@@ -274,10 +305,10 @@ public class SetupController {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
-            var ua = mapper.findById(uaId);
+            var ua = mapper.findByIdGlobal(uaId);
             if (ua == null) { ctx.status(404); return; }
-            if (body.containsKey("uaName")) ua.setUaName(((String) body.get("uaName")).trim());
-            if (body.containsKey("uaValue")) ua.setUaValue(((String) body.get("uaValue")).trim());
+            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
+            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ctx.json(ua);
@@ -287,7 +318,7 @@ public class SetupController {
     public void apiSetupUaDelete(Context ctx) {
         var uaId = ctx.pathParam("uaId");
         try (var session = sqlSessionFactory.openSession(true)) {
-            var deleted = session.getMapper(HostsUaMapper.class).deleteById(uaId);
+            var deleted = session.getMapper(HostsUaMapper.class).deleteByIdGlobal(uaId);
             if (deleted == 0) { ctx.status(404); return; }
         }
         ctx.status(204);
@@ -298,7 +329,7 @@ public class SetupController {
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
             for (int i = 0; i < ids.size(); i++) {
-                var ua = mapper.findById((String) ids.get(i));
+                var ua = mapper.findByIdGlobal((String) ids.get(i));
                 if (ua == null) continue;
                 ua.setSortOrder(i);
                 ua.setUpdatedAt(LocalDateTime.now());

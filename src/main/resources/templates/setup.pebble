@@ -55,6 +55,7 @@
             <div class="alert alert-danger py-2 small mb-3 setup-alert-text">{{ msg[adminError] }}</div>
             {% endif %}
             <form method="post" action="/setup" autocomplete="off">
+              <input type="hidden" name="_csrf" value="{{ csrfToken }}">
               <table class="oe-info-table mb-3">
                 <colgroup><col style="width:150px;"><col></colgroup>
                 <tbody>
@@ -181,6 +182,7 @@
               <div class="tab-pane fade {% if caActiveTab != "import" %}show active{% endif %}"
                    id="caGeneratePane" role="tabpanel">
                 <form method="post" action="/setup/ca/generate" autocomplete="off">
+                  <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                   <div class="mb-3">
                     <label class="form-label">{{ msg['settings.ca.name.label'] }}</label>
                     <input type="text" name="caName" class="form-control"
@@ -195,6 +197,7 @@
               <div class="tab-pane fade {% if caActiveTab == "import" %}show active{% endif %}"
                    id="caImportPane" role="tabpanel">
                 <form method="post" action="/setup/ca/import" enctype="multipart/form-data" autocomplete="off">
+                  <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                   <div class="mb-3">
                     <label class="form-label">{{ msg['settings.ca.cert.file'] }} <span class="text-muted fw-normal">(.cer / .pem / .crt)</span></label>
                     <input type="file" name="certFile" class="form-control" accept=".cer,.pem,.crt" required>
@@ -244,6 +247,7 @@
           {% if not oidDomainConfigured %}
           <div class="pt-3">
             <form id="oidDomainDefaultForm" method="post" action="/setup/oid-domain-default" autocomplete="off">
+              <input type="hidden" name="_csrf" value="{{ csrfToken }}">
               <table class="oe-info-table mb-0">
                 <colgroup><col style="width:150px;"><col></colgroup>
                 <tbody>
@@ -293,7 +297,7 @@
     updateLoginBtn();
   }
 </script>
-<script src="/js/url-preset.js"></script>
+<script src="/js/preset-table.js"></script>
 <script>
   initUrlPresetTable({
     apiBase: '/setup/hosts-url',
@@ -304,7 +308,6 @@
   });
 </script>
 
-<script src="/js/ua-preset.js"></script>
 <script>
   initUaPresetTable({
     apiBase: '/setup/hosts-ua',

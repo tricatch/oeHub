@@ -58,7 +58,17 @@ public class SSLPassServer implements Runnable {
 
             while (running) {
 
-                Socket socket = sslSvrSocket.accept();
+                // A transient accept() failure (e.g. a momentary "too many open files") must not
+                // take down the whole listener — only stop() (which closes sslSvrSocket, turning
+                // the next accept() into a expected "Socket closed") should end this loop.
+                Socket socket;
+                try {
+                    socket = sslSvrSocket.accept();
+                } catch (Exception e) {
+                    if (!running || sslSvrSocket.isClosed()) break;
+                    logger.error("errorSslPassServerAccept - " + e.getMessage(), e);
+                    continue;
+                }
 
                 if (socket == null) continue;
 
@@ -66,9 +76,13 @@ public class SSLPassServer implements Runnable {
                     logger.debug("New client - h{}", socket.hashCode());
                 }
 
-                socket.setSoTimeout(https.getReadTimeout());
-
-                VThreadExecutor.run(new PassRequestExecutor(socket, https.getConnectTimeout(), https.getReadTimeout()));
+                try {
+                    socket.setSoTimeout(https.getReadTimeout());
+                    VThreadExecutor.run(new PassRequestExecutor(socket, https.getConnectTimeout(), https.getReadTimeout()));
+                } catch (Exception e) {
+                    logger.error("errorSslPassServerDispatch - " + e.getMessage(), e);
+                    try { socket.close(); } catch (Exception ce) {}
+                }
             }
 
         } catch (Exception e) {

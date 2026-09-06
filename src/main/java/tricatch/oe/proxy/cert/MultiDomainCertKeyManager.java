@@ -16,14 +16,35 @@ import java.net.Socket;
 import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(MultiDomainCertKeyManager.class);
-	
-    private final Map<String, CertificateKeyPair> certificates = new HashMap<>();
+
+    // A client can present any SNI hostname it likes, and every distinct one seen here triggers a
+    // fresh RSA keygen + CA signature (CPU-expensive) plus a permanent cache entry (memory) — so
+    // an unbounded cache lets a flood of random SNIs exhaust CPU/memory. Cap it and evict the
+    // oldest entries once over the cap; see MAX_CACHED_CERTIFICATES.
+    private static final int MAX_CACHED_CERTIFICATES = 1000;
+
+    // ConcurrentHashMap.computeIfAbsent() locks only the bucket for the domain being generated,
+    // so a handshake for an already-cached domain never blocks behind another domain's (CPU-bound
+    // RSA keygen + signing) generation — unlike a single manager-wide lock, which would serialize
+    // every concurrent handshake behind whichever one happens to be generating a cert.
+    // ConcurrentHashMap forbids null keys, so the no-SNI case (domain == null) is handled
+    // separately via noSniCertificate below instead of as a map entry.
+    private final Map<String, CertificateKeyPair> certificates = new ConcurrentHashMap<>();
+    // Insertion order for the (best-effort, approximately-FIFO) eviction below. Appended to only
+    // from inside the computeIfAbsent mapping function, so it grows exactly once per distinct
+    // domain — repeated lookups of an already-cached domain never touch it.
+    private final Queue<String> insertionOrder = new ConcurrentLinkedQueue<>();
+    private volatile CertificateKeyPair noSniCertificate;
+    private final Object noSniLock = new Object();
+
     private final X509Certificate rootCertificate;
     private final PrivateKey rootPrivateKey;
 
@@ -47,18 +68,58 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
             }
         }
 
-        if( certificates.containsKey(domain) ) return domain;
-        
-        try {
-            SSLCertificateCreator sslCertificateCreator = new SSLCertificateCreator();
-            CertificateKeyPair certificateKeyPair = sslCertificateCreator.generateSSLCertificate(domain, rootCertificate, rootPrivateKey);
-            certificates.put(domain, certificateKeyPair);
-        	return domain;
-        }catch(Exception e) {
-        	logger.error( "errorGenCert-" + e.getMessage(), e );
+        if (domain == null) {
+            ensureNoSniCertificate();
+            return null;
         }
-        
-        return null;
+
+        try {
+            certificates.computeIfAbsent(domain, d -> {
+                CertificateKeyPair pair = generateCertificate(d);
+                insertionOrder.add(d);
+                return pair;
+            });
+            evictOldestIfOverCapacity();
+            return domain;
+        } catch (GenerationFailedException e) {
+            logger.error("errorGenCert-" + e.getCause().getMessage(), e.getCause());
+            return null;
+        }
+    }
+
+    private void evictOldestIfOverCapacity() {
+        // Best-effort trim, not an exact bound: under concurrent generation, size() and the
+        // poll/remove pair below can race a little. That's fine here — the goal is just to keep
+        // the cache roughly bounded, not to enforce MAX_CACHED_CERTIFICATES precisely.
+        while (certificates.size() > MAX_CACHED_CERTIFICATES) {
+            String oldest = insertionOrder.poll();
+            if (oldest == null) break;
+            certificates.remove(oldest);
+        }
+    }
+
+    private void ensureNoSniCertificate() {
+        if (noSniCertificate != null) return;
+        synchronized (noSniLock) {
+            if (noSniCertificate != null) return;
+            try {
+                noSniCertificate = generateCertificate(null);
+            } catch (GenerationFailedException e) {
+                logger.error("errorGenCert-" + e.getCause().getMessage(), e.getCause());
+            }
+        }
+    }
+
+    private CertificateKeyPair generateCertificate(String domain) {
+        try {
+            return new SSLCertificateCreator().generateSSLCertificate(domain, rootCertificate, rootPrivateKey);
+        } catch (Exception e) {
+            throw new GenerationFailedException(e);
+        }
+    }
+
+    private static class GenerationFailedException extends RuntimeException {
+        GenerationFailedException(Throwable cause) { super(cause); }
     }
 
     public String[] getServerAliases(String keyType, Principal[] issuers) {
@@ -75,24 +136,15 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
 
 
     public X509Certificate[] getCertificateChain(String alias) {
-
-    	if( certificates.containsKey(alias) ) {
-    		X509Certificate[] x509 = new X509Certificate[1];
-    		x509[0] = certificates.get(alias).getCertificate();
-    		return x509;
-    	}
-    	
-    	return null;
+        CertificateKeyPair pair = alias == null ? noSniCertificate : certificates.get(alias);
+        if (pair == null) return null;
+        return new X509Certificate[]{ pair.getCertificate() };
     }
 
 	@Override
 	public PrivateKey getPrivateKey(String alias) {
-
-		if( certificates.containsKey(alias) ) {
-    		return certificates.get(alias).getPrivateKey();
-    	}
-		
-		return null;
+		CertificateKeyPair pair = alias == null ? noSniCertificate : certificates.get(alias);
+		return pair == null ? null : pair.getPrivateKey();
 	}
 
 }

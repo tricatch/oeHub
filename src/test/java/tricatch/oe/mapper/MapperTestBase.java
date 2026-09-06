@@ -12,6 +12,8 @@ import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
+import tricatch.oe.hosts.mapper.HostsUaMapper;
+import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.proxy.mapper.ProxyConfMapper;
 import tricatch.oe.proxy.mapper.ProxyVhostMapper;
 
@@ -48,11 +50,18 @@ public abstract class MapperTestBase {
         cfg.addMapper(HubConfMapper.class);
         cfg.addMapper(HostsProfMapper.class);
         cfg.addMapper(HostsConfMapper.class);
+        cfg.addMapper(HostsUaMapper.class);
+        cfg.addMapper(HostsUrlMapper.class);
         cfg.addMapper(ProxyVhostMapper.class);
         cfg.addMapper(ProxyConfMapper.class);
 
         FACTORY = new SqlSessionFactoryBuilder().build(cfg);
         initSchema();
+
+        // Mirrors OeHubApplication.main()'s boot order: ReverseProxyServer.init() loads/creates
+        // the OidUtil HMAC secret before anything can call setVirtualHosts()/getVirtualHosts()
+        // (see ProxyController), which OidUtil.encode/decode now require.
+        tricatch.oe.proxy.ReverseProxyServer.init(FACTORY);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
@@ -72,6 +81,7 @@ public abstract class MapperTestBase {
                     user_id       VARCHAR(64)  NOT NULL UNIQUE,
                     password      VARCHAR(128) NOT NULL,
                     role          VARCHAR(16)  NOT NULL,
+                    token_version INT          NOT NULL DEFAULT 0,
                     create_at     TIMESTAMP    NOT NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     last_login_at TIMESTAMP    NULL
@@ -92,10 +102,15 @@ public abstract class MapperTestBase {
                     sort_order    INT          NOT NULL DEFAULT 0,
                     visibility    VARCHAR(16)  NOT NULL DEFAULT 'public',
                     parent_id     VARCHAR(32)  NULL,
+                    last_edited_by BIGINT      NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
                     CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
                 )""");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_parent ON HOSTS_PFILE(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_last_edited_by ON HOSTS_PFILE(last_edited_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_CONF (
                     user_no    BIGINT,
@@ -104,6 +119,26 @@ public abstract class MapperTestBase {
                     updated_at TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_hosts_conf UNIQUE (user_no, conf_key),
                     CONSTRAINT fk_hosts_conf_user FOREIGN KEY (user_no) REFERENCES HUB_USR(user_no)
+                )""");
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_UA (
+                    ua_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    ua_name    VARCHAR(128) NOT NULL,
+                    ua_value   VARCHAR(512) NOT NULL,
+                    sort_order INT          NOT NULL DEFAULT 0,
+                    user_no    BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
+                    updated_at TIMESTAMP    NOT NULL
+                )""");
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_URL (
+                    url_id     VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    url_name   VARCHAR(128) NOT NULL,
+                    url_value  VARCHAR(512) NOT NULL,
+                    sort_order INT          NOT NULL DEFAULT 0,
+                    user_no    BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
+                    updated_at TIMESTAMP    NOT NULL
                 )""");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
@@ -115,10 +150,15 @@ public abstract class MapperTestBase {
                     sort_order    INT          NOT NULL DEFAULT 0,
                     visibility    VARCHAR(16)  NOT NULL DEFAULT 'public',
                     parent_id     VARCHAR(32)  NULL,
+                    last_edited_by BIGINT      NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
                     CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)
                 )""");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_parent ON PROXY_VHOST(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_last_edited_by ON PROXY_VHOST(last_edited_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_CONF (
                     user_no    BIGINT,
@@ -143,6 +183,8 @@ public abstract class MapperTestBase {
                 conn.createStatement().execute("DELETE FROM HOSTS_CONF");
                 conn.createStatement().execute("DELETE FROM PROXY_VHOST");
                 conn.createStatement().execute("DELETE FROM HOSTS_PFILE");
+                conn.createStatement().execute("DELETE FROM HOSTS_UA");
+                conn.createStatement().execute("DELETE FROM HOSTS_URL");
                 conn.createStatement().execute("DELETE FROM HUB_CONF");
                 conn.createStatement().execute("DELETE FROM HUB_USR");
             } finally {

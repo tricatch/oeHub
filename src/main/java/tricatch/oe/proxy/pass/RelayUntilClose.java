@@ -30,32 +30,33 @@ public class RelayUntilClose {
      * @return HttpStream.Connection indicating whether connection should be closed
      * @throws IOException when I/O error occurs
      */
-    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, HttpStreamReader in, HttpStreamWriter out) throws IOException {
+    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Relaying until-close body"
                     , rid
                     , flow
             );
         }
-        
+
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
         int totalBytesRelayed = 0;
-        java.io.ByteArrayOutputStream bodyCollector = new java.io.ByteArrayOutputStream();
-        
+        // monitored is decided once, at REQ_HEADER time, for this whole request (see
+        // PassRequestExecutor) - not re-checked here.
+        MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
+
         while (true) {
             int bytesRead = in.read(buffer);
-            
+
             if (bytesRead == -1) {
                 // End of stream
                 break;
             }
-            
+
             out.write(buffer, 0, bytesRead);
             totalBytesRelayed += bytesRead;
-            
-            // Collect body data for logging
-            bodyCollector.write(buffer, 0, bytesRead);
-            
+
+            if (monitored) bodyCollector.add(buffer, 0, bytesRead);
+
             if (logger.isDebugEnabled()) {
                 logger.debug("{}, {}, Relayed {} bytes of body, total: {}"
                         , rid
@@ -65,15 +66,19 @@ public class RelayUntilClose {
                 );
             }
         }
-        
+
         out.flush();
-        
-        // Enqueue body HttpEvent
-        HttpEvent bodyEvent = new HttpEvent(clientId, rid, 
-            flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
-        bodyEvent.setBody(bodyCollector.toByteArray());
-        bodyEvent.setHttpStream(HttpStream.UNTIL_CLOSE);
-        HttpEventManager.getInstance().enqueue(bodyEvent);
+
+        if (monitored) {
+            byte[] bodyForEvent = bodyCollector.toEventBody(flow);
+
+            // Enqueue body HttpEvent
+            HttpEvent bodyEvent = new HttpEvent(clientId, rid,
+                flow == HttpStream.Flow.REQ ? HttpEventType.REQ_BODY : HttpEventType.RES_BODY);
+            bodyEvent.setBody(bodyForEvent);
+            bodyEvent.setHttpStream(HttpStream.UNTIL_CLOSE);
+            HttpEventManager.getInstance().enqueue(bodyEvent);
+        }
 
         if (logger.isDebugEnabled()) {
             logger.debug("{}, {}, Until-close body relay completed, total bytes: {}"

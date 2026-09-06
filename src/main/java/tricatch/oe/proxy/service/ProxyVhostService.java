@@ -7,8 +7,11 @@ import tricatch.oe.proxy.mapper.ProxyVhostMapper;
 import tricatch.oe.proxy.model.ProxyVhost;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class ProxyVhostService {
 
@@ -58,7 +61,7 @@ public class ProxyVhostService {
             var vhost = new ProxyVhost();
             vhost.setVhostId(newId());
             vhost.setUserNo(userNo);
-            vhost.setVhostProfile(nextNewProfileName(mapper, userNo));
+            vhost.setVhostProfile(nextUniqueName(existingNames(mapper, userNo), "new vhost"));
             vhost.setVhostContent(exampleContent());
             vhost.setSelected(false);
             vhost.setUpdatedAt(LocalDateTime.now());
@@ -82,6 +85,14 @@ public class ProxyVhostService {
             }
             session.commit();
             return mapper.findByVhostId(vhostId);
+        }
+    }
+
+    // Other users who currently have this shared (collabo) vhost selected, so their cached live
+    // routing can be invalidated after one collaborator edits the shared content.
+    public List<Long> selectedCollaboratorUserNos(String parentId, Long excludeUserNo) {
+        try (var session = sqlSessionFactory.openSession()) {
+            return session.getMapper(ProxyVhostMapper.class).findSelectedUserNosByParentId(parentId, excludeUserNo);
         }
     }
 
@@ -151,10 +162,11 @@ public class ProxyVhostService {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var source = mapper.findByVhostId(sourceVhostId);
             if (source == null) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
             var copy = new ProxyVhost();
             copy.setVhostId(newId());
             copy.setUserNo(userNo);
-            copy.setVhostProfile(nextUniqueName(mapper, userNo, source.getVhostProfile()));
+            copy.setVhostProfile(nextUniqueName(existingNames(mapper, userNo), source.getVhostProfile()));
             copy.setVhostContent(source.getVhostContent());
             copy.setSelected(false);
             copy.setUpdatedAt(LocalDateTime.now());
@@ -175,7 +187,7 @@ public class ProxyVhostService {
             var ref = new ProxyVhost();
             ref.setVhostId(newId());
             ref.setUserNo(userNo);
-            ref.setVhostProfile(nextUniqueName(mapper, userNo, parent.getVhostProfile()));
+            ref.setVhostProfile(nextUniqueName(existingNames(mapper, userNo), parent.getVhostProfile()));
             ref.setVhostContent("");
             ref.setSelected(false);
             ref.setUpdatedAt(LocalDateTime.now());
@@ -244,10 +256,13 @@ public class ProxyVhostService {
                 }
                 mapper.deleteOrphanedParentsByCreator(userNo);
             }
+            var existingNames = existingNames(mapper, userNo);
             for (var entry : entries) {
                 entry.setVhostId(newId());
                 entry.setUserNo(userNo);
-                entry.setVhostProfile(nextUniqueName(mapper, userNo, entry.getVhostProfile()));
+                var name = nextUniqueName(existingNames, entry.getVhostProfile());
+                entry.setVhostProfile(name);
+                existingNames.add(name.toLowerCase());
                 entry.setUpdatedAt(LocalDateTime.now());
                 if (entry.getVisibility() == null) entry.setVisibility("public");
                 mapper.insert(entry);
@@ -266,15 +281,18 @@ public class ProxyVhostService {
         }
     }
 
-    private String nextNewProfileName(ProxyVhostMapper mapper, Long userNo) {
-        return nextUniqueName(mapper, userNo, "new vhost");
+    // Case-insensitive, matching countByUserNoAndProfile's LOWER() comparison this replaces.
+    private Set<String> existingNames(ProxyVhostMapper mapper, Long userNo) {
+        return mapper.findProfileNamesByUserNo(userNo).stream()
+            .map(String::toLowerCase)
+            .collect(Collectors.toCollection(HashSet::new));
     }
 
-    private String nextUniqueName(ProxyVhostMapper mapper, Long userNo, String base) {
-        if (mapper.countByUserNoAndProfile(userNo, base) == 0) return base;
+    private String nextUniqueName(Set<String> existingNamesLower, String base) {
+        if (!existingNamesLower.contains(base.toLowerCase())) return base;
         for (int i = 2; i <= 999; i++) {
             var candidate = base + " (" + i + ")";
-            if (mapper.countByUserNoAndProfile(userNo, candidate) == 0) return candidate;
+            if (!existingNamesLower.contains(candidate.toLowerCase())) return candidate;
         }
         return base + " (" + System.currentTimeMillis() + ")";
     }

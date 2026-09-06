@@ -71,8 +71,6 @@ public class HtmlUtil {
             ctx.put("requestHost",  ex.getRequestHost());
             ctx.put("routePath",    ex.getRoutePath());
             ctx.put("targetUrl",    ex.getTargetUrl());
-            //Throwable cause = ex.getCause();
-            //ctx.put("errorMessage", cause != null ? cause.getMessage() : null);
             StringWriter writer = new StringWriter();
             template.evaluate(writer, ctx);
             html = writer.toString();
@@ -172,21 +170,47 @@ public class HtmlUtil {
         out.flush();
     }
 
-    /** Renders the forward-proxy relay-whitelist 403 page as HTML (caller owns the transport / response framing). */
-    public static String renderFwdProxyForbidden(String host, String locale) {
+    /**
+     * Renders the forward-proxy 403 page as HTML (caller owns the transport / response framing).
+     * {@code reason} is one of ForwardProxyServer's BLOCK_REASON_* constants (currently "loopback"
+     * or "whitelist") and picks which explanation/remedy copy the page shows - anything else
+     * (including null, e.g. a reason that expired before BlockedPageServer could read it) falls
+     * back to the whitelist copy, matching this page's behavior before reasons were tracked.
+     */
+    public static String renderFwdProxyForbidden(String host, String reason, String locale) {
         try {
             PebbleTemplate template = pebble.getTemplate("templates/error/fwdproxy-forbidden.pebble");
             Map<String, Object> ctx = new HashMap<>();
-            ctx.put("msg",  msg(locale));
-            ctx.put("host", host != null ? host : "");
+            ctx.put("msg",    msg(locale));
+            ctx.put("host",   host != null ? host : "");
+            ctx.put("reason", reason != null ? reason : "");
             StringWriter writer = new StringWriter();
             template.evaluate(writer, ctx);
             return writer.toString();
         } catch (Exception e) {
             logger.warn("Failed to render fwdproxy-forbidden template", e);
-            return "<html><body><h1>403 Forbidden</h1><p>Blocked by oeHub forward-proxy whitelist: "
+            return "<html><body><h1>403 Forbidden</h1><p>Blocked by oeHub forward-proxy: "
                     + escapeHtml(host) + "</p></body></html>";
         }
+    }
+
+    /**
+     * Writes a plain 400 response for a request rejected before routing/upstream connection ever
+     * happens (malformed request line, ambiguous Content-Length/Transfer-Encoding framing) — no
+     * vhost/routing context exists yet at this point, so unlike the other error pages this isn't
+     * templated/branded.
+     */
+    public static void writeBadRequestResponse(HttpStreamWriter out, String reason) throws IOException {
+        String html = "<html><body><h1>400 Bad Request</h1><p>" + escapeHtml(reason) + "</p></body></html>";
+
+        byte[] body = html.getBytes(StandardCharsets.UTF_8);
+        out.write("HTTP/1.1 400 Bad Request\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write("Content-Type: text/html; charset=utf-8\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write("Connection: close\r\n".getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Length: " + body.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(HTTP.CRLF);
+        out.write(body);
+        out.flush();
     }
 
     private static String escapeHtml(String s) {

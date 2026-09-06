@@ -3,6 +3,8 @@ package tricatch.oe.hub.controller;
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.mapper.HostsConfMapper;
+import tricatch.oe.hosts.mapper.HostsUaMapper;
+import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
@@ -37,7 +39,9 @@ public class AdminUserController {
             var mapper = session.getMapper(HubUserMapper.class);
             var model = new HashMap<String, Object>();
             model.put("user", AuthController.currentUser(ctx));
-            model.put("users", mapper.findAll());
+            var users = mapper.findAll();
+            for (var u : users) u.setPassword(null);
+            model.put("users", users);
             ctx.render("templates/oehub/users.pebble", model);
         }
     }
@@ -84,6 +88,8 @@ public class AdminUserController {
         try (var session = sqlSessionFactory.openSession()) {
             session.getMapper(HostsConfMapper.class).deleteAllByUserNo(userNo);
             session.getMapper(ProxyConfMapper.class).deleteAllByUserNo(userNo);
+            session.getMapper(HostsUaMapper.class).deleteAllByUserNo(userNo);
+            session.getMapper(HostsUrlMapper.class).deleteAllByUserNo(userNo);
             session.getMapper(HubUserMapper.class).deleteByUserNo(userNo);
             session.commit();
         }

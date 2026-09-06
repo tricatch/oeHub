@@ -3,6 +3,7 @@ package tricatch.oe.proxy.http.io;
 import tricatch.oe.proxy.exception.MaxBufferExceedException;
 import tricatch.oe.proxy.http.HTTP;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -17,7 +18,7 @@ import java.io.InputStream;
  * Each instance here is only ever driven by a single thread at a time, so no
  * synchronization is needed to begin with.
  */
-public class HttpStreamReader {
+public class HttpStreamReader implements Closeable {
 
     private final InputStream in;
     private final byte[] buf;
@@ -122,7 +123,14 @@ public class HttpStreamReader {
             }
 
             if (foundCR) {
-                // CR followed by non-LF character, add CR to buffer
+                // CR followed by non-LF character, add CR to buffer.
+                // bytesRead can already be at max here (this iteration writes CR *and* ch),
+                // so re-check against max — not just the buffer's current capacity — before
+                // writing, otherwise a capped-at-max buffer overflows by one byte.
+                if (bytesRead >= max) {
+                    buffer.setLength(bytesRead);
+                    throw new IOException("Maximum line length (" + max + ") exceeded without finding line terminator");
+                }
                 if (bytesRead >= buffer.getBuffer().length) {
                     // Buffer is full, expand it
                     expandBuffer(buffer, max);
@@ -131,6 +139,10 @@ public class HttpStreamReader {
                 foundCR = false;
             }
 
+            if (bytesRead >= max) {
+                buffer.setLength(bytesRead);
+                throw new IOException("Maximum line length (" + max + ") exceeded without finding line terminator");
+            }
             if (bytesRead >= buffer.getBuffer().length) {
                 // Buffer is full, expand it
                 expandBuffer(buffer, max);

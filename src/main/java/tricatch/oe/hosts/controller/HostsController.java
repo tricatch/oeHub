@@ -21,6 +21,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class HostsController {
 
@@ -29,6 +32,13 @@ public class HostsController {
     private final HostConfService hostConfService;
     private final SettingsController settingsController;
     private final ObjectMapper objectMapper;
+
+    // apiShare (below) is public/unauthenticated and resolves the caller-supplied Host header via
+    // DNS. Bounding that lookup by a timeout on its own virtual thread keeps a slow/unresponsive
+    // domain in the Host header from tying up a request-handling thread indefinitely (a trivial
+    // DoS otherwise, since this endpoint requires no login).
+    private static final ExecutorService DNS_RESOLVER = Executors.newVirtualThreadPerTaskExecutor();
+    private static final long DNS_RESOLVE_TIMEOUT_MS = 500;
 
     public HostsController(SqlSessionFactory sqlSessionFactory, SettingsController settingsController, ObjectMapper objectMapper) {
         this.sqlSessionFactory = sqlSessionFactory;
@@ -133,7 +143,7 @@ public class HostsController {
         var model = new HashMap<String, Object>();
         model.put("hosts", hosts);
         model.put("owner", owner != null ? owner : "");
-        model.put("contentJson", objectMapper.writeValueAsString(hosts.getHostsContent()));
+        model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getHostsContent())));
         model.put("proxyIp", extractProxyIp(ctx));
         ctx.render("templates/oehub/hosts-share.pebble", model);
     }
@@ -171,6 +181,10 @@ public class HostsController {
             h.setHostsContent((String) m.get("hostsContent"));
             h.setSelected(Boolean.TRUE.equals(m.get("selected")));
             h.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
+            // "collabo" only makes sense with a live parent reference, which an import can't
+            // recreate, so treat anything but an explicit "private" as public (import creates
+            // standalone entries, never collabo refs).
+            h.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
             return h;
         }).toList();
         var updated = hostsProfService.importProfiles(hubUser.getUserNo(), entries, merge);
@@ -245,8 +259,8 @@ public class HostsController {
             var mapper = session.getMapper(HostsUaMapper.class);
             var ua = mapper.findByIdAndUserNo(uaId, user.getUserNo());
             if (ua == null) { ctx.status(404); return; }
-            if (body.containsKey("uaName")) ua.setUaName(((String) body.get("uaName")).trim());
-            if (body.containsKey("uaValue")) ua.setUaValue(((String) body.get("uaValue")).trim());
+            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
+            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ua.setMine(true);
@@ -364,8 +378,8 @@ public class HostsController {
             var mapper = session.getMapper(HostsUrlMapper.class);
             var url = mapper.findByIdAndUserNo(urlId, user.getUserNo());
             if (url == null) { ctx.status(404); return; }
-            if (body.containsKey("urlName")) url.setUrlName(((String) body.get("urlName")).trim());
-            if (body.containsKey("urlValue")) url.setUrlValue(((String) body.get("urlValue")).trim());
+            if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
+            if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             url.setMine(true);
@@ -438,7 +452,8 @@ public class HostsController {
             hostname = colon > 0 ? host.substring(0, colon) : host;
         }
         try {
-            return InetAddress.getByName(hostname).getHostAddress();
+            var future = DNS_RESOLVER.submit(() -> InetAddress.getByName(hostname).getHostAddress());
+            return future.get(DNS_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             return ctx.req().getLocalAddr();
         }

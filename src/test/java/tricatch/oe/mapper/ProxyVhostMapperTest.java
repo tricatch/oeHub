@@ -210,14 +210,16 @@ class ProxyVhostMapperTest extends MapperTestBase {
     }
 
     @Test
-    void countByUserNoAndProfile() {
+    void findProfileNamesByUserNo() {
         var user = insertUser("oscar");
+        var other = insertUser("nathan");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             mapper.insert(newVhost(user.getUserNo(), "My Vhost", "content"));
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "My Vhost")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "my vhost")).isEqualTo(1);
-            assertThat(mapper.countByUserNoAndProfile(user.getUserNo(), "other")).isEqualTo(0);
+            mapper.insert(newVhost(user.getUserNo(), "Second Vhost", "content"));
+            mapper.insert(newVhost(other.getUserNo(), "Others Vhost", "content"));
+            assertThat(mapper.findProfileNamesByUserNo(user.getUserNo()))
+                .containsExactlyInAnyOrder("My Vhost", "Second Vhost");
         }
     }
 
@@ -252,6 +254,10 @@ class ProxyVhostMapperTest extends MapperTestBase {
 
             assertThat(mapper.findByVhostId(original.getVhostId()).getVhostContent()).isEqualTo("updated: true");
             assertThat(mapper.findByVhostId(ref.getVhostId()).getVhostContent()).isEqualTo("updated: true");
+
+            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — last_edited_by만 collab으로 반영
+            assertThat(mapper.findByVhostId(original.getVhostId()).getUserId()).isEqualTo(owner.getUserId());
+            assertThat(mapper.findByVhostId(ref.getVhostId()).getLastEditorUserId()).isEqualTo(collab.getUserId());
 
             // owner의 참조 목록
             var ownerRefs = mapper.findReferencesByUserNo(owner.getUserNo());

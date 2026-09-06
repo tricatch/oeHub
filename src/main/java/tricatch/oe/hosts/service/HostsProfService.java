@@ -7,8 +7,11 @@ import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.mapper.HubUserMapper;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class HostsProfService {
 
@@ -52,7 +55,7 @@ public class HostsProfService {
             var hosts = new HostsProf();
             hosts.setHostsId(newId());
             hosts.setUserNo(userNo);
-            hosts.setHostsProfile(nextNewProfileName(mapper, userNo));
+            hosts.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), "new hosts"));
             hosts.setHostsContent(exampleContent());
             hosts.setSelected(false);
             hosts.setUpdatedAt(LocalDateTime.now());
@@ -145,10 +148,11 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var source = mapper.findByHostsId(sourceHostId);
             if (source == null) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
             var copy = new HostsProf();
             copy.setHostsId(newId());
             copy.setUserNo(userNo);
-            copy.setHostsProfile(nextUniqueName(mapper, userNo, source.getHostsProfile()));
+            copy.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), source.getHostsProfile()));
             copy.setHostsContent(source.getHostsContent());
             copy.setSelected(false);
             copy.setUpdatedAt(LocalDateTime.now());
@@ -169,7 +173,7 @@ public class HostsProfService {
             var ref = new HostsProf();
             ref.setHostsId(newId());
             ref.setUserNo(userNo);
-            ref.setHostsProfile(nextUniqueName(mapper, userNo, parent.getHostsProfile()));
+            ref.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), parent.getHostsProfile()));
             ref.setHostsContent("");
             ref.setSelected(false);
             ref.setUpdatedAt(LocalDateTime.now());
@@ -238,10 +242,13 @@ public class HostsProfService {
                 }
                 mapper.deleteOrphanedParentsByCreator(userNo);
             }
+            var existingNames = existingNames(mapper, userNo);
             for (var entry : entries) {
                 entry.setHostsId(newId());
                 entry.setUserNo(userNo);
-                entry.setHostsProfile(nextUniqueName(mapper, userNo, entry.getHostsProfile()));
+                var name = nextUniqueName(existingNames, entry.getHostsProfile());
+                entry.setHostsProfile(name);
+                existingNames.add(name.toLowerCase());
                 entry.setUpdatedAt(LocalDateTime.now());
                 if (entry.getVisibility() == null) entry.setVisibility("public");
                 mapper.insert(entry);
@@ -260,15 +267,18 @@ public class HostsProfService {
         }
     }
 
-    private String nextNewProfileName(HostsProfMapper mapper, Long userNo) {
-        return nextUniqueName(mapper, userNo, "new hosts");
+    // Case-insensitive, matching countByUserNoAndProfile's LOWER() comparison this replaces.
+    private Set<String> existingNames(HostsProfMapper mapper, Long userNo) {
+        return mapper.findProfileNamesByUserNo(userNo).stream()
+            .map(String::toLowerCase)
+            .collect(Collectors.toCollection(HashSet::new));
     }
 
-    private String nextUniqueName(HostsProfMapper mapper, Long userNo, String base) {
-        if (mapper.countByUserNoAndProfile(userNo, base) == 0) return base;
+    private String nextUniqueName(Set<String> existingNamesLower, String base) {
+        if (!existingNamesLower.contains(base.toLowerCase())) return base;
         for (int i = 2; i <= 999; i++) {
             var candidate = base + " (" + i + ")";
-            if (mapper.countByUserNoAndProfile(userNo, candidate) == 0) return candidate;
+            if (!existingNamesLower.contains(candidate.toLowerCase())) return candidate;
         }
         return base + " (" + System.currentTimeMillis() + ")";
     }

@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
-import tricatch.oe.proxy.util.JsonUtil;
 
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -35,8 +34,9 @@ public class JwtService {
             var priConf = mapper.findByConfKey(KEY_PRIVATE);
             var pubConf  = mapper.findByConfKey(KEY_PUBLIC);
 
-            if( logger.isDebugEnabled() ) logger.debug("jwt.pri.key={}", JsonUtil.toJson(priConf));
-            if( logger.isDebugEnabled() ) logger.debug("jwt.pub.key={}", JsonUtil.toJson(pubConf));
+            // Never log key material: the private key would let anyone who reads the log
+            // forge a valid JWT for any user, permanently (until the key is rotated).
+            if( logger.isDebugEnabled() ) logger.debug("jwt keys loaded from db - pri.present={}, pub.present={}", priConf != null, pubConf != null);
 
             if (priConf != null && pubConf != null) {
                 privateKey = loadPrivateKey(priConf.getConfVal());
@@ -56,7 +56,12 @@ public class JwtService {
         }
     }
 
-    public String issue(Long userNo, boolean rememberMe) {
+    /** Verified token payload: userNo plus the token_version it was issued with, so the caller
+     *  can compare it against the user's current token_version and reject stale tokens (e.g.
+     *  issued before a password change). */
+    public record VerifiedToken(Long userNo, int tokenVersion) {}
+
+    public String issue(Long userNo, int tokenVersion, boolean rememberMe) {
         var now    = new Date();
         var expiry = rememberMe
             ? new Date(now.getTime() + 365L * 24 * 3600 * 1000)
@@ -64,13 +69,14 @@ public class JwtService {
 
         return Jwts.builder()
             .subject(String.valueOf(userNo))
+            .claim("tv", tokenVersion)
             .issuedAt(now)
             .expiration(expiry)
             .signWith(privateKey)
             .compact();
     }
 
-    public Long verify(String token) {
+    public VerifiedToken verify(String token) {
 
         if (token == null) return null;
         try {
@@ -79,8 +85,12 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-            return Long.parseLong(claims.getSubject());
-        } catch (JwtException | NumberFormatException e) {
+            Long userNo = Long.parseLong(claims.getSubject());
+            // Tokens issued before this field existed carry no "tv" claim; treat that as
+            // version 0, which matches the DEFAULT 0 every existing user row already has.
+            Integer tv = claims.get("tv", Integer.class);
+            return new VerifiedToken(userNo, tv != null ? tv : 0);
+        } catch (JwtException | IllegalArgumentException e) {
             logger.warn("errorJwtVerify - {}", e.getMessage(), e);
         }
         return null;
