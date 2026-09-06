@@ -74,10 +74,35 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 0.4rem;
   padding: 0 0.85rem;
   border-top: 1px solid #dee2e6;
   background: #f8f9fa;
 }
+
+.oe-take-ip-btn {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #4a7a1e;
+  background: #dff2b8;
+  border: 1px solid #c4e89a;
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.oe-take-ip-btn:hover { background: #a8d878; border-color: #8ec45a; color: #2d5010; }
+.oe-take-ip-btn:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
+
+/* Clicking this would take the IP over from another account, so it's flagged red instead of
+   the default brand-green "nobody's using it yet" state. */
+.oe-take-ip-btn-warn {
+  color: #c0392b;
+  background: #fdecea;
+  border-color: #f5c6cb;
+}
+.oe-take-ip-btn-warn:hover { background: #f8d7da; border-color: #ef9a9a; color: #a52a1a; }
 
 
 /* Ace editor */

@@ -28,6 +28,7 @@
         <tbody>
           <tr><td><a class="lib-link" href="https://github.com/azagniotov/ant-style-path-matcher" target="_blank">Ant-Style Path Matcher</a></td><td>1.0.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://www.bouncycastle.org" target="_blank">Bouncy Castle</a></td><td>1.85</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
+          <tr><td><a class="lib-link" href="https://github.com/ben-manes/caffeine" target="_blank">Caffeine</a></td><td>3.1.8</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://github.com/tricatch/gotpache-keytool" target="_blank">gotpache-keytool</a></td><td>0.1.0</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
           <tr><td><a class="lib-link" href="https://h2database.com" target="_blank">H2 Database</a></td><td>2.4.240</td><td><span class="license-badge badge-mpl">MPL 2.0 / EPL 1.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://github.com/brettwooldridge/HikariCP" target="_blank">HikariCP</a></td><td>5.1.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>

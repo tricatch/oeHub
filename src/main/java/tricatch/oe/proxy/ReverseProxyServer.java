@@ -25,6 +25,7 @@ import tricatch.oe.proxy.model.ProxyVhost;
 import tricatch.oe.proxy.server.*;
 import tricatch.oe.proxy.service.ProxyConfService;
 import tricatch.oe.proxy.service.ProxyVhostService;
+import tricatch.oe.proxy.util.ClaimedIpRegistry;
 import tricatch.oe.proxy.util.OidUtil;
 import tricatch.oe.proxy.util.SSLUtil;
 import tricatch.oe.proxy.util.VirtualHostUtil;
@@ -45,10 +46,9 @@ public class ReverseProxyServer {
     private static final ThreadPoolExecutor serverExecutor = (ThreadPoolExecutor) Executors.newCachedThreadPool();
 
     // Routes are keyed by owner (OID, an opaque encoding of HUB_USR.user_no — see OidUtil),
-    // not by client IP — an IP is just whichever owner most recently logged in / applied
-    // config from that address.
+    // not by client IP. IP-based fallback identification now lives in ClaimedIpRegistry (an
+    // explicit, time-bounded claim - see resolveOid()) rather than an unbounded map here.
     private static final ConcurrentHashMap<String, VirtualHosts> oidVirtualHostsMap = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, String> ipOidMap = new ConcurrentHashMap<>();
     private static SqlSessionFactory sqlSessionFactory = null;
 
     // OID identification (X-OeHub-Oid header) is always available; IP-based identification
@@ -99,6 +99,10 @@ public class ReverseProxyServer {
         new ProxyConfService(sqlSessionFactory).set(KEY_IP_IDENTIFIER_ENABLED, null, String.valueOf(enabled));
     }
 
+    // Exposed so ForwardProxyServer can recognize a ${PROXY_SVR} self-loop connection (its own
+    // outbound connection back into this reverse proxy) without hardcoding the port a second time.
+    public static final int HTTPS_PORT = 443;
+
     private static Config config = null;
     private static SSLContext sslContext = null;
     private static SSLPassServer sslPassServer = null;
@@ -107,7 +111,7 @@ public class ReverseProxyServer {
 
         config = new Config();
 
-        config.getHttps().setPort(443);
+        config.getHttps().setPort(HTTPS_PORT);
         config.getHttps().setConnectTimeout(3000);
         config.getHttps().setReadTimeout(30000);
 
@@ -178,7 +182,7 @@ public class ReverseProxyServer {
     }
 
 
-    public static void setVirtualHosts(String clientIp, Long userNo, String virtualHostsConfigYaml) throws MalformedURLException {
+    public static void setVirtualHosts(Long userNo, String virtualHostsConfigYaml) throws MalformedURLException {
 
         Representer representer = new Representer(new DumperOptions());
         representer.getPropertyUtils().setSkipMissingProperties(true);
@@ -198,19 +202,46 @@ public class ReverseProxyServer {
 
         String oid = OidUtil.encode(userNo);
         oidVirtualHostsMap.put(oid, VirtualHostUtil.convert(virtualHost.getVirtual()));
-        ipOidMap.put(clientIp, oid);
     }
 
-    public static void clearVirtualHosts(String clientIp, Long userNo) {
-        ipOidMap.remove(clientIp);
-        oidVirtualHostsMap.remove(OidUtil.encode(userNo));
+    public static void clearVirtualHosts(Long userNo) {
+        String oid = OidUtil.encode(userNo);
+        ClaimedIpRegistry.release(oid);
+        oidVirtualHostsMap.remove(oid);
     }
 
-    // Drops only the cached routing table, leaving ipOidMap intact — for invalidating an owner
-    // who isn't the current request (e.g. a collaborator on a shared vhost someone else just
-    // edited). Their next request finds no cached entry and lazily reloads via getVirtualHosts().
+    // Drops only the cached routing table, leaving any IP claim intact — for invalidating an
+    // owner who isn't the current request (e.g. a collaborator on a shared vhost someone else
+    // just edited). Their next request finds no cached entry and lazily reloads via getVirtualHosts().
     public static void invalidateVirtualHosts(Long userNo) {
         oidVirtualHostsMap.remove(OidUtil.encode(userNo));
+    }
+
+    /** Claims clientIp for userNo in ClaimedIpRegistry - see ProxyController.apiTakeIp. */
+    public static void claimIp(String clientIp, Long userNo) {
+        ClaimedIpRegistry.claim(clientIp, OidUtil.encode(userNo));
+    }
+
+    public static long claimedIpTtlHours() {
+        return ClaimedIpRegistry.ttlHours();
+    }
+
+    /** The oid currently holding clientIp in ClaimedIpRegistry, or null if unclaimed. */
+    public static String getClaimedOid(String clientIp) {
+        return ClaimedIpRegistry.get(clientIp);
+    }
+
+    /** The userId of the account behind oid, for display (e.g. "so-and-so already claimed this IP"). */
+    public static String getUserIdForOid(String oid) {
+        Long userNo = OidUtil.decode(oid);
+        if (userNo == null || sqlSessionFactory == null) return null;
+        try (var session = sqlSessionFactory.openSession()) {
+            var user = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+            return user != null ? user.getUserId() : null;
+        } catch (Exception e) {
+            logger.warn("Failed to resolve userId for claimed-IP oid: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -229,29 +260,15 @@ public class ReverseProxyServer {
             return userNo == null ? null : OidUtil.encode(userNo);
         }
         if (ipIdentifierEnabled) {
-            String oid = ipOidMap.get(clientIp);
+            String oid = ClaimedIpRegistry.get(clientIp);
             if (oid != null) return oid;
         }
-        // Single-user local setup: a client with no OID header and no recorded IP owner is
-        // unresolvable in general, but on a loopback connection with exactly one oeHub account
-        // there is no ambiguity about whose vhosts to serve - skip the OID handshake entirely
-        // rather than force a solo local user to go fetch/set an X-OeHub-Oid header.
-        return isLoopbackAddress(clientIp) ? resolveSoleLocalUserOid() : null;
-    }
-
-    private static boolean isLoopbackAddress(String ip) {
-        return ip != null && (ip.startsWith("127.") || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip));
-    }
-
-    private static String resolveSoleLocalUserOid() {
-        if (sqlSessionFactory == null) return null;
-        try (var session = sqlSessionFactory.openSession()) {
-            var users = session.getMapper(HubUserMapper.class).findAll();
-            return users.size() == 1 ? OidUtil.encode(users.get(0).getUserNo()) : null;
-        } catch (Exception e) {
-            logger.warn("Failed to resolve sole local-user owner for loopback fallback: {}", e.getMessage());
-            return null;
-        }
+        // No X-OeHub-Oid header and no claimed IP (see ClaimedIpRegistry / "Use This IP" on the
+        // oeProxy page) - ownership genuinely can't be resolved. There is deliberately no
+        // loopback/sole-account shortcut here anymore: it silently identified any 127.0.0.1
+        // request as the one existing account, which broke down the moment a second account was
+        // created and gave no visible signal that identification was implicit rather than explicit.
+        return null;
     }
 
     public static VirtualHosts getVirtualHosts(String clientIp, String oidHeader) throws NotFoundProxyVirtualHostsException {
@@ -285,7 +302,7 @@ public class ReverseProxyServer {
             if (merged == null || merged.isBlank()) return null;
             var localSvrOverride = confService.get("local_svr", userNo);
             var localSvr = localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp;
-            setVirtualHosts(clientIp, userNo, merged.replace("${LOCAL_SVR}", localSvr));
+            setVirtualHosts(userNo, merged.replace("${LOCAL_SVR}", localSvr));
             return oidVirtualHostsMap.get(oid);
         } catch (Exception e) {
             logger.warn("Failed to lazily reload virtual hosts for owner {}: {}", oid, e.getMessage());

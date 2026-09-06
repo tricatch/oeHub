@@ -55,7 +55,7 @@ class ProxyControllerCollaboInvalidationTest extends MapperTestBase {
 
         // Seed the collaborator's live routing cache with pre-edit content directly, as if they
         // were already routing through it before the owner's edit below.
-        ReverseProxyServer.setVirtualHosts("203.0.113.10", collaborator.getUserNo(), BEFORE_EDIT);
+        ReverseProxyServer.setVirtualHosts(collaborator.getUserNo(), BEFORE_EDIT);
         String collaboratorOid = OidUtil.encode(collaborator.getUserNo());
         assertThat(ReverseProxyServer.getVirtualHosts("ignored", collaboratorOid).keySet())
                 .containsExactly("before-edit.example.com");

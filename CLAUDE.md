@@ -49,6 +49,12 @@
 - The `tricatch.oe.proxy` package is a low-level networking layer. Do **not** modify files in this package for style, comment cleanup, or refactoring unless the change is directly required by a bug fix or feature task.
 - This restriction covers all sub-packages: `proxy.pass`, `proxy.http`, `proxy.event`, `proxy.server`, `proxy.cfg`, `proxy.util`, etc.
 
+## Forward Proxy — LittleProxy Reflection Dependency
+
+- `tricatch.oe.proxy.util.LittleProxyInternals` uses reflection to read two private fields (`org.littleshoot.proxy.FlowContext.clientConnection`, `org.littleshoot.proxy.impl.ClientToProxyConnection.currentServerConnection`) to work around a bug in `littleproxy` 2.9.0/2.9.1: `FullFlowContext.getProxyToServerContext()` always returns null for a raw (non-MITM) HTTP CONNECT tunnel, because the `FullFlowContext` gets cached (via `computeIfAbsent`) the first time any activity-tracking code asks for it — before the proxy-to-server channel exists — permanently freezing a null context into the cached object. Confirmed present in both 2.9.0 and 2.9.1 via a standalone reproduction outside oeHub, and in the upstream GitHub source (no code path invokes the equivalent success callback for a raw CONNECT tunnel), so this is not something a routine version bump fixes.
+- Whenever the `littleproxy` dependency version changes (in `build.gradle.kts`), re-verify `LittleProxyInternals` first: confirm the two private field names still exist and still resolve the live proxy-to-server `ChannelHandlerContext` for a raw CONNECT tunnel. A standalone reproduction (outside the app, hitting a real CONNECT request through a real `DefaultHttpProxyServer` instance) is the fastest way to confirm this — testing through the full app makes a reflection failure easy to miss, since it degrades silently (see below).
+- If the reflection fails (`NoSuchFieldException`, etc.), `LittleProxyInternals` logs a warning once and returns null rather than throwing — self-loop owner resolution (see `SelfLoopOwnerRegistry`) then simply stops firing; the `X-OeHub-Oid` header and "Use This IP" fallbacks keep working. Do not remove this fallback behavior when touching this class.
+
 ## HTML Templates
 
 - Use the Pebble template engine. (`src/main/resources/templates/`)
@@ -87,3 +93,10 @@
 1. Add the SVG file to `static/icon/lucide/`
 2. Add a semantic class in `icon.css` with the `url()` path
 3. Use the semantic class name in templates
+
+## Dependencies — License Listing
+
+- Whenever a new third-party library is added to `build.gradle.kts` (backend) or bundled as a static frontend asset, add a corresponding row to `src/main/resources/templates/oehub/licenses.pebble`.
+- Each row includes: library name (linked to its homepage/repo), the exact version in use, and a license badge (`license-badge badge-apache`, `badge-mit`, `badge-mpl`, etc., matching the library's actual license).
+- Keep rows in alphabetical order by library name.
+- When a dependency's version is bumped, update its version cell in the same row.

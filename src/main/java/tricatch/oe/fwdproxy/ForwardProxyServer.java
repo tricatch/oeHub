@@ -11,6 +11,8 @@ import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import org.apache.ibatis.session.SqlSessionFactory;
+import org.littleshoot.proxy.ActivityTrackerAdapter;
+import org.littleshoot.proxy.FullFlowContext;
 import org.littleshoot.proxy.HttpFilters;
 import org.littleshoot.proxy.HttpFiltersAdapter;
 import org.littleshoot.proxy.HttpFiltersSourceAdapter;
@@ -25,8 +27,11 @@ import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
+import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.proxy.service.ProxyConfService;
 import tricatch.oe.proxy.util.HtmlUtil;
+import tricatch.oe.proxy.util.LittleProxyInternals;
+import tricatch.oe.proxy.util.SelfLoopOwnerRegistry;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -110,6 +115,14 @@ public class ForwardProxyServer {
     private static HttpProxyServer server;
 
     private static final ConcurrentHashMap<String, Map<String, String>> userHostMap = new ConcurrentHashMap<>();
+
+    // userNo for each currently-authenticated userId, cached alongside userHostMap (same
+    // lifecycle - populated in refreshUserHosts(), which already has the full HubUser in hand at
+    // both call sites: successful proxy auth, and the admin hosts-profile page saving/selecting
+    // profiles). Lets proxyToServerConnectionSucceeded() below resolve a userNo for the
+    // self-loop-owner registration without a second DB lookup. userNo never changes for an
+    // account, so unlike the host map this never needs active invalidation.
+    private static final ConcurrentHashMap<String, Long> userNoMap = new ConcurrentHashMap<>();
 
     private static volatile String whitelistText = "";
     private static volatile List<String> whitelistPatterns = List.of();
@@ -238,6 +251,46 @@ public class ForwardProxyServer {
                         return REALM;
                     }
                 })
+                .plusActivityTracker(new ActivityTrackerAdapter() {
+                    // Self-loop registration lives entirely here rather than in HttpFilters.
+                    // proxyToServerConnectionSucceeded(), which looks purpose-built for this but
+                    // never fires for a raw CONNECT tunnel (see LittleProxyInternals' javadoc).
+                    // serverConnected() itself always fires, but its own FullFlowContext argument
+                    // carries a permanently-null server context for the same reason - so this
+                    // reaches past it via LittleProxyInternals for the live one instead.
+                    @Override
+                    public void serverConnected(FullFlowContext flowContext, InetSocketAddress serverAddress) {
+                        if (serverAddress == null || serverAddress.getPort() != ReverseProxyServer.HTTPS_PORT) return;
+
+                        var clientConnection = LittleProxyInternals.clientConnectionOf(flowContext);
+                        if (clientConnection == null) return;
+                        var clientDetails = clientConnection.getClientDetails();
+                        String userId = clientDetails == null ? null : clientDetails.getUserName();
+                        if (userId == null) return;
+
+                        // Same self-loop test as overrideFor()'s PROXY_SVR_PLACEHOLDER branch and the
+                        // literal-loopback-hosts-profile-entry case: this connection's destination is
+                        // either loopback outright, or exactly the address the browser used to reach
+                        // this forward proxy (the ${PROXY_SVR} case, which may not itself be loopback
+                        // when the browser reaches this server over the LAN).
+                        InetSocketAddress clientLocalAddr = clientConnection.getContext() != null
+                                && clientConnection.getContext().channel().localAddress() instanceof InetSocketAddress a
+                                ? a : null;
+                        boolean isSelfLoop = serverAddress.getAddress().isLoopbackAddress()
+                                || (clientLocalAddr != null
+                                    && clientLocalAddr.getAddress().getHostAddress().equals(serverAddress.getAddress().getHostAddress()));
+                        if (!isSelfLoop) return;
+
+                        Long userNo = userNoMap.get(userId);
+                        if (userNo == null) return;
+
+                        ChannelHandlerContext liveServerCtx = LittleProxyInternals.liveProxyToServerContext(clientConnection);
+                        if (liveServerCtx != null && liveServerCtx.channel().localAddress() instanceof InetSocketAddress local) {
+                            logger.debug("Self-loop registry register: port={} userNo={}", local.getPort(), userNo);
+                            SelfLoopOwnerRegistry.register(local.getPort(), userNo);
+                        }
+                    }
+                })
                 .withFiltersSource(new HttpFiltersSourceAdapter() {
                     @Override
                     public HttpFilters filterRequest(HttpRequest originalRequest, ChannelHandlerContext ctx) {
@@ -356,6 +409,7 @@ public class ForwardProxyServer {
                     .filter(HostsProf::isSelected)
                     .toList();
             userHostMap.put(user.getUserId(), mergeHosts(selected));
+            userNoMap.put(user.getUserId(), user.getUserNo());
         } catch (Exception e) {
             logger.warn("Failed to refresh forward-proxy host map for userId={}: {}", user.getUserId(), e.getMessage());
         }

@@ -367,6 +367,9 @@ public class OeHubApplication {
             // oeProxy CA certificate download (no auth required — browser needs to install)
             config.routes.get("/api/proxy/ca", proxy::apiDownloadCa);
 
+            // oeProxy "Use This IP" - claim the current browsing IP for IP-based owner fallback
+            config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
+
             // oeProxy REST API
             config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
             config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);

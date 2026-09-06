@@ -21,6 +21,8 @@ import tricatch.oe.proxy.server.VirtualPath;
 import tricatch.oe.proxy.exception.BadGatewayException;
 import tricatch.oe.proxy.exception.NotFoundVhostException;
 import tricatch.oe.proxy.util.HtmlUtil;
+import tricatch.oe.proxy.util.OidUtil;
+import tricatch.oe.proxy.util.SelfLoopOwnerRegistry;
 import tricatch.oe.proxy.util.SocketUtils;
 import tricatch.oe.proxy.util.SysUtil;
 
@@ -87,6 +89,20 @@ public class PassRequestExecutor implements Stopable {
     private String currentHost = null;
     private String currentMethod = null;
     private String oidHeader = null;
+
+    // Resolved at most once per accepted connection (not per request - a keep-alive connection
+    // can carry many requests) from SelfLoopOwnerRegistry, for a ${PROXY_SVR}/loopback forward-proxy
+    // self-loop connection that carries no X-OeHub-Oid header of its own (see SelfLoopOwnerRegistry).
+    // Deliberately NOT looked up right at connection-accept time: ForwardProxyServer.
+    // proxyToServerConnectionSucceeded() (which does the registration) races this connection's
+    // own accept() on the reverse-proxy side, and consistently loses it in practice (registration
+    // is a Netty-event-loop callback; accept() unblocks a waiting virtual thread directly). Looking
+    // it up here instead - only once the first request's headers have actually been read - is
+    // race-free by construction: the browser can't even start its TLS handshake (whose completion
+    // readHeaders() below waits on) until after the CONNECT response, which LittleProxy sends only
+    // once proxyToServerConnectionSucceeded() has already run and registered this port.
+    private String selfLoopOidHeader = null;
+    private boolean selfLoopChecked = false;
 
     public PassRequestExecutor(Socket clientSocket, int connectTimeout, int readTimeout){
 
@@ -206,6 +222,19 @@ public class PassRequestExecutor implements Stopable {
                 this.currentLocale = HtmlUtil.resolveLocale(cookieHeader, acceptLanguage);
 
                 this.oidHeader = requestHeaders.getHeaderValueAsString(HTTP.HEADER.OEHUB_OID);
+                // An explicit header (e.g. the oeOID extension) still wins - the self-loop
+                // registration only fills in for the common case where forward-proxied HTTPS
+                // traffic carries no header at all (see SelfLoopOwnerRegistry and the field
+                // comment on selfLoopOidHeader for why this is looked up here, not at accept time).
+                if ((this.oidHeader == null || this.oidHeader.isBlank()) && !this.selfLoopChecked) {
+                    this.selfLoopChecked = true;
+                    Long selfLoopUserNo = SelfLoopOwnerRegistry.take(this.clientSocket.getPort());
+                    this.selfLoopOidHeader = selfLoopUserNo != null ? OidUtil.encode(selfLoopUserNo) : null;
+                    logger.debug("{}, self-loop registry lookup: port={}, userNo={}", rid, this.clientSocket.getPort(), selfLoopUserNo);
+                }
+                if ((this.oidHeader == null || this.oidHeader.isBlank()) && this.selfLoopOidHeader != null) {
+                    this.oidHeader = this.selfLoopOidHeader;
+                }
                 this.virtualHosts = ReverseProxyServer.getVirtualHosts(this.clientId, this.oidHeader);
                 this.ownerOid = ReverseProxyServer.resolveOid(this.clientId, this.oidHeader);
 

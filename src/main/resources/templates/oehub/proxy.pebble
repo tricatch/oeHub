@@ -93,7 +93,15 @@
     <div class="d-none" id="configEmptyState">{{ msg['proxy.config.empty'] }}</div>
     <div id="cmMergedConfig"></div>
     <div class="proxy-routes-status">
-      <span class="oe-myip-badge">{% if oid is not empty %}OID: {{ oid }}{% else %}IP: {{ clientIp }}{% endif %}</span>
+      {% if oid is not empty %}<span class="oe-myip-badge">OID: {{ oid }}</span>{% endif %}
+      <span class="oe-myip-badge">IP: {{ clientIp }}</span>
+      {% if ipClaimedBySelf %}
+      <span class="oe-myip-badge" id="ipClaimStatus">{{ msg['proxy.ip.claimed.self'] }}</span>
+      {% elseif ipClaimedByUserId is not empty %}
+      <button class="oe-take-ip-btn oe-take-ip-btn-warn" id="btnTakeIp" title="{{ msg['tooltip.take.ip'] }}">{{ ipClaimedByUserId }} / {{ msg['proxy.take.ip.label'] }}</button>
+      {% else %}
+      <button class="oe-take-ip-btn" id="btnTakeIp" title="{{ msg['tooltip.take.ip'] }}">{{ msg['proxy.take.ip.label'] }}</button>
+      {% endif %}
     </div>
   </div>
 
@@ -558,6 +566,22 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     });
     if (!res.ok) showToast(MSG['toast.vhost.apply.failed']);
   }
+
+  // ── Use This IP (claims the current browsing IP for 8h - see ReverseProxyServer.resolveOid) ──
+  // No button in the DOM at all once already claimed by self (see proxy.pebble's ipClaimedBySelf
+  // branch), so this simply doesn't bind in that case.
+  document.getElementById('btnTakeIp')?.addEventListener('click', async (e) => {
+    const res = await fetch('/api/proxy/take-ip', {method: 'POST'});
+    if (!res.ok) { showToast(MSG['toast.ip.claim.failed']); return; }
+    // Claiming always wins the IP for this account - swap the button for the same "in use by
+    // me" status a fresh page load would now render, without an actual reload.
+    const status = document.createElement('span');
+    status.className = 'oe-myip-badge';
+    status.id = 'ipClaimStatus';
+    status.textContent = MSG['proxy.ip.claimed.self'];
+    e.target.replaceWith(status);
+    showToast(MSG['toast.ip.claimed']);
+  });
 
   // ── Save merged routes as a new vhost profile ───────────────
   document.getElementById('btnSaveMergedVhost').addEventListener('click', async () => {

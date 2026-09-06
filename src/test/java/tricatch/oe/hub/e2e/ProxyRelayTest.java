@@ -210,6 +210,13 @@ class ProxyRelayTest {
         // ReverseProxyServer (see ProxyController.apiToggleSelected -> applyMergedConfig()).
         var selectResponse = patchJson("/api/proxy/vhosts/" + vhostId + "/selected", null);
         assertThat(selectResponse.statusCode()).isEqualTo(200);
+
+        // ReverseProxyServer.resolveOid() has no loopback/sole-account shortcut - a raw TLS
+        // client (no X-OeHub-Oid header, see openRelaySocket()) is only ever attributed to this
+        // account because this test explicitly claims 127.0.0.1 via ClaimedIpRegistry first,
+        // exactly like clicking "Use This IP" on the oeProxy page would.
+        var takeIpResponse = postJson("/api/proxy/take-ip", null);
+        assertThat(takeIpResponse.statusCode()).isEqualTo(200);
     }
 
     @Test

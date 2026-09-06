@@ -44,12 +44,28 @@ public class ProxyController {
         var hubUser = AuthController.currentUser(ctx);
         var clientIp = ctx.ip();
         var localSvrOverride = confService.get("local_svr", hubUser.getUserNo());
+        var claimedOid = ReverseProxyServer.getClaimedOid(clientIp);
+        var claimedBySelf = claimedOid != null && claimedOid.equals(hubUser.getOid());
+        var claimedByUserId = (claimedOid != null && !claimedBySelf) ? ReverseProxyServer.getUserIdForOid(claimedOid) : null;
         var model = new HashMap<String, Object>();
         model.put("user", hubUser);
         model.put("clientIp", clientIp);
         model.put("localSvr", localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp);
         model.put("oid", hubUser.getOid());
+        model.put("ipClaimedBySelf", claimedBySelf);
+        model.put("ipClaimedByUserId", claimedByUserId);
         ctx.render("templates/oehub/proxy.pebble", model);
+    }
+
+    // "Use This IP" on the oeProxy page - lets an owner explicitly claim their current browsing
+    // IP for the reverse proxy's IP-based fallback (see ReverseProxyServer.resolveOid()), instead
+    // of relying only on the X-OeHub-Oid header. The IP is read server-side from the request
+    // itself (ctx.ip()), never from client input, so a caller cannot claim an IP other than the
+    // one they're actually connecting from.
+    public void apiTakeIp(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        ReverseProxyServer.claimIp(ctx.ip(), hubUser.getUserNo());
+        ctx.json(Map.of("ip", ctx.ip(), "ttlHours", ReverseProxyServer.claimedIpTtlHours()));
     }
 
     public void showMonitor(Context ctx) {
@@ -395,9 +411,9 @@ public class ProxyController {
         try {
             if (vhostYaml != null && !vhostYaml.isBlank()) {
                 var localSvr = resolveLocalSvr(confService, userNo, routeIp, localSvrOverride);
-                ReverseProxyServer.setVirtualHosts(routeIp, userNo, substituteLocalSvr(vhostYaml, localSvr));
+                ReverseProxyServer.setVirtualHosts(userNo, substituteLocalSvr(vhostYaml, localSvr));
             } else {
-                ReverseProxyServer.clearVirtualHosts(routeIp, userNo);
+                ReverseProxyServer.clearVirtualHosts(userNo);
             }
             confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "");
         } catch (Exception e) {

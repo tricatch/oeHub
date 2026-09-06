@@ -16,5 +16,8 @@
     <logger name="com.zaxxer.hikari" level="INFO"/>
     <logger name="org.mybatis" level="INFO"/>
     <logger name="com.h2database" level="INFO"/>
+    <!-- Especially chatty during CONNECT tunneling: every relayed chunk logs a
+         Reading/Retaining/Writing/Wrote line per direction. -->
+    <logger name="org.littleshoot.proxy" level="INFO"/>
 
 </configuration>
