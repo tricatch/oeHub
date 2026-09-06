@@ -151,6 +151,8 @@ public class DatabaseConfig {
                     updated_at  TIMESTAMP    NOT NULL
                 )
                 """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_ua_user_no ON HOSTS_UA(user_no)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_URL (
                     url_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
@@ -162,6 +164,8 @@ public class DatabaseConfig {
                     updated_at  TIMESTAMP    NOT NULL
                 )
                 """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_url_user_no ON HOSTS_URL(user_no)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
                     vhost_id          VARCHAR(32)    NOT NULL PRIMARY KEY,
