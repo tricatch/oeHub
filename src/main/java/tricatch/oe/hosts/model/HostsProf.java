@@ -11,6 +11,15 @@ public class HostsProf extends Auditable {
     private int sortOrder;
     private String visibility;
     private String parentId;
+    // DEK wrapped by the row's KEK (personal key for 'private', workspace key for
+    // 'collabo'/'public') - null under standalone, where hostsContent stays plaintext
+    // (e2eEncryption design doc §1's oe.mode=group-only scope, corrected during implementation).
+    private String wrappedContentKey;
+    // Snapshot ciphertext for the fully-public, no-login-required link (e2eEncryption design doc
+    // §6's last item): encrypted with its OWN, separate DEK that's never wrapped by anything and
+    // never stored anywhere - it lives only in the share URL's fragment. Null until a link has
+    // been issued; issuing/revoking never touches hostsContent/wrappedContentKey. 'public' only.
+    private String linkContent;
     private String userId;
     private String updatedByUserId;
 
@@ -37,6 +46,12 @@ public class HostsProf extends Auditable {
 
     public String getParentId() { return parentId; }
     public void setParentId(String parentId) { this.parentId = parentId; }
+
+    public String getWrappedContentKey() { return wrappedContentKey; }
+    public void setWrappedContentKey(String wrappedContentKey) { this.wrappedContentKey = wrappedContentKey; }
+
+    public String getLinkContent() { return linkContent; }
+    public void setLinkContent(String linkContent) { this.linkContent = linkContent; }
 
     public String getUserId() {
         return userId;

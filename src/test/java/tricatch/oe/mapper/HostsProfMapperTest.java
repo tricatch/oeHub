@@ -127,8 +127,48 @@ class HostsProfMapperTest extends MapperTestBase {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = newHosts(user.getUserNo(), "profile", "content");
             mapper.insert(hosts);
-            mapper.updateVisibility(hosts.getHostsId(), user.getUserNo(), "private", LocalDateTime.now());
+            mapper.updateVisibility(hosts.getHostsId(), user.getUserNo(), "private", null, LocalDateTime.now());
             assertThat(mapper.findByHostsId(hosts.getHostsId()).getVisibility()).isEqualTo("private");
+        }
+    }
+
+    @Test
+    void wrappedContentKey_roundTripsThroughInsertAndUpdateVisibility() {
+        // e2eEncryption design doc §3/§7 - the DEK wrap travels with the row and is re-wrapped
+        // (not re-derived) on a visibility flip.
+        var user = insertUser("wrapKeyUser");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var hosts = newHosts(user.getUserNo(), "wrapped profile", "content");
+            hosts.setWrappedContentKey("wrapped-with-workspace-key");
+            mapper.insert(hosts);
+            assertThat(mapper.findByHostsId(hosts.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-with-workspace-key");
+
+            mapper.updateVisibility(hosts.getHostsId(), user.getUserNo(), "private", "wrapped-with-personal-key", LocalDateTime.now());
+            assertThat(mapper.findByHostsId(hosts.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-with-personal-key");
+        }
+    }
+
+    @Test
+    void wrappedContentKey_resolvesThroughCollaboParentLikeContentDoes() {
+        // findByHostsId/findByUserNo already COALESCE hosts_content from the parent for a collabo
+        // reference row - wrapped_content_key must follow the identical pattern, since the
+        // reference row itself never holds its own key (HostsProfMapper.setAsCollaboRef nulls it).
+        var owner = insertUser("collaboKeyOwner");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var parent = newHosts(-owner.getUserNo(), "shared profile", "content");
+            parent.setVisibility("collabo");
+            parent.setWrappedContentKey("wrapped-with-workspace-key");
+            mapper.insert(parent);
+
+            var ref = newHosts(owner.getUserNo(), "shared profile ref", "");
+            ref.setVisibility("collabo");
+            ref.setParentId(parent.getHostsId());
+            ref.setWrappedContentKey(null);
+            mapper.insert(ref);
+
+            assertThat(mapper.findByHostsId(ref.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-with-workspace-key");
         }
     }
 
@@ -288,7 +328,7 @@ class HostsProfMapperTest extends MapperTestBase {
             pub.setVisibility("public");
             mapper.insert(pub);
 
-            var results = mapper.searchOthers(searcher.getUserNo(), "public");
+            var results = mapper.searchOthers(searcher.getUserNo(), TEST_WS_NO, "public");
             assertThat(results).hasSize(1);
             assertThat(results.get(0).getHostsProfile()).isEqualTo("public hosts");
         }
@@ -307,7 +347,7 @@ class HostsProfMapperTest extends MapperTestBase {
             mapper.insert(parent);
 
             // searcher가 아직 참여하지 않은 상태 → 검색에 노출
-            var before = mapper.searchOthers(searcher.getUserNo(), "team");
+            var before = mapper.searchOthers(searcher.getUserNo(), TEST_WS_NO, "team");
             assertThat(before).hasSize(1);
             assertThat(before.get(0).getHostsProfile()).isEqualTo("team hosts");
 
@@ -317,8 +357,98 @@ class HostsProfMapperTest extends MapperTestBase {
             ref.setParentId(parent.getHostsId());
             mapper.insert(ref);
 
-            var after = mapper.searchOthers(searcher.getUserNo(), "team");
+            var after = mapper.searchOthers(searcher.getUserNo(), TEST_WS_NO, "team");
             assertThat(after).isEmpty();
+        }
+    }
+
+    @Test
+    void searchOthers_excludesOtherWorkspaces() {
+        var searcher = insertUser("uma");
+        try (var session = FACTORY.openSession(true)) {
+            var wsMapper = session.getMapper(tricatch.oe.hub.mapper.WorkspaceMapper.class);
+            var otherWs = new tricatch.oe.hub.model.Workspace();
+            otherWs.setWsName("Other Workspace " + newId());
+            otherWs.setStatus("active");
+            var now = LocalDateTime.now();
+            otherWs.setCreateAt(now);
+            otherWs.setUpdatedAt(now);
+            wsMapper.insert(otherWs);
+
+            var otherUser = new tricatch.oe.hub.model.HubUser();
+            otherUser.setUserId("outsider" + newId().substring(0, 8));
+            otherUser.setPassword("hashed");
+            otherUser.setRole("usr");
+            otherUser.setWsNo(otherWs.getWsNo());
+            otherUser.setCreateAt(now);
+            otherUser.setUpdatedAt(now);
+            session.getMapper(tricatch.oe.hub.mapper.HubUserMapper.class).insert(otherUser);
+
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var pub = newHosts(otherUser.getUserNo(), "outsider public hosts", "content");
+            pub.setVisibility("public");
+            mapper.insert(pub);
+
+            // Same keyword search from a user in TEST_WS_NO must not surface another workspace's
+            // public profile, even though visibility='public' (cloudGroupService design doc §2.4).
+            var results = mapper.searchOthers(searcher.getUserNo(), TEST_WS_NO, "outsider");
+            assertThat(results).isEmpty();
+        }
+    }
+
+    // Workspace-key rotation support (e2eEncryption design doc §7).
+    @Test
+    void findEncryptedRowsByWsNo_returnsOnlyEncryptedPublicOrCollaboRowsInThatWorkspace() {
+        var alice = insertUser("rotAlice");
+        var bob = insertUser("rotBob");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+
+            var alicePublic = newHosts(alice.getUserNo(), "alice public", "content");
+            alicePublic.setVisibility("public");
+            alicePublic.setWrappedContentKey("wrapped-alice");
+            mapper.insert(alicePublic);
+
+            // 'private' must never be included - rotation only touches workspace-key-wrapped rows.
+            var alicePrivate = newHosts(alice.getUserNo(), "alice private", "content");
+            alicePrivate.setVisibility("private");
+            alicePrivate.setWrappedContentKey("wrapped-alice-private");
+            mapper.insert(alicePrivate);
+
+            // Unencrypted (standalone-style) row - wrappedContentKey left null.
+            var bobPlain = newHosts(bob.getUserNo(), "bob plain", "content");
+            bobPlain.setVisibility("public");
+            mapper.insert(bobPlain);
+
+            var bobCollaboParent = newHosts(-bob.getUserNo(), "bob collabo parent", "content");
+            bobCollaboParent.setVisibility("collabo");
+            bobCollaboParent.setWrappedContentKey("wrapped-bob-collabo");
+            mapper.insert(bobCollaboParent);
+
+            var ids = mapper.findEncryptedRowsByWsNo(TEST_WS_NO).stream()
+                .map(HostsProf::getHostsId).collect(java.util.stream.Collectors.toSet());
+            assertThat(ids).contains(alicePublic.getHostsId(), bobCollaboParent.getHostsId());
+            assertThat(ids).doesNotContain(alicePrivate.getHostsId(), bobPlain.getHostsId());
+        }
+    }
+
+    @Test
+    void updateWrappedContentKeyForRotation_updatesInPlace_andIsScopedToWorkspace() {
+        var alice = insertUser("rotAlice2");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var pub = newHosts(alice.getUserNo(), "alice public 2", "content");
+            pub.setVisibility("public");
+            pub.setWrappedContentKey("wrapped-old");
+            mapper.insert(pub);
+
+            mapper.updateWrappedContentKeyForRotation(pub.getHostsId(), TEST_WS_NO, "wrapped-new");
+            assertThat(mapper.findByHostsId(pub.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-new");
+
+            // A wsNo that doesn't own this row must be a no-op - proves the EXISTS/wsNo scope
+            // actually guards the write, not just filters the read side.
+            mapper.updateWrappedContentKeyForRotation(pub.getHostsId(), TEST_WS_NO + 999999, "wrapped-hacked");
+            assertThat(mapper.findByHostsId(pub.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-new");
         }
     }
 }

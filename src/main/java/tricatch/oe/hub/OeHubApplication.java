@@ -89,12 +89,17 @@ public class OeHubApplication {
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
+        // oe.mode=group disables oeProxy entirely (cloudGroupService design doc §2.6) - the
+        // controller itself is never constructed, not just unrouted, so no CA/proxy-config file
+        // I/O can happen from a code path that's supposed to not exist in this mode.
+        boolean groupMode = AppHome.isGroupMode();
+
         var jwtService  = new JwtService(sqlSessionFactory);
         var settings    = new SettingsController(sqlSessionFactory, objectMapper);
         var auth        = new AuthController(sqlSessionFactory, jwtService);
         var setup       = new SetupController(sqlSessionFactory, settings, objectMapper, auth);
         var hosts       = new HostsController(sqlSessionFactory, settings, objectMapper);
-        var proxy       = new ProxyController(sqlSessionFactory, objectMapper);
+        var proxy       = groupMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
         var adminUser   = new AdminUserController(sqlSessionFactory);
         var adminUa     = new AdminHostsUaController(sqlSessionFactory, objectMapper);
@@ -187,16 +192,16 @@ public class OeHubApplication {
             };
             config.routes.before("/oehub/settings", settingsAdminOnly);
             config.routes.before("/oehub/settings/*", settingsAdminOnly);
+            // User management (member list, pending approval) is workspace-scoped: a workspace's
+            // own ws_adm needs it, not just the instance 'adm' - see AuthController.isWorkspaceAdmin.
             config.routes.before("/oehub/admin/*", ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
+                if (!AuthController.isWorkspaceAdmin(AuthController.currentUser(ctx))) {
                     ctx.status(403).result("Forbidden");
                     ctx.skipRemainingHandlers();
                 }
             });
             config.routes.before("/api/admin/*", ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
+                if (!AuthController.isWorkspaceAdmin(AuthController.currentUser(ctx))) {
                     ctx.status(403).result("Forbidden");
                     ctx.skipRemainingHandlers();
                 }
@@ -254,8 +259,12 @@ public class OeHubApplication {
 
             config.routes.get("/setup", setup::showSetup);
             config.routes.post("/setup", setup::processSetup);
-            config.routes.post("/setup/ca/generate", setup::generateCa);
-            config.routes.post("/setup/ca/import",   setup::importCa);
+            if (!groupMode) {
+                // CA setup only makes sense for oeProxy, which doesn't exist in group mode -
+                // cloudGroupService design doc §2.6.
+                config.routes.post("/setup/ca/generate", setup::generateCa);
+                config.routes.post("/setup/ca/import",   setup::importCa);
+            }
             config.routes.get("/setup/hosts-url",              setup::apiSetupUrlList);
             config.routes.post("/setup/hosts-url",             setup::apiSetupUrlCreate);
             config.routes.patch("/setup/hosts-url/{urlId}",    setup::apiSetupUrlUpdate);
@@ -290,10 +299,14 @@ public class OeHubApplication {
             // Admin settings
             config.routes.get("/oehub/settings",              settings::showSettings);
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
-            config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
-            config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
-            config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
-            config.routes.post("/oehub/settings/ca/import",   settings::importCa);
+            if (!groupMode) {
+                // IP identifier / forward-proxy whitelist / CA are all oeProxy-only concerns -
+                // meaningless (and their backing servers non-existent) under group mode.
+                config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
+                config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
+                config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
+                config.routes.post("/oehub/settings/ca/import",   settings::importCa);
+            }
 
             // H2 console (adm only)
             config.routes.get("/oehub/h2", ctx ->
@@ -311,6 +324,8 @@ public class OeHubApplication {
             config.routes.patch("/api/hosts/{hostsId}/name",       hosts::apiUpdateName);
             config.routes.patch("/api/hosts/{hostsId}/selected",   hosts::apiToggleSelected);
             config.routes.patch("/api/hosts/{hostsId}/visibility",  hosts::apiUpdateVisibility);
+            config.routes.get("/api/hosts/{hostsId}/view",         hosts::apiGetForView);
+            config.routes.post("/api/hosts/{hostsId}/link",        hosts::apiSetLink);
             config.routes.post("/api/hosts/{hostsId}/copy",        hosts::apiCopy);
             config.routes.post("/api/hosts/{hostsId}/register",    hosts::apiRegister);
             config.routes.delete("/api/hosts/{hostsId}",           hosts::apiDelete);
@@ -338,6 +353,9 @@ public class OeHubApplication {
             // Share (public, no auth)
             config.routes.get("/share/{hostsId}/oelink",            hosts::apiShare);
             config.routes.get("/share/{hostsId}/text",             hosts::apiShareText);
+            // Fully-public link (public, no auth, no workspace membership - e2eEncryption design
+            // doc §6's last item) - a distinct trust boundary from /share above.
+            config.routes.get("/link/{hostsId}/oelink",             hosts::apiPublicLink);
 
             // My info
             config.routes.get("/oehub/my/info", ctx -> {
@@ -357,45 +375,56 @@ public class OeHubApplication {
                 ctx.render("templates/oehub/licenses.pebble", model);
             });
 
-            // oeProxy UI
-            config.routes.get("/oehub/proxy", proxy::showProxy);
-            config.routes.get("/oehub/proxy/monitor", proxy::showMonitor);
+            if (!groupMode) {
+                // oeProxy UI
+                config.routes.get("/oehub/proxy", proxy::showProxy);
+                config.routes.get("/oehub/proxy/monitor", proxy::showMonitor);
 
-            // oeProxy SSE monitor event stream
-            config.routes.get("/api/proxy/monitor/event", proxy::monitorEvent);
+                // oeProxy SSE monitor event stream
+                config.routes.get("/api/proxy/monitor/event", proxy::monitorEvent);
 
-            // oeProxy CA certificate download (no auth required — browser needs to install)
-            config.routes.get("/api/proxy/ca", proxy::apiDownloadCa);
+                // oeProxy CA certificate download (no auth required — browser needs to install)
+                config.routes.get("/api/proxy/ca", proxy::apiDownloadCa);
 
-            // oeProxy "Use This IP" - claim the current browsing IP for IP-based owner fallback
-            config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
+                // oeProxy "Use This IP" - claim the current browsing IP for IP-based owner fallback
+                config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
 
-            // oeProxy REST API
-            config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
-            config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);
-            config.routes.delete("/api/proxy/vhosts",                       proxy::apiDeleteAll);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/content",      proxy::apiUpdateContent);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/name",         proxy::apiUpdateName);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/selected",     proxy::apiToggleSelected);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/visibility",   proxy::apiUpdateVisibility);
-            config.routes.post("/api/proxy/vhosts/{vhostId}/copy",          proxy::apiCopy);
-            config.routes.post("/api/proxy/vhosts/{vhostId}/register",      proxy::apiRegister);
-            config.routes.delete("/api/proxy/vhosts/{vhostId}",             proxy::apiDelete);
-            config.routes.get("/api/proxy/vhosts/search",                   proxy::apiSearch);
-            config.routes.put("/api/proxy/vhosts/order",                    proxy::apiReorder);
-            config.routes.get("/api/proxy/vhosts/export",                   proxy::apiExport);
-            config.routes.post("/api/proxy/vhosts/import",                  proxy::apiImport);
+                // oeProxy REST API
+                config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
+                config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);
+                config.routes.delete("/api/proxy/vhosts",                       proxy::apiDeleteAll);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/content",      proxy::apiUpdateContent);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/name",         proxy::apiUpdateName);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/selected",     proxy::apiToggleSelected);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/visibility",   proxy::apiUpdateVisibility);
+                config.routes.post("/api/proxy/vhosts/{vhostId}/copy",          proxy::apiCopy);
+                config.routes.post("/api/proxy/vhosts/{vhostId}/register",      proxy::apiRegister);
+                config.routes.delete("/api/proxy/vhosts/{vhostId}",             proxy::apiDelete);
+                config.routes.get("/api/proxy/vhosts/search",                   proxy::apiSearch);
+                config.routes.put("/api/proxy/vhosts/order",                    proxy::apiReorder);
+                config.routes.get("/api/proxy/vhosts/export",                   proxy::apiExport);
+                config.routes.post("/api/proxy/vhosts/import",                  proxy::apiImport);
+            }
 
             // User backup / restore
             config.routes.get("/api/user/backup",   userCtrl::apiBackup);
             config.routes.post("/api/user/restore",  userCtrl::apiRestore);
             config.routes.post("/api/user/change-password", userCtrl::apiChangePassword);
+            config.routes.get("/api/user/crypto-keys", userCtrl::apiMyCryptoKeys);
+            config.routes.post("/api/user/recovery-key", userCtrl::apiReissueRecoveryKey);
 
             // Admin: user management
             config.routes.get("/oehub/admin/users",               adminUser::showUsers);
             config.routes.get("/api/admin/users",                 adminUser::apiSearch);
+            config.routes.get("/api/admin/users/pending",         adminUser::apiListPending);
+            config.routes.post("/api/admin/users/{userNo}/approve", adminUser::apiApprovePending);
+            config.routes.post("/api/admin/users/{userNo}/reject",  adminUser::apiRejectPending);
+            config.routes.get("/api/admin/invites",               adminUser::apiListInvites);
+            config.routes.post("/api/admin/invites",              adminUser::apiCreateInvite);
             config.routes.patch("/api/admin/users/{userNo}/role",  adminUser::apiSetRole);
             config.routes.post("/api/admin/users/{userNo}/reset-password", adminUser::apiResetPassword);
+            config.routes.get("/api/admin/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
+            config.routes.post("/api/admin/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
             config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
 
             // Admin: hosts user-agent presets
@@ -409,12 +438,14 @@ public class OeHubApplication {
             config.routes.patch("/api/admin/hosts/url/{urlId}",   adminUrl::apiUpdate);
             config.routes.delete("/api/admin/hosts/url/{urlId}",  adminUrl::apiDelete);
             config.routes.put("/api/admin/hosts/url/order",       adminUrl::apiReorder);
-            config.routes.get("/api/proxy/conf/{name}",                     proxy::apiConfGet);
-            config.routes.put("/api/proxy/conf/{name}",                     proxy::apiConfSet);
+            if (!groupMode) {
+                config.routes.get("/api/proxy/conf/{name}",                     proxy::apiConfGet);
+                config.routes.put("/api/proxy/conf/{name}",                     proxy::apiConfSet);
 
-            // Proxy share (public, no auth)
-            config.routes.get("/share/proxy/{vhostId}/view",                proxy::apiShare);
-            config.routes.get("/share/proxy/{vhostId}/text",                proxy::apiShareText);
+                // Proxy share (public, no auth)
+                config.routes.get("/share/proxy/{vhostId}/view",                proxy::apiShare);
+                config.routes.get("/share/proxy/{vhostId}/text",                proxy::apiShareText);
+            }
 
             config.routes.exception(Exception.class, (e, ctx) -> {
                 // Full detail (including e.getMessage(), which can contain internal paths or
@@ -449,6 +480,8 @@ public class OeHubApplication {
             enriched.put("msg", messages.asMap());
             enriched.put("msgJson", messages.toJson());
             enriched.put("currentLocale", locale);
+            // Templates hide Proxy nav/UI entirely under oe.mode=group - see AppHome.isGroupMode.
+            enriched.put("groupMode", AppHome.isGroupMode());
             // Set by the CSRF before-filter on this same request; read from the Context attribute
             // (not ctx.cookie()) because a freshly-generated token isn't echoed back in the
             // request's own Cookie header until the browser's next request.
@@ -489,24 +522,30 @@ public class OeHubApplication {
         ForwardProxyServer.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
-        try {
-            ReverseProxyServer.startSslPassServer();
-        } catch (tricatch.oe.proxy.exception.NotReadyCaException e) {
-            logger.warn("SSL proxy not started: CA certificate not configured yet. ({})", e.getMessage());
-        } catch (Exception e) {
-            logger.error("Failed to start SSL proxy server: " + e.getMessage(), e);
-        }
+        // oe.mode=group never starts any of the network-level Proxy servers - see
+        // cloudGroupService design doc §2.6. ReverseProxyServer.init()/ForwardProxyServer.init()
+        // just above are cheap, side-effect-light state setup (OID secret, whitelist load) left
+        // unconditional rather than touching the restricted tricatch.oe.proxy package further.
+        if (!AppHome.isGroupMode()) {
+            try {
+                ReverseProxyServer.startSslPassServer();
+            } catch (tricatch.oe.proxy.exception.NotReadyCaException e) {
+                logger.warn("SSL proxy not started: CA certificate not configured yet. ({})", e.getMessage());
+            } catch (Exception e) {
+                logger.error("Failed to start SSL proxy server: " + e.getMessage(), e);
+            }
 
-        try {
-            ForwardProxyServer.start();
-        } catch (Exception e) {
-            logger.error("Failed to start forward proxy server: " + e.getMessage(), e);
-        }
+            try {
+                ForwardProxyServer.start();
+            } catch (Exception e) {
+                logger.error("Failed to start forward proxy server: " + e.getMessage(), e);
+            }
 
-        try {
-            BlockedPageServer.start(SettingsController.caCertPath(), SettingsController.caKeyPath());
-        } catch (Exception e) {
-            logger.error("Failed to start forward-proxy blocked-page server: " + e.getMessage(), e);
+            try {
+                BlockedPageServer.start(SettingsController.caCertPath(), SettingsController.caKeyPath());
+            } catch (Exception e) {
+                logger.error("Failed to start forward-proxy blocked-page server: " + e.getMessage(), e);
+            }
         }
     }
 

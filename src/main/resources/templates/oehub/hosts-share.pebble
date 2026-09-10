@@ -178,9 +178,41 @@
   </div>
 </div>
 
+<script src="/js/crypto.js"></script>
+<script src="/js/session-keys.js"></script>
+<script src="/js/content-crypto.js"></script>
 <script>
-(function() {
-  const content = {{ contentJson | raw }};
+window.OE_GROUP_MODE = {{ groupMode ? 'true' : 'false' }};
+(async function() {
+  let content;
+  try {
+    {% if linkMode %}
+    // Fully-public link (e2eEncryption design doc §6's last item): the raw (never-wrapped) DEK
+    // travels only in this URL's fragment - the server never saw it and never will, since
+    // fragments are never sent in any HTTP request. Missing/invalid key -> decrypt() throws below,
+    // same error path as every other failure mode here.
+    var rawKeyB64url = new URLSearchParams(location.hash.replace(/^#/, '')).get('key') || '';
+    // The key was base64url-encoded for the URL (base64's own '+'/'/' aren't URL-safe) - undo
+    // that back to standard base64 (incl. padding) before base64ToBuf, which expects atob()'s
+    // standard alphabet only (same conversion parseRecoveryDisplayCode does for the same reason).
+    var rawKeyB64 = rawKeyB64url.replace(/-/g, '+').replace(/_/g, '/');
+    rawKeyB64 += '='.repeat((4 - (rawKeyB64.length % 4)) % 4);
+    var linkKey = await crypto.subtle.importKey(
+      'raw', OE_CRYPTO.base64ToBuf(rawKeyB64), { name: 'AES-GCM' }, false, ['decrypt']);
+    content = await OE_CRYPTO.decryptContent(JSON.parse({{ contentJson | raw }}), linkKey);
+    {% else %}
+    // Encrypted rows (oe.mode=group, e2eEncryption design doc §1/§6/§9): decrypt() resolves the
+    // ciphertext with the viewer's own cached workspace key (apiShare already required them to be
+    // logged in to this same workspace) and passes plaintext straight through when the row isn't
+    // encrypted (standalone), so the rest of this script is unchanged either way.
+    content = await OE_CONTENT_CRYPTO.decrypt({{ wrappedContentKeyJson | raw }}, {{ contentJson | raw }}, '{{ hosts.visibility }}');
+    {% endif %}
+  } catch (err) {
+    console.error('Failed to decrypt shared content:', err);
+    document.getElementById('rawContent').textContent = MSG['share.error.decrypt.failed'];
+    document.getElementById('schemePreview').textContent = MSG['share.error.decrypt.failed'];
+    return;
+  }
   const PROXY_SVR = '{{ proxyIp }}';
   const displayContent = content.split('${PROXY_SVR}').join(PROXY_SVR);
   let baseUdd = '${USERHOME}/oe-chrome';

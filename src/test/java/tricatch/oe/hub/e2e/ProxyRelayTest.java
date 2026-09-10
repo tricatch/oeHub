@@ -171,8 +171,15 @@ class ProxyRelayTest {
             .map(HttpCookie::getValue)
             .findFirst().orElseThrow(() -> new IllegalStateException("oe_csrf cookie not set"));
 
+        // publicKey/wrappedPrivateKey/wrappedPrivateKeyRecovery/founderWrappedWsKey are normally
+        // generated client-side by setup.pebble's JS (e2eEncryption design doc §3/§4) - this test
+        // posts raw HTTP with no browser/WebCrypto involved, and doesn't exercise encryption at
+        // all, so placeholder opaque strings are enough to satisfy processSetup's presence check.
         var setupResponse = postForm("/setup", Map.of(
-            "userId", ADMIN_ID, "password", ADMIN_PW, "confirm", ADMIN_PW, "_csrf", csrfToken));
+            "userId", ADMIN_ID, "password", ADMIN_PW, "confirm", ADMIN_PW, "_csrf", csrfToken,
+            "publicKey", "test-public-key", "wrappedPrivateKey", "test-wrapped-private-key",
+            "wrappedPrivateKeyRecovery", "test-wrapped-private-key-recovery",
+            "founderWrappedWsKey", "test-founder-wrapped-ws-key"));
         assertThat(setupResponse.statusCode()).isEqualTo(302);
 
         var caResponse = postForm("/setup/ca/generate", Map.of(

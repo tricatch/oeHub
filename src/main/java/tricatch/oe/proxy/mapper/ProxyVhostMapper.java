@@ -139,6 +139,18 @@ public interface ProxyVhostMapper {
     @Delete("DELETE FROM PROXY_VHOST WHERE user_no = #{userNo}")
     void deleteByUserNo(Long userNo);
 
+    // 'public' rows survive account deletion (cloudGroupService design doc §2.5 orphan handling)
+    // - fetched before the delete above so the caller can reassign them to ws_system first.
+    @Select("SELECT vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order, visibility, parent_id, created_by, updated_by, create_at, updated_at FROM PROXY_VHOST WHERE user_no = #{userNo} AND visibility = 'public'")
+    List<ProxyVhost> findPublicByUserNo(Long userNo);
+
+    // created_by is left untouched - it's the immutable "who actually made this" audit trail
+    // (CLAUDE.md's created_by/updated_by rule); only current ownership (user_no) and the
+    // vhost_profile name (to dodge a uq_proxy_vhost_user_profile collision under the new owner)
+    // move to ws_system.
+    @Update("UPDATE PROXY_VHOST SET user_no = #{newOwnerUserNo}, vhost_profile = #{newProfileName}, updated_by = #{newOwnerUserNo}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId}")
+    void reassignOwner(@Param("vhostId") String vhostId, @Param("newOwnerUserNo") Long newOwnerUserNo, @Param("newProfileName") String newProfileName, @Param("updatedAt") java.time.LocalDateTime updatedAt);
+
     @Delete("DELETE FROM PROXY_VHOST WHERE user_no = -#{userNo} AND vhost_id NOT IN (SELECT DISTINCT parent_id FROM PROXY_VHOST WHERE parent_id IS NOT NULL)")
     void deleteOrphanedParentsByCreator(Long userNo);
 

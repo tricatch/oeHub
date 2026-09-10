@@ -39,6 +39,7 @@ class ForwardProxyServerTest extends MapperTestBase {
         user.setUserId(userId);
         user.setPassword(PasswordUtil.hash(rawPassword));
         user.setRole("usr");
+        user.setWsNo(TEST_WS_NO);
         user.setCreateAt(now);
         user.setUpdatedAt(now);
         try (var session = FACTORY.openSession(true)) {

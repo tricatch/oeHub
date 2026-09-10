@@ -50,6 +50,9 @@
       <button class="oe-nav-action-btn" id="btnCopyShareLink" title="{{ msg['tooltip.open.plain'] }}" disabled>
         <span class="oe-icon oe-icon-content" style="width:15px;height:15px"></span>
       </button>
+      <button class="oe-nav-action-btn d-none" id="btnPublicLink" title="{{ msg['tooltip.public.link'] }}" disabled>
+        <span class="oe-icon oe-icon-public-link" style="width:15px;height:15px"></span>
+      </button>
       <button class="oe-nav-action-btn" id="btnDownload" title="{{ msg['tooltip.export'] }}" disabled>
         <span class="oe-icon oe-icon-download" style="width:15px;height:15px"></span>
       </button>
@@ -312,6 +315,31 @@
   </div>
 </div>
 
+<!-- Public (no-login) link modal - e2eEncryption design doc §6's last item -->
+<div class="modal fade" id="publicLinkModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.public.link.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small mb-3">{{ msg['public.link.warning'] }}</div>
+        <div class="input-group mb-2 d-none" id="publicLinkResultWrap">
+          <input type="text" class="form-control setup-mono" id="publicLinkValue" readonly>
+          <button type="button" class="btn btn-sm btn-oe-secondary" id="btnCopyPublicLink" title="{{ msg['ui.copy.clipboard'] }}">
+            <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" id="btnRevokePublicLink">{{ msg['btn.revoke'] }}</button>
+        <button type="button" class="oe-modal-btn" id="btnGeneratePublicLink">{{ msg['btn.generate'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="importFileHidden" accept=".json" style="display:none">
 
 <script>
@@ -327,6 +355,67 @@ const FWDPROXY_PORT = 36980;
   let defaultUserDataDir = '';
   const isWin = navigator.userAgent.includes('Win');
   const isMac = navigator.userAgent.includes('Mac');
+
+  // ── Content encryption (group mode only - e2eEncryption design doc §1/§6) ──────────
+  // hostsContent is decrypted in place right after it's fetched, so every other function in
+  // this file (editor display, merge/launch-flag building, search-result rendering) keeps
+  // working against plaintext exactly as before. The DEK for each group-mode profile is kept
+  // here (never persisted) so a save can re-encrypt with the same key without re-unwrapping.
+  const dekByHostId = {};
+
+  async function decryptProfileInPlace(p) {
+    if (!window.OE_GROUP_MODE || !p.wrappedContentKey) return;
+    try {
+      // dekByHostId also needs the DEK itself (for re-encrypting on save), which the shared
+      // OE_CONTENT_CRYPTO.decrypt() helper (also used by hosts-share.pebble) doesn't expose -
+      // unwrap it here directly instead of calling the helper.
+      let dek;
+      if (p.visibility === 'private') {
+        const privateKey = await OE_SESSION_KEYS.loadPrivateKey();
+        if (!privateKey) return;
+        dek = await OE_CRYPTO.unwrapContentKeyWithPersonalKey(p.wrappedContentKey, privateKey);
+      } else {
+        const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+        if (!wsKey) return;
+        dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedContentKey, wsKey);
+      }
+      const record = JSON.parse(p.hostsContent);
+      p.hostsContent = await OE_CRYPTO.decryptContent(record, dek);
+      dekByHostId[p.hostsId] = dek;
+    } catch (err) {
+      console.error('Failed to decrypt profile ' + p.hostsId + ':', err);
+      p.hostsContent = ''; // never display ciphertext/garbage as if it were real content
+    }
+  }
+
+  async function decryptAllProfiles(list) {
+    if (!window.OE_GROUP_MODE) return;
+    await Promise.all(list.map(decryptProfileInPlace));
+  }
+
+  // Returns the payload to actually send to the server for this content: encrypted (group mode,
+  // DEK already known for this row) or the plaintext itself (standalone, or no DEK yet).
+  async function encryptForSave(hostId, plaintext) {
+    if (!window.OE_GROUP_MODE) return plaintext;
+    const dek = dekByHostId[hostId];
+    if (!dek) return plaintext;
+    const enc = await OE_CRYPTO.encryptContent(plaintext, dek);
+    return JSON.stringify(enc);
+  }
+
+  // Generates a fresh DEK for a brand-new row, wrapped for the visibility it starts as
+  // ('public' for a new/copied profile - both use the workspace key, e2eEncryption design doc
+  // §6). Returns {encryptedContent, wrappedContentKey} to send along with the create, or null
+  // in standalone / when session keys aren't available yet.
+  async function encryptNewContent(plaintext) {
+    if (!window.OE_GROUP_MODE) return null;
+    const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    if (!wsKey) return null;
+    const dek = await OE_CRYPTO.generateContentKey();
+    const enc = await OE_CRYPTO.encryptContent(plaintext, dek);
+    const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey);
+    return { encryptedContent: JSON.stringify(enc), wrappedContentKey, dek };
+  }
 
   // Ace editor
   const editor = initAceEditor('cmHostsEditor', 'ace/mode/text');
@@ -347,7 +436,11 @@ const FWDPROXY_PORT = 36980;
   const btnDelete        = document.getElementById('btnDelete');
   const btnShare         = document.getElementById('btnShare');
   const btnCopyShareLink = document.getElementById('btnCopyShareLink');
+  const btnPublicLink    = document.getElementById('btnPublicLink');
   const btnDownload      = document.getElementById('btnDownload');
+  // Only meaningful in group mode - standalone's existing /share link is already fully public/
+  // no-login, so there's nothing separate to offer there (e2eEncryption design doc §6).
+  if (window.OE_GROUP_MODE) btnPublicLink.classList.remove('d-none');
   const emptyState    = document.getElementById('emptyState');
   const loadingUrlInput  = document.getElementById('loadingUrl');
   const userDataDirInput = document.getElementById('userDataDir');
@@ -460,13 +553,17 @@ const FWDPROXY_PORT = 36980;
     saveStatus.textContent = '';
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
-    fetch('/share/' + result.hostsId + '/text').then(r => {
+    // /share/.../text (used before e2eEncryption) returns a synchronous plaintext body the
+    // server can't produce for encrypted (group mode) rows - it never holds the workspace key
+    // (design doc §1/§9). /view returns the row's raw fields instead and this decrypts them the
+    // same way hosts.pebble decrypts its own list (falls through unchanged in standalone/
+    // unencrypted rows, since OE_CONTENT_CRYPTO.decrypt() passes plaintext straight through).
+    fetch('/api/hosts/' + result.hostsId + '/view').then(r => {
       if (!r.ok) throw new Error('load failed');
-      return r.text();
-    }).then(raw => {
+      return r.json();
+    }).then(row => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)).then(plain => {
       if (activeHostId !== result.hostsId) return; // a newer selection has since taken over
-      const sep = raw.indexOf('\n\n');
-      editor.setValue(sep >= 0 ? raw.slice(sep + 2) : raw, -1);
+      editor.setValue(plain, -1);
       editor.resize(true);
     }).catch(() => { if (activeHostId === result.hostsId) showToast(MSG['toast.load.failed']); });
   }
@@ -494,9 +591,10 @@ const FWDPROXY_PORT = 36980;
   async function flushSaveFor(hostId, content) {
     if (crc32(content) === savedCrc) return;
     try {
+      const payload = await encryptForSave(hostId, content);
       const res = await fetch('/api/hosts/' + hostId + '/content', {
         method: 'PATCH', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content})
+        body: JSON.stringify({content: payload})
       });
       if (res.ok) {
         const updated = await res.json();
@@ -528,6 +626,22 @@ const FWDPROXY_PORT = 36980;
     const res = await fetch('/api/hosts', {method: 'POST'});
     if (res.ok) {
       const p = await res.json();
+      // The server generates the initial example content in plaintext (it doesn't know how to
+      // encrypt), so in group mode the client encrypts it right after creation and patches the
+      // row with both the ciphertext and its wrapped key in one call.
+      const enc = await encryptNewContent(p.hostsContent).catch(() => null);
+      if (enc) {
+        const patchRes = await fetch('/api/hosts/' + p.hostsId + '/content', {
+          method: 'PATCH', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({content: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey})
+        });
+        if (patchRes.ok) {
+          dekByHostId[p.hostsId] = enc.dek;
+          p.wrappedContentKey = enc.wrappedContentKey;
+          // p.hostsContent stays the plaintext already returned by create() - only the stored
+          // (server-side) copy needed to become ciphertext.
+        }
+      }
       profiles.push(p);
       renderProfiles();
       activateProfile(p.hostsId, false);
@@ -637,9 +751,71 @@ const FWDPROXY_PORT = 36980;
     window.open('/share/' + activeHostId + '/oelink?chromeArgs=' + toBase64Url(JSON.stringify(args)), '_blank');
   });
 
-  document.getElementById('btnCopyShareLink').addEventListener('click', () => {
+  document.getElementById('btnCopyShareLink').addEventListener('click', async () => {
     if (!activeHostId) return;
-    window.open('/share/' + activeHostId + '/text', '_blank');
+    // Was window.open('/share/.../text') directly - that server route can't return encrypted
+    // (group mode) content synchronously (design doc §1/§9), so this fetches+decrypts via /view
+    // instead and hands the browser an object URL, working the same in both modes and for both
+    // the owner's own profile and a search result's (read-only) profile.
+    try {
+      const row = await (await fetch('/api/hosts/' + activeHostId + '/view')).json();
+      const plain = await OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
+      const modDt = row.updatedAt ? fmtDateTime(row.updatedAt) : '';
+      const header = '# ' + row.hostsProfile + ' / ' + row.userId + ' / ' + modDt + '\n\n';
+      const blob = new Blob([header + plain], {type: 'text/plain'});
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (e) {
+      showToast(MSG['toast.load.failed']);
+    }
+  });
+
+  // ── Public (no-login) link ────────────────────────────────
+  // The raw DEK travels only in the URL fragment (never sent to the server, never stored
+  // anywhere) - so a lost/forgotten link can only be replaced by generating a fresh one, and
+  // there is no "show the current link" affordance here (e2eEncryption design doc §6's last item,
+  // the snapshot/1st-version trade-off already flagged in §9).
+  document.getElementById('btnPublicLink').addEventListener('click', () => {
+    if (!activeHostId) return;
+    document.getElementById('publicLinkResultWrap').classList.add('d-none');
+    document.getElementById('publicLinkValue').value = '';
+    new bootstrap.Modal(document.getElementById('publicLinkModal')).show();
+  });
+
+  document.getElementById('btnGeneratePublicLink').addEventListener('click', async () => {
+    if (!activeHostId) return;
+    try {
+      const dek = await OE_CRYPTO.generateContentKey();
+      const enc = await OE_CRYPTO.encryptContent(editor.getValue(), dek);
+      const rawKeyBuf = await crypto.subtle.exportKey('raw', dek);
+      const keyB64url = OE_CRYPTO.bufToBase64(rawKeyBuf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const res = await fetch('/api/hosts/' + activeHostId + '/link', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ linkContent: JSON.stringify(enc) })
+      });
+      if (!res.ok) throw new Error('failed');
+      const url = location.origin + '/link/' + activeHostId + '/oelink#key=' + keyB64url;
+      document.getElementById('publicLinkValue').value = url;
+      document.getElementById('publicLinkResultWrap').classList.remove('d-none');
+    } catch (e) {
+      showToast(MSG['toast.public.link.failed']);
+    }
+  });
+
+  document.getElementById('btnCopyPublicLink').addEventListener('click', () => {
+    copyToClipboard(document.getElementById('publicLinkValue').value).then(() => showToast(MSG['toast.copied']));
+  });
+
+  document.getElementById('btnRevokePublicLink').addEventListener('click', async () => {
+    if (!activeHostId) return;
+    const res = await fetch('/api/hosts/' + activeHostId + '/link', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    });
+    if (res.ok) {
+      showToast(MSG['toast.public.link.revoked']);
+      bootstrap.Modal.getInstance(document.getElementById('publicLinkModal')).hide();
+    } else {
+      showToast(MSG['toast.public.link.failed']);
+    }
   });
 
   // ── Download ───────────────────────────────────────────────
@@ -720,13 +896,38 @@ const FWDPROXY_PORT = 36980;
       el.querySelector('.search-copy-btn').addEventListener('click', async e => {
         e.stopPropagation();
         const url = isCollabo ? '/api/hosts/' + r.hostsId + '/register' : '/api/hosts/' + r.hostsId + '/copy';
-        const res = await fetch(url, {method: 'POST'});
+        var opts = {method: 'POST'};
+        if (!isCollabo && window.OE_GROUP_MODE) {
+          // Copying a 'public' profile (collabo instead goes through /register above, which
+          // just adds a reference row - no content/key of its own, see cloudGroupService design
+          // doc §4-2): if the source is encrypted, HostsProfService.copyProfile refuses the copy
+          // outright unless we hand it a fresh {encryptedContent, wrappedContentKey} - copying
+          // its ciphertext as-is with no key would permanently strand it (e2eEncryption design
+          // doc §9's guard). So unwrap+decrypt the source with its own (workspace) key via the
+          // same /view endpoint the read-only search viewer uses, then re-encrypt for the copy
+          // exactly like a brand-new profile (encryptNewContent, already used by btnAdd).
+          try {
+            const row = await (await fetch('/api/hosts/' + r.hostsId + '/view')).json();
+            const plain = await OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
+            const enc = await encryptNewContent(plain);
+            if (enc) {
+              opts.headers = {'Content-Type': 'application/json'};
+              opts.body = JSON.stringify({encryptedContent: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey});
+            }
+          } catch (err) {
+            showToast(MSG['toast.copy.failed']);
+            return;
+          }
+        }
+        const res = await fetch(url, opts);
         if (res.ok) {
           const p = await res.json();
           profiles.push(p);
           renderProfiles();
           activateProfile(p.hostsId, false);
           showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+        } else {
+          showToast(MSG['toast.copy.failed']);
         }
       });
       container.appendChild(el);
@@ -747,20 +948,37 @@ const FWDPROXY_PORT = 36980;
     btn.disabled = true;
     btn.innerHTML = BUSY_HTML;
     feedback.style.display = 'none';
-    const res = await fetch('/api/hosts/' + hostId + '/copy', {method: 'POST'});
-    if (res.ok) {
-      const p = await res.json();
-      profiles.push(p);
-      renderProfiles();
-      activateProfile(p.hostsId, false);
-      bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
-      showToast(MSG['toast.imported']);
-    } else {
-      feedback.textContent = MSG['feedback.profile.not.found'];
-      feedback.style.display = 'block';
-      btn.disabled = false;
-      btn.innerHTML = IDLE_HTML;
-    }
+    try {
+      var opts = {method: 'POST'};
+      if (window.OE_GROUP_MODE) {
+        // Same gap as the search-copy button (e2eEncryption design doc §9): the source row is
+        // 'public'-only (collabo can't be reached this way - no /register fallback here, since a
+        // pasted link never carries the "is this collabo" info register vs copy needs), and if
+        // it's encrypted, copyProfile refuses without a fresh {encryptedContent,
+        // wrappedContentKey} - unwrap+decrypt via /view, then re-encrypt like a brand-new profile.
+        var row = await (await fetch('/api/hosts/' + hostId + '/view')).json();
+        var plain = await OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
+        var enc = await encryptNewContent(plain);
+        if (enc) {
+          opts.headers = {'Content-Type': 'application/json'};
+          opts.body = JSON.stringify({encryptedContent: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey});
+        }
+      }
+      const res = await fetch('/api/hosts/' + hostId + '/copy', opts);
+      if (res.ok) {
+        const p = await res.json();
+        profiles.push(p);
+        renderProfiles();
+        activateProfile(p.hostsId, false);
+        bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
+        showToast(MSG['toast.imported']);
+        return;
+      }
+    } catch (e) { /* fall through to the not-found feedback below */ }
+    feedback.textContent = MSG['feedback.profile.not.found'];
+    feedback.style.display = 'block';
+    btn.disabled = false;
+    btn.innerHTML = IDLE_HTML;
   });
 
   // ── Scheme / Browser launch ────────────────────────────────
@@ -1062,21 +1280,46 @@ const FWDPROXY_PORT = 36980;
     const disabled = p.visibility === 'private';
     btnShare.disabled = disabled;
     btnCopyShareLink.disabled = disabled;
+    // Fully-public link (e2eEncryption design doc §6's last item) only makes sense for 'public'
+    // visibility - 'collabo' is a restricted audience by design, defeating the "anyone, no login"
+    // point, and the button itself only exists in group mode (see its init-time unhide below).
+    if (btnPublicLink) btnPublicLink.disabled = p.visibility !== 'public';
   }
 
   // ── Visibility select ──────────────────────────────────────
   let _pendingCollabo = false;
   let _prevVisibility = null;
 
+  // The DEK itself never changes on a visibility flip - only which KEK wraps it (e2eEncryption
+  // design doc §7). 'collabo' and 'public' both use the workspace key, so switching between
+  // them (or confirming collabo from public) needs no new wrap at all; only a flip to/from
+  // 'private' does. Reuses the already-known DEK from load rather than re-deriving anything.
+  async function computeRewrapForVisibility(hostId, newVisibility) {
+    if (!window.OE_GROUP_MODE) return null;
+    const dek = dekByHostId[hostId];
+    if (!dek) return null;
+    if (newVisibility === 'private') {
+      const res = await fetch('/api/user/crypto-keys');
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.publicKey) return null;
+      const publicKey = await OE_CRYPTO.importPublicKey(data.publicKey);
+      return OE_CRYPTO.wrapContentKeyWithPersonalKey(dek, publicKey);
+    }
+    const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    return wsKey ? OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey) : null;
+  }
+
   async function doUpdateVisibility(visibility) {
+    const wrappedContentKey = await computeRewrapForVisibility(activeHostId, visibility).catch(() => null);
     const res = await fetch('/api/hosts/' + activeHostId + '/visibility', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({visibility})
+      body: JSON.stringify({visibility, wrappedContentKey})
     });
     if (res.ok) {
       const updated = await res.json();
       const p = profiles.find(x => x.hostsId === activeHostId);
-      if (p) { p.visibility = updated.visibility; p.parentId = updated.parentId; }
+      if (p) { p.visibility = updated.visibility; p.parentId = updated.parentId; p.wrappedContentKey = updated.wrappedContentKey; }
       const updatedP = profiles.find(x => x.hostsId === activeHostId);
       visibilitySelect.disabled = !!(updatedP && updatedP.parentId);
       applyVisibilityStyle();
@@ -1457,6 +1700,7 @@ const FWDPROXY_PORT = 36980;
       fetch('/api/hosts/conf/proxy_server_enabled')
     ]);
     profiles = await profilesRes.json();
+    await decryptAllProfiles(profiles);
     const lu   = await luRes.json();
     const ip   = await ipRes.json();
     const udd  = await uddRes.json();

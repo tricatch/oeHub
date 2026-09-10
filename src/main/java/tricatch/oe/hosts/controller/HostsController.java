@@ -60,9 +60,17 @@ public class HostsController {
         ctx.json(hostsProfService.list(hubUser.getUserNo()));
     }
 
-    public void apiCreate(Context ctx) {
+    public void apiCreate(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
-        ctx.json(hostsProfService.create(hubUser.getUserNo()));
+        String encryptedContent = null;
+        String wrappedContentKey = null;
+        if (ctx.body() != null && !ctx.body().isBlank()) {
+            @SuppressWarnings("unchecked")
+            var body = objectMapper.readValue(ctx.body(), Map.class);
+            encryptedContent = (String) body.get("encryptedContent");
+            wrappedContentKey = (String) body.get("wrappedContentKey");
+        }
+        ctx.json(hostsProfService.create(hubUser.getUserNo(), encryptedContent, wrappedContentKey));
         ctx.status(201);
     }
 
@@ -71,7 +79,13 @@ public class HostsController {
         var hostId = ctx.pathParam("hostsId");
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var content = (String) body.get("content");
-        var updated = hostsProfService.updateContent(hostId, hubUser.getUserNo(), content);
+        // Present only right after create(), to encrypt the server-generated example content the
+        // client couldn't have produced ahead of time (e2eEncryption design doc §1) - an ordinary
+        // content edit never sends this, since the key never changes on its own.
+        var wrappedContentKey = (String) body.get("wrappedContentKey");
+        var updated = wrappedContentKey != null
+                ? hostsProfService.updateContentAndKey(hostId, hubUser.getUserNo(), content, wrappedContentKey)
+                : hostsProfService.updateContent(hostId, hubUser.getUserNo(), content);
         if (updated == null) { ctx.status(404); return; }
         if (updated.isSelected()) {
             ForwardProxyServer.refreshUserHosts(hubUser);
@@ -118,10 +132,18 @@ public class HostsController {
         ctx.status(204);
     }
 
-    public void apiCopy(Context ctx) {
+    public void apiCopy(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
         var sourceHostId = ctx.pathParam("hostsId");
-        var copy = hostsProfService.copyProfile(hubUser.getUserNo(), sourceHostId);
+        String encryptedContent = null;
+        String wrappedContentKey = null;
+        if (ctx.body() != null && !ctx.body().isBlank()) {
+            @SuppressWarnings("unchecked")
+            var body = objectMapper.readValue(ctx.body(), Map.class);
+            encryptedContent = (String) body.get("encryptedContent");
+            wrappedContentKey = (String) body.get("wrappedContentKey");
+        }
+        var copy = hostsProfService.copyProfile(hubUser.getUserNo(), sourceHostId, encryptedContent, wrappedContentKey);
         if (copy == null) { ctx.status(404); return; }
         ctx.json(copy);
         ctx.status(201);
@@ -134,17 +156,105 @@ public class HostsController {
         ctx.json(hostsProfService.searchOthers(hubUser.getUserNo(), keyword));
     }
 
+    // Authenticated JSON counterpart to /share/.../text (below): the app itself (not an
+    // anonymous visitor) needs another workspace member's public/collabo row - to view it
+    // read-only from search results, or for the owner's own "open as text" action - and a plain
+    // synchronous text/plain response can't carry encrypted (group mode) content, since the
+    // server never holds the key to decrypt it (design doc §1/§9). Callers decrypt client-side
+    // with OE_CONTENT_CRYPTO.decrypt(), which also handles the plaintext/standalone case as a
+    // no-op passthrough. /api/* already requires a session (OeHubApplication's before-filter).
+    public void apiGetForView(Context ctx) {
+        var hostsId = ctx.pathParam("hostsId");
+        var hosts = hostsProfService.get(hostsId);
+        if (hosts == null) { ctx.status(404); return; }
+        if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
+        if (tricatch.oe.hub.config.AppHome.isGroupMode()) {
+            var viewer = AuthController.currentUser(ctx);
+            var ownerWsNo = hostsProfService.getOwnerWsNo(hostsId);
+            if (ownerWsNo == null || !ownerWsNo.equals(viewer.getWsNo())) { ctx.status(403); return; }
+        }
+        var owner = hostsProfService.getOwnerUserId(hostsId);
+        var result = new HashMap<String, Object>();
+        result.put("hostsId", hosts.getHostsId());
+        result.put("hostsProfile", hosts.getHostsProfile());
+        result.put("hostsContent", hosts.getHostsContent());
+        result.put("wrappedContentKey", hosts.getWrappedContentKey());
+        result.put("visibility", hosts.getVisibility());
+        result.put("userId", owner != null ? owner : "");
+        result.put("updatedAt", hosts.getUpdatedAt());
+        ctx.json(result);
+    }
+
     public void apiShare(Context ctx) throws Exception {
         var hostsId = ctx.pathParam("hostsId");
         var hosts = hostsProfService.get(hostsId);
         if (hosts == null) { ctx.status(404); return; }
         if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
+        var groupMode = tricatch.oe.hub.config.AppHome.isGroupMode();
+        // Encrypted content (oe.mode=group) can't be decrypted by an anonymous visitor - the
+        // server never holds the workspace key. So under group mode this route stops being a
+        // fully public link and instead requires the viewer to already be logged in to the SAME
+        // workspace (e2eEncryption design doc §9's reinterpretation of cloudGroupService doc
+        // §2.4) - their browser then decrypts with its own cached workspace key, same as
+        // hosts.pebble. Standalone content is never encrypted (design doc §1), so it keeps the
+        // original fully-public, no-login behavior below.
+        if (groupMode) {
+            var viewer = AuthController.currentUser(ctx);
+            if (viewer == null) { ctx.redirect("/login?redirect=" + ctx.path()); return; }
+            var ownerWsNo = hostsProfService.getOwnerWsNo(hostsId);
+            if (ownerWsNo == null || !ownerWsNo.equals(viewer.getWsNo())) { ctx.status(403); return; }
+        }
         var owner = hostsProfService.getOwnerUserId(hostsId);
         var model = new HashMap<String, Object>();
         model.put("hosts", hosts);
         model.put("owner", owner != null ? owner : "");
         model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getHostsContent())));
+        model.put("wrappedContentKeyJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getWrappedContentKey())));
         model.put("proxyIp", extractProxyIp(ctx));
+        model.put("groupMode", groupMode);
+        model.put("linkMode", false);
+        ctx.render("templates/oehub/hosts-share.pebble", model);
+    }
+
+    // Issues (linkContent present) or revokes (absent/null) the fully-public, no-login link
+    // snapshot (e2eEncryption design doc §6's last item) - linkContent is already ciphertext from
+    // the caller's browser, encrypted with a fresh DEK that never reaches this server unwrapped;
+    // the caller embeds that raw key in the share URL's fragment itself. Authenticated (/api/*
+    // filter) but otherwise open to any member of the row's own workspace (mirrors §8's "public
+    // content is jointly owned" model - HostsProfMapper.updateLinkContent enforces the scope).
+    @SuppressWarnings("unchecked")
+    public void apiSetLink(Context ctx) throws Exception {
+        var hubUser = AuthController.currentUser(ctx);
+        var hostsId = ctx.pathParam("hostsId");
+        String linkContent = null;
+        if (ctx.body() != null && !ctx.body().isBlank()) {
+            var body = objectMapper.readValue(ctx.body(), Map.class);
+            linkContent = (String) body.get("linkContent");
+        }
+        var updated = hostsProfService.setPublicLink(hostsId, hubUser.getUserNo(), linkContent);
+        if (updated == null) { ctx.status(404); return; }
+        ctx.status(204);
+    }
+
+    // Public, unauthenticated viewer for an issued link - a completely separate trust boundary
+    // from apiShare above (which, under group mode, now requires login to the same workspace):
+    // this route never checks who's asking, only that a link was actually issued and not revoked.
+    // Reuses hosts-share.pebble in "linkMode": the page gets the link_content ciphertext instead
+    // of hosts_content, and the client pulls the raw (never-wrapped) decryption key out of its
+    // own URL fragment - which this handler, like the browser's own request itself, never sees.
+    public void apiPublicLink(Context ctx) throws Exception {
+        var hostsId = ctx.pathParam("hostsId");
+        var hosts = hostsProfService.getForPublicLink(hostsId);
+        if (hosts == null) { ctx.status(404); return; }
+        var owner = hostsProfService.getOwnerUserId(hostsId);
+        var model = new HashMap<String, Object>();
+        model.put("hosts", hosts);
+        model.put("owner", owner != null ? owner : "");
+        model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getLinkContent())));
+        model.put("wrappedContentKeyJson", "null");
+        model.put("proxyIp", extractProxyIp(ctx));
+        model.put("groupMode", tricatch.oe.hub.config.AppHome.isGroupMode());
+        model.put("linkMode", true);
         ctx.render("templates/oehub/hosts-share.pebble", model);
     }
 
@@ -179,6 +289,13 @@ public class HostsController {
             var h = new HostsProf();
             h.setHostsProfile((String) m.get("hostsProfile"));
             h.setHostsContent((String) m.get("hostsContent"));
+            // Round-tripping the same account's own export back in: apiExport (below) serializes
+            // the row's wrapped_content_key verbatim, and it stays valid here unchanged - re-import
+            // never touches the DEK or which key wraps it (only visibility can be downgraded just
+            // below, and collabo/public share the identical workspace-key wrap anyway, e2eEncryption
+            // design doc §6). Without this, an encrypted row's hostsContent (ciphertext) would land
+            // with no key at all and get treated/displayed as if it were plaintext.
+            h.setWrappedContentKey((String) m.get("wrappedContentKey"));
             h.setSelected(Boolean.TRUE.equals(m.get("selected")));
             h.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
             // "collabo" only makes sense with a live parent reference, which an import can't
@@ -195,11 +312,28 @@ public class HostsController {
         ctx.json(updated);
     }
 
+    // Plain-text {locale -> messages} lookup for the handful of controller-rendered (non-Pebble)
+    // responses below - mirrors tricatch.oe.proxy.util.HtmlUtil's identical need in that package.
+    private static final Map<String, Map<String, String>> SHARE_MESSAGES = Map.of(
+        "en", new tricatch.oe.hub.i18n.Messages("en").asMap(),
+        "ko", new tricatch.oe.hub.i18n.Messages("ko").asMap()
+    );
+
     public void apiShareText(Context ctx) {
         var hostId = ctx.pathParam("hostsId");
         var hosts = hostsProfService.get(hostId);
         if (hosts == null) { ctx.status(404); return; }
         if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
+        if (hosts.getWrappedContentKey() != null) {
+            // Encrypted (oe.mode=group): this endpoint returns a single synchronous plaintext
+            // body, but the server never holds the workspace key needed to decrypt (server-blind
+            // by design, e2eEncryption design doc §1) - only the interactive /share page can, via
+            // the logged-in viewer's own browser. See apiShare's group-mode gate above.
+            var locale = tricatch.oe.hub.i18n.LocaleContext.get();
+            var msg = SHARE_MESSAGES.getOrDefault(locale, SHARE_MESSAGES.get("en")).get("share.text.encrypted");
+            ctx.status(409).contentType("text/plain; charset=utf-8").result(msg);
+            return;
+        }
         var owner = hostsProfService.getOwnerUserId(hostId);
         var modDt = hosts.getUpdatedAt() != null ? hosts.getUpdatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "";
         var header = "# " + hosts.getHostsProfile() + " / " + owner + " / " + modDt + "\n\n";
@@ -211,10 +345,11 @@ public class HostsController {
         var hostId = ctx.pathParam("hostsId");
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var visibility = (String) body.get("visibility");
+        var wrappedContentKey = (String) body.get("wrappedContentKey");
         if (visibility == null || (!visibility.equals("public") && !visibility.equals("private") && !visibility.equals("collabo"))) {
             ctx.status(400); return;
         }
-        var updated = hostsProfService.updateVisibility(hostId, hubUser.getUserNo(), visibility);
+        var updated = hostsProfService.updateVisibility(hostId, hubUser.getUserNo(), visibility, wrappedContentKey);
         if (updated == null) { ctx.status(404); return; }
         ctx.json(updated);
     }

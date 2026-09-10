@@ -75,6 +75,13 @@ class SetupToOeProxyScenarioTest {
         page.locator("form[action='/setup'] input[name=confirm]").fill(ADMIN_PW);
         page.locator("form[action='/setup'] button[type=submit]").click();
 
+        // setup.pebble intercepts submit to generate the bootstrap admin's keypair + the new
+        // workspace's key client-side (e2eEncryption design doc §3/§4) before actually posting -
+        // the recovery-code modal is the confirmation step here.
+        assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
+        assertThat(page.locator("#recoveryCodeValue")).not().hasValue("");
+        page.locator("#btnRecoveryCodeContinue").click();
+
         // processSetup logs the new admin in immediately and redirects back to /setup with the
         // admin step now showing a "configured" badge - that badge is our success signal.
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/setup"));
@@ -111,11 +118,40 @@ class SetupToOeProxyScenarioTest {
         page.locator("input[name=confirmPassword]").fill(USER_PW);
         page.locator("form[action='/register'] button[type=submit]").click();
 
-        assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/login"));
+        // register.pebble intercepts submit to generate a keypair + recovery code client-side
+        // (e2eEncryption design doc §3) before actually posting the form - the recovery-code
+        // modal is the real user's confirmation step here.
+        assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
+        assertThat(page.locator("#recoveryCodeValue")).not().hasValue("");
+        page.locator("#btnRecoveryCodeContinue").click();
+
+        // Self-registration now starts as 'pending' (cloudGroupService design doc §2.3) and can't
+        // log in until a workspace admin approves it - see order(6) below.
+        assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/login\\?registered=pending"));
     }
 
     @Test
     @Order(6)
+    void adminApprovesTheNewUser() {
+        page.locator("input[name=userId]").fill(ADMIN_ID);
+        page.locator("input[name=password]").fill(ADMIN_PW);
+        page.locator("form[action='/login'] button[type=submit]").click();
+        assertThat(page).hasURL(server.baseUrl() + "/");
+
+        page.navigate(server.baseUrl() + "/oehub/admin/users");
+        var pendingRow = page.locator("#pendingTbody tr[data-user-no]");
+        assertThat(pendingRow).hasCount(1);
+        assertThat(pendingRow).containsText(USER_ID);
+
+        pendingRow.locator(".btn-approve-pending").click();
+        assertThat(page.locator("#pendingSection")).isHidden();
+
+        page.navigate(server.baseUrl() + "/logout");
+        assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/login"));
+    }
+
+    @Test
+    @Order(7)
     void logsInAsTheNewUser() {
         page.locator("input[name=userId]").fill(USER_ID);
         page.locator("input[name=password]").fill(USER_PW);
@@ -128,7 +164,7 @@ class SetupToOeProxyScenarioTest {
     }
 
     @Test
-    @Order(7)
+    @Order(8)
     void oeHostsAddsRenamesEditsAndDeletesProfile() {
         page.locator("a.oe-tool-card[href='/oehub/hosts']").click();
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/oehub/hosts"));
@@ -171,7 +207,7 @@ class SetupToOeProxyScenarioTest {
     }
 
     @Test
-    @Order(8)
+    @Order(9)
     void oeProxyAddsRenamesAndDeletesVirtualHost() {
         page.locator("#navItem-proxy").click();
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/oehub/proxy"));

@@ -149,6 +149,26 @@ public class ProxyVhostService {
     public void deleteAll(Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
+
+            // 'public' vhosts are reassigned to the workspace's ws_system account rather than
+            // deleted with the account - 'private'/'collabo' still go away below, unchanged
+            // (cloudGroupService design doc §2.5 orphan handling). Must run before deleteByUserNo,
+            // which would otherwise delete these too.
+            var deletedUser = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+            if (deletedUser != null) {
+                var wsSystem = session.getMapper(HubUserMapper.class).findWsSystemByWsNo(deletedUser.getWsNo());
+                if (wsSystem != null) {
+                    var publicVhosts = mapper.findPublicByUserNo(userNo);
+                    var takenNames = existingNames(mapper, wsSystem.getUserNo());
+                    var now = LocalDateTime.now();
+                    for (var v : publicVhosts) {
+                        var name = nextUniqueName(takenNames, v.getVhostProfile());
+                        takenNames.add(name.toLowerCase());
+                        mapper.reassignOwner(v.getVhostId(), wsSystem.getUserNo(), name, now);
+                    }
+                }
+            }
+
             var refs = mapper.findReferencesByUserNo(userNo);
             mapper.deleteByUserNo(userNo);
             for (var ref : refs) {

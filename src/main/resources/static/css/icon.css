@@ -14,6 +14,7 @@
 .oe-icon-delete       { -webkit-mask-image: url('/icon/lucide/trash.svg');       mask-image: url('/icon/lucide/trash.svg'); }
 .oe-icon-clear        { -webkit-mask-image: url('/icon/lucide/brush-cleaning.svg'); mask-image: url('/icon/lucide/brush-cleaning.svg'); }
 .oe-icon-share        { -webkit-mask-image: url('/icon/lucide/share-2.svg');     mask-image: url('/icon/lucide/share-2.svg'); }
+.oe-icon-public-link  { -webkit-mask-image: url('/icon/lucide/globe.svg');       mask-image: url('/icon/lucide/globe.svg'); }
 .oe-icon-import       { -webkit-mask-image: url('/icon/lucide/circle-fading-plus.svg'); mask-image: url('/icon/lucide/circle-fading-plus.svg'); }
 .oe-icon-download     { -webkit-mask-image: url('/icon/lucide/file-down.svg');   mask-image: url('/icon/lucide/file-down.svg'); }
 .oe-icon-copy         { -webkit-mask-image: url('/icon/lucide/copy.svg');          mask-image: url('/icon/lucide/copy.svg'); }

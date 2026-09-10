@@ -4,10 +4,15 @@ import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
+import tricatch.oe.hub.mapper.WorkspaceMapper;
+import tricatch.oe.hub.mapper.WsInviteMapper;
+import tricatch.oe.hub.mapper.WsKeyMapper;
 import tricatch.oe.hub.model.HubUser;
+import tricatch.oe.hub.model.Workspace;
 import tricatch.oe.proxy.controller.ProxyController;
 
 import java.nio.file.Files;
@@ -157,9 +162,11 @@ public class AuthController {
 
     public void showLogin(Context ctx) {
         var redirect = ctx.queryParam("redirect");
+        var registered = ctx.queryParam("registered");
         ctx.render("templates/login.pebble", Map.of(
             "redirect", redirect != null ? redirect : "",
-            "error", ""
+            "error", "",
+            "info", "pending".equals(registered) ? "auth.info.registered.pending" : ""
         ));
     }
 
@@ -198,11 +205,40 @@ public class AuthController {
         }
         recordLoginSuccess(ip);
 
+        // 'pending' (awaiting workspace-admin approval) and 'ws_system' (non-login, workspace-
+        // owned account) never get a session, even with the right password - cloudGroupService
+        // design doc §2.2/§2.3. Same generic error as a wrong password so account state isn't
+        // enumerable from the login response.
+        if ("pending".equals(hubUser.getRole()) || "ws_system".equals(hubUser.getRole())) {
+            ctx.render("templates/login.pebble", Map.of(
+                "redirect", redirect != null ? redirect : "",
+                "error", "pending".equals(hubUser.getRole()) ? "auth.error.pending.approval" : "auth.error.invalid.credentials"
+            ));
+            return;
+        }
+
         if(logger.isDebugEnabled() ) logger.debug( "login, userId={}, rememberMe={}", userId, rememberMe);
 
         try (var session = sqlSessionFactory.openSession()) {
             hubUser.setLastLoginAt(LocalDateTime.now());
             session.getMapper(HubUserMapper.class).updateLastLoginAt(hubUser);
+            // Defensive integrity check (e2eEncryption design doc §9): a real, logged-in
+            // 'usr'/'ws_adm' member is supposed to always hold a HUB_WS_KEY wrap - approval-time
+            // bundling (§5) and workspace founding (§4) both create it in the same transaction as
+            // the role/account itself, so this should never actually fire. If it does (e.g. a
+            // hand-edited DB, or a bug in one of those paths), the user isn't locked out - their
+            // own 'private' content still works via their personal key - but they silently can't
+            // decrypt any 'public'/'collabo' content, which is confusing without a trace. Just log
+            // for now rather than auto-reconcile (no browser is available server-side to mint a
+            // fresh wrap, and only a ws_adm's browser could ever re-wrap the real workspace key).
+            if (AppHome.isGroupMode() && ("usr".equals(hubUser.getRole()) || "ws_adm".equals(hubUser.getRole()))) {
+                var wsKey = session.getMapper(WsKeyMapper.class).findByWsNoAndUserNo(hubUser.getWsNo(), hubUser.getUserNo());
+                if (wsKey == null) {
+                    logger.warn("Integrity check failed: user '{}' (userNo={}, wsNo={}) has no HUB_WS_KEY wrap - "
+                        + "they will be unable to decrypt workspace-shared (public/collabo) content until a "
+                        + "ws_adm re-wraps the workspace key for them.", userId, hubUser.getUserNo(), hubUser.getWsNo());
+                }
+            }
             session.commit();
         }
 
@@ -236,7 +272,33 @@ public class AuthController {
     }
 
     public void showRegister(Context ctx) {
-        ctx.render("templates/register.pebble", Map.of("error", "", "userId", ""));
+        var model = new java.util.HashMap<String, Object>();
+        model.put("error", "");
+        model.put("userId", "");
+        model.put("inviteCode", "");
+        model.put("wsName", "");
+        model.put("inviteWsName", "");
+        model.put("inviteError", "");
+
+        // Only group mode has multiple workspaces to create/join - standalone always joins the
+        // single existing one, no picker needed (cloudGroupService design doc §2.7).
+        if (AppHome.isGroupMode()) {
+            var inviteCode = ctx.queryParam("invite");
+            if (inviteCode != null && !inviteCode.isBlank()) {
+                try (var session = sqlSessionFactory.openSession()) {
+                    var invite = session.getMapper(WsInviteMapper.class).findByCode(inviteCode.trim());
+                    if (invite == null || invite.isUsed() || invite.getExpiresAt().isBefore(LocalDateTime.now())) {
+                        model.put("inviteError", "auth.error.invite.invalid");
+                    } else {
+                        var workspace = session.getMapper(WorkspaceMapper.class).findByWsNo(invite.getWsNo());
+                        model.put("inviteCode", inviteCode.trim());
+                        model.put("inviteWsName", workspace != null ? workspace.getWsName() : "");
+                    }
+                }
+            }
+        }
+
+        ctx.render("templates/register.pebble", model);
     }
 
     public void processRegister(Context ctx) {
@@ -280,26 +342,166 @@ public class AuthController {
             return;
         }
 
+        // Every account gets a personal keypair from here on (e2eEncryption design doc §9's
+        // "언제 필수로 만들지" question, resolved: mandatory as of this wiring) - register.pebble
+        // generates it client-side via crypto.js before this endpoint is ever called, so a
+        // missing value means the browser couldn't do WebCrypto (or JS was disabled/bypassed).
+        var publicKey = ctx.formParam("publicKey");
+        var wrappedPrivateKey = ctx.formParam("wrappedPrivateKey");
+        var wrappedPrivateKeyRecovery = ctx.formParam("wrappedPrivateKeyRecovery");
+        if (publicKey == null || publicKey.isBlank() || wrappedPrivateKey == null || wrappedPrivateKey.isBlank()
+                || wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()) {
+            renderRegisterError(ctx, "auth.error.crypto.required", userId);
+            return;
+        }
+
         var user = new HubUser();
         var now = LocalDateTime.now();
         user.setUserId(userId);
         user.setPassword(PasswordUtil.hash(password));
-        user.setRole("usr");
+        user.setPublicKey(publicKey);
+        user.setWrappedPrivateKey(wrappedPrivateKey);
+        user.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
         user.setUpdatedAt(now);
         user.setCreateAt(now);
 
+        // Single rule, no oe.mode branching on the ROLE OUTCOME (cloudGroupService design doc
+        // §2.3/§2.7, e2eEncryption design doc §5): only the person founding a new workspace
+        // becomes its ws_adm immediately, everyone else starts 'pending'. What DOES depend on
+        // mode is which of those two paths this form even offers - standalone has exactly one
+        // workspace by construction, so it never creates a new one or takes an invite code here.
+        boolean groupMode = AppHome.isGroupMode();
+        var inviteCode = ctx.formParam("inviteCode");
+        var wsName = ctx.formParam("wsName");
+
         try (var session = sqlSessionFactory.openSession()) {
-            var mapper = session.getMapper(HubUserMapper.class);
-            mapper.insert(user);
-            mapper.selfReferenceAudit(user.getUserNo());
+            var wsMapper = session.getMapper(WorkspaceMapper.class);
+            var userMapper = session.getMapper(HubUserMapper.class);
+
+            if (groupMode && inviteCode != null && !inviteCode.isBlank()) {
+                var invite = session.getMapper(WsInviteMapper.class).findByCode(inviteCode.trim());
+                if (invite == null || invite.isUsed() || invite.getExpiresAt().isBefore(now)) {
+                    renderRegisterError(ctx, "auth.error.invite.invalid", userId);
+                    return;
+                }
+                user.setRole("pending");
+                user.setWsNo(invite.getWsNo());
+                userMapper.insert(user);
+                userMapper.selfReferenceAudit(user.getUserNo());
+                // Atomic consume, after the insert so it has the new user's user_no for
+                // updated_by - 0 affected rows means someone else consumed/expired it in the
+                // gap since findByCode() above (cloudGroupService design doc §2.8 race defense).
+                if (session.getMapper(WsInviteMapper.class).consume(inviteCode.trim(), user.getUserNo(), now) == 0) {
+                    renderRegisterError(ctx, "auth.error.invite.invalid", userId);
+                    return;
+                }
+                session.commit();
+                ctx.redirect("/login?registered=pending");
+                return;
+            }
+
+            if (groupMode) {
+                if (wsName == null || wsName.isBlank()) {
+                    renderRegisterError(ctx, "auth.error.wsname.required", userId);
+                    return;
+                }
+                if (wsMapper.findByWsName(wsName.trim()) != null) {
+                    renderRegisterError(ctx, "auth.error.wsname.exists", userId);
+                    return;
+                }
+                // The founder generates the workspace key itself, client-side, and wraps it for
+                // their own public key in the same step as the personal keypair above
+                // (e2eEncryption design doc §4 "그룹키는 워크스페이스 생성과 함께 만든다").
+                var founderWrappedWsKey = ctx.formParam("founderWrappedWsKey");
+                if (founderWrappedWsKey == null || founderWrappedWsKey.isBlank()) {
+                    renderRegisterError(ctx, "auth.error.crypto.required", userId);
+                    return;
+                }
+                var workspace = new Workspace();
+                workspace.setWsName(wsName.trim());
+                workspace.setStatus("active");
+                workspace.setCreateAt(now);
+                workspace.setUpdatedAt(now);
+                wsMapper.insert(workspace);
+
+                user.setRole("ws_adm");
+                user.setWsNo(workspace.getWsNo());
+                userMapper.insert(user);
+                userMapper.selfReferenceAudit(user.getUserNo());
+                wsMapper.backfillAudit(workspace.getWsNo(), user.getUserNo(), now);
+
+                var wsKey = new tricatch.oe.hub.model.WsKey();
+                wsKey.setWsNo(workspace.getWsNo());
+                wsKey.setUserNo(user.getUserNo());
+                wsKey.setWrappedWsKey(founderWrappedWsKey);
+                wsKey.setCreatedBy(user.getUserNo());
+                wsKey.setUpdatedBy(user.getUserNo());
+                wsKey.setCreateAt(now);
+                wsKey.setUpdatedAt(now);
+                session.getMapper(tricatch.oe.hub.mapper.WsKeyMapper.class).insert(wsKey);
+
+                // Non-login, workspace-owned system account for orphaned-resource ownership later
+                // (cloudGroupService design doc §2.2) - created alongside every new workspace, the
+                // same as SetupController.processSetup's standalone bootstrap, so a "no ws_system
+                // yet" state never exists here either.
+                var wsSystemUser = new HubUser();
+                wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
+                wsSystemUser.setPassword(PasswordUtil.hash(java.util.UUID.randomUUID().toString()));
+                wsSystemUser.setRole("ws_system");
+                wsSystemUser.setWsNo(workspace.getWsNo());
+                wsSystemUser.setCreatedBy(user.getUserNo());
+                wsSystemUser.setUpdatedBy(user.getUserNo());
+                wsSystemUser.setCreateAt(now);
+                wsSystemUser.setUpdatedAt(now);
+                userMapper.insert(wsSystemUser);
+
+                session.commit();
+                ctx.redirect("/login");
+                return;
+            }
+
+            // standalone: always joins the single existing workspace as 'pending'.
+            var workspace = wsMapper.findFirst();
+            if (workspace == null) {
+                // Can't happen in practice - /setup always creates the workspace before
+                // registration is reachable - but fail loudly rather than insert an orphaned user.
+                renderRegisterError(ctx, "auth.error.no.workspace", userId);
+                return;
+            }
+            user.setRole("pending");
+            user.setWsNo(workspace.getWsNo());
+            userMapper.insert(user);
+            userMapper.selfReferenceAudit(user.getUserNo());
             session.commit();
         }
 
-        ctx.redirect("/login");
+        ctx.redirect("/login?registered=pending");
     }
 
     private void renderRegisterError(Context ctx, String error, String userId) {
-        ctx.render("templates/register.pebble", Map.of("error", error, "userId", userId));
+        // Re-echo whatever invite/workspace-name fields were actually submitted, so retrying
+        // after a validation error (e.g. password mismatch) doesn't silently fall through to the
+        // "create new workspace" branch on the next submit just because the hidden field went
+        // missing from the rendered form.
+        var inviteCode = ctx.formParam("inviteCode");
+        var wsName = ctx.formParam("wsName");
+        var model = new java.util.HashMap<String, Object>();
+        model.put("error", error);
+        model.put("userId", userId);
+        model.put("inviteCode", inviteCode != null ? inviteCode : "");
+        model.put("wsName", wsName != null ? wsName : "");
+        model.put("inviteWsName", "");
+        model.put("inviteError", "");
+        if (AppHome.isGroupMode() && inviteCode != null && !inviteCode.isBlank()) {
+            try (var session = sqlSessionFactory.openSession()) {
+                var invite = session.getMapper(WsInviteMapper.class).findByCode(inviteCode.trim());
+                if (invite != null && !invite.isUsed() && invite.getExpiresAt().isAfter(LocalDateTime.now())) {
+                    var workspace = session.getMapper(WorkspaceMapper.class).findByWsNo(invite.getWsNo());
+                    model.put("inviteWsName", workspace != null ? workspace.getWsName() : "");
+                }
+            }
+        }
+        ctx.render("templates/register.pebble", model);
     }
 
     public void logout(Context ctx) {
@@ -309,6 +511,16 @@ public class AuthController {
 
     public static HubUser currentUser(Context ctx) {
         return ctx.attribute(ATTR_USER);
+    }
+
+    // A user can manage their own workspace's members if they hold 'ws_adm', or - only in
+    // standalone, which never assigns 'ws_adm' at all (cloudGroupService design doc §2.7's
+    // simplification) - the instance-wide 'adm'. In group mode 'adm' is deliberately excluded:
+    // the instance operator must not manage workspace-internal user data (design doc §2.5).
+    public static boolean isWorkspaceAdmin(HubUser user) {
+        if (user == null) return false;
+        if ("ws_adm".equals(user.getRole())) return true;
+        return !tricatch.oe.hub.config.AppHome.isGroupMode() && "adm".equals(user.getRole());
     }
 
     private HubUser findUser(String userId) {

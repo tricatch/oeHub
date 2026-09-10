@@ -29,9 +29,31 @@
             {% if error %}
             <div class="alert alert-danger py-2" role="alert">{{ msg[error] }}</div>
             {% endif %}
+            {% if inviteError %}
+            <div class="alert alert-danger py-2" role="alert">{{ msg[inviteError] }}</div>
+            {% endif %}
 
-            <form method="post" action="/register" autocomplete="off">
+            <form method="post" action="/register" autocomplete="off" id="registerForm">
               <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+              <input type="hidden" name="publicKey" id="fldPublicKey">
+              <input type="hidden" name="wrappedPrivateKey" id="fldWrappedPrivateKey">
+              <input type="hidden" name="wrappedPrivateKeyRecovery" id="fldWrappedPrivateKeyRecovery">
+              {% if groupMode and not inviteCode %}
+              <input type="hidden" name="founderWrappedWsKey" id="fldFounderWrappedWsKey">
+              {% endif %}
+              {% if groupMode and inviteCode %}
+              <input type="hidden" name="inviteCode" value="{{ inviteCode }}">
+              <div class="mb-3">
+                <label class="form-label">{{ msg['auth.invite.joining'] }}</label>
+                <input type="text" class="form-control" value="{{ inviteWsName }}" disabled>
+              </div>
+              {% elseif groupMode %}
+              <div class="mb-3">
+                <label class="form-label">{{ msg['auth.workspace.name'] }}</label>
+                <input type="text" name="wsName" class="form-control" value="{{ wsName }}">
+                <div class="form-text">{{ msg['auth.workspace.name.help'] }}</div>
+              </div>
+              {% endif %}
               <div class="mb-3">
                 <label class="form-label">{{ msg['auth.userid'] }}</label>
                 <input type="text" name="userId" class="form-control"
@@ -49,7 +71,7 @@
               </div>
 
               <div class="d-grid">
-                <button type="submit" class="oe-modal-btn justify-content-center">{{ msg['auth.create.account'] }}</button>
+                <button type="submit" class="oe-modal-btn justify-content-center" id="btnRegisterSubmit">{{ msg['auth.create.account'] }}</button>
               </div>
             </form>
           </div>
@@ -63,6 +85,134 @@
     </div>
   </div>
 </div>
+
+<div class="oe-toast" id="toast">
+  <span class="oe-icon oe-icon-success" style="width:21px;height:21px"></span>
+  <span class="oe-toast-msg"></span>
+</div>
+
+<!-- Recovery code - shown once, right before the account is actually created -->
+<div class="modal fade" id="recoveryCodeModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['auth.recovery.title'] }}</h5>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small mb-3">{{ msg['auth.recovery.warning'] }}</div>
+        <div class="input-group mb-2">
+          <input type="text" class="form-control setup-mono" id="recoveryCodeValue" readonly>
+          <button type="button" class="btn btn-sm btn-oe-secondary" id="btnCopyRecoveryCode" title="{{ msg['ui.copy.clipboard'] }}">
+            <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+          </button>
+        </div>
+        <button type="button" class="btn btn-sm btn-oe-secondary" id="btnDownloadRecoveryCode">
+          <span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>
+          {{ msg['auth.recovery.download'] }}
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain justify-content-center" id="btnRecoveryCodeContinue">{{ msg['auth.recovery.continue'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>window.MSG = {{ msgJson | raw }};</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/crypto.js"></script>
+<script src="/js/util.js"></script>
+<script>
+(function () {
+  var form = document.getElementById('registerForm');
+  var submitBtn = document.getElementById('btnRegisterSubmit');
+  var submitBtnDefaultText = submitBtn.textContent;
+  var recoveryModalEl = document.getElementById('recoveryCodeModal');
+  var recoveryModal = new bootstrap.Modal(recoveryModalEl);
+  var pendingRecoveryCode = '';
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (submitBtn.disabled) return;
+
+    var password = form.password.value;
+    // Minimal client-side pre-check (mirrors AuthController's own rules) purely to avoid wasting
+    // an RSA-2048 keygen on an obviously-invalid submission - the server remains the sole source
+    // of truth and re-validates everything itself regardless.
+    if (!password || password.length < 8 || password !== form.confirmPassword.value) {
+      form.submit();
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = MSG['auth.generating.keys'];
+
+    generateIdentityAndSubmit(password).catch(function (err) {
+      console.error('Key generation failed:', err);
+      submitBtn.disabled = false;
+      submitBtn.textContent = submitBtnDefaultText;
+      showToast(MSG['auth.error.crypto.required']);
+    });
+  });
+
+  async function generateIdentityAndSubmit(password) {
+    var keyPair = await OE_CRYPTO.generateKeyPair();
+    var publicKeyB64 = await OE_CRYPTO.exportPublicKey(keyPair.publicKey);
+
+    var salt = OE_CRYPTO.randomBytes(16);
+    var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(password, salt);
+    var passwordWrap = await OE_CRYPTO.wrapPrivateKey(keyPair.privateKey, passwordKek);
+    var wrappedPrivateKeyRecord = {
+      salt: OE_CRYPTO.bufToBase64(salt), iv: passwordWrap.iv, wrapped: passwordWrap.wrapped
+    };
+
+    var recoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
+    var recoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
+    var recoveryWrap = await OE_CRYPTO.wrapPrivateKey(keyPair.privateKey, recoveryKek);
+    var wrappedPrivateKeyRecoveryRecord = { iv: recoveryWrap.iv, wrapped: recoveryWrap.wrapped };
+    pendingRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(recoveryBytes);
+
+    document.getElementById('fldPublicKey').value = publicKeyB64;
+    document.getElementById('fldWrappedPrivateKey').value = JSON.stringify(wrappedPrivateKeyRecord);
+    document.getElementById('fldWrappedPrivateKeyRecovery').value = JSON.stringify(wrappedPrivateKeyRecoveryRecord);
+
+    var founderField = document.getElementById('fldFounderWrappedWsKey');
+    if (founderField) {
+      // Founding a new workspace (cloudGroupService design doc §2.3/§2.7's "새 워크스페이스
+      // 만들기") - the workspace key is created right here and wrapped for the founder's own
+      // public key, so a workspace never exists without one (e2eEncryption design doc §4).
+      var wsKey = await OE_CRYPTO.generateWorkspaceKey();
+      founderField.value = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, keyPair.publicKey);
+    }
+
+    document.getElementById('recoveryCodeValue').value = pendingRecoveryCode;
+    submitBtn.textContent = submitBtnDefaultText;
+    recoveryModal.show();
+  }
+
+  document.getElementById('btnCopyRecoveryCode').addEventListener('click', function () {
+    copyToClipboard(pendingRecoveryCode).then(function () { showToast(MSG['toast.copied']); });
+  });
+
+  document.getElementById('btnDownloadRecoveryCode').addEventListener('click', function () {
+    var blob = new Blob([pendingRecoveryCode + '\n'], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'oeHub-recovery-code.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('btnRecoveryCodeContinue').addEventListener('click', function () {
+    recoveryModal.hide();
+    submitBtn.disabled = true;
+    submitBtn.textContent = MSG['auth.creating.account'];
+    form.submit();
+  });
+})();
+</script>
 </body>
 </html>

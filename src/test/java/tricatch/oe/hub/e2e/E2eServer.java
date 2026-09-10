@@ -22,11 +22,18 @@ public class E2eServer implements AutoCloseable {
 
     private final int port;
     private final Path homeDir;
+    private final java.util.List<String> extraJvmArgs;
     private Process process;
 
     public E2eServer(int port) {
+        this(port, java.util.List.of());
+    }
+
+    /** extraJvmArgs are appended after the standard ones below (e.g. "-Doe.mode=group"). */
+    public E2eServer(int port, java.util.List<String> extraJvmArgs) {
         this.port = port;
         this.homeDir = Path.of("build", "e2e-home-" + port).toAbsolutePath();
+        this.extraJvmArgs = extraJvmArgs;
     }
 
     public int port() {
@@ -58,6 +65,7 @@ public class E2eServer implements AutoCloseable {
         command.add("-Dport=" + port);
         command.add("-Dhome=" + homeDir);
         command.add("-Djava.net.preferIPv4Stack=true");
+        command.addAll(extraJvmArgs);
         command.add("-cp");
         command.add(classpath);
         command.add("tricatch.oe.hub.OeHubApplication");

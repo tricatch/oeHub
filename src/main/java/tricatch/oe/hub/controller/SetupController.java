@@ -12,8 +12,10 @@ import tricatch.oe.hosts.model.HostsUrl;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
+import tricatch.oe.hub.mapper.WorkspaceMapper;
 import tricatch.oe.hub.model.HubConf;
 import tricatch.oe.hub.model.HubUser;
+import tricatch.oe.hub.model.Workspace;
 import tricatch.oe.proxy.ReverseProxyServer;
 
 import java.time.LocalDateTime;
@@ -63,7 +65,9 @@ public class SetupController {
         try (var session = sqlSessionFactory.openSession()) {
             adminOk = session.getMapper(HubConfMapper.class).findByConfKey("admin") != null;
         }
-        boolean caOk = settings.isCaConfigured();
+        // CA is an oeProxy-only requirement - oeProxy doesn't exist under oe.mode=group, so an
+        // admin account alone is "complete" there (cloudGroupService design doc §2.6).
+        boolean caOk = tricatch.oe.hub.config.AppHome.isGroupMode() || settings.isCaConfigured();
         adminConfigured = adminOk;
         setupComplete = adminOk && caOk;
         logger.info("Setup state refreshed — admin={}, ca={}, complete={}", adminOk, caOk, setupComplete);
@@ -110,6 +114,21 @@ public class SetupController {
             return;
         }
 
+        // Every account gets a personal keypair, and /setup's bootstrap admin additionally founds
+        // the workspace's key (e2eEncryption design doc §3/§4) - setup.pebble generates all of
+        // this client-side before posting here, mirroring AuthController.processRegister's
+        // "new workspace" path.
+        var publicKey = ctx.formParam("publicKey");
+        var wrappedPrivateKey = ctx.formParam("wrappedPrivateKey");
+        var wrappedPrivateKeyRecovery = ctx.formParam("wrappedPrivateKeyRecovery");
+        var founderWrappedWsKey = ctx.formParam("founderWrappedWsKey");
+        if (publicKey == null || publicKey.isBlank() || wrappedPrivateKey == null || wrappedPrivateKey.isBlank()
+                || wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()
+                || founderWrappedWsKey == null || founderWrappedWsKey.isBlank()) {
+            ctx.render("templates/setup.pebble", buildModel("auth.error.crypto.required", "", "generate"));
+            return;
+        }
+
         synchronized (SETUP_LOCK) {
             try (var session = sqlSessionFactory.openSession()) {
                 if (session.getMapper(HubConfMapper.class).findByConfKey("admin") != null) {
@@ -118,15 +137,58 @@ public class SetupController {
                 }
 
                 var now = LocalDateTime.now();
+
+                // Every user belongs to exactly one workspace (cloudGroupService design doc
+                // §2.1/§2.7) - standalone bootstraps its single, fixed workspace here, before the
+                // admin account that will own it.
+                var workspaceMapper = session.getMapper(WorkspaceMapper.class);
+                var workspace = new Workspace();
+                workspace.setWsName("Default");
+                workspace.setStatus("active");
+                workspace.setCreateAt(now);
+                workspace.setUpdatedAt(now);
+                workspaceMapper.insert(workspace);
+
                 var hubUser = new HubUser();
                 hubUser.setUserId(userId);
                 hubUser.setPassword(PasswordUtil.hash(password));
                 hubUser.setRole("adm");
+                hubUser.setWsNo(workspace.getWsNo());
+                hubUser.setPublicKey(publicKey);
+                hubUser.setWrappedPrivateKey(wrappedPrivateKey);
+                hubUser.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
                 hubUser.setUpdatedAt(now);
                 hubUser.setCreateAt(now);
                 var userMapper = session.getMapper(HubUserMapper.class);
                 userMapper.insert(hubUser);
                 userMapper.selfReferenceAudit(hubUser.getUserNo());
+                workspaceMapper.backfillAudit(workspace.getWsNo(), hubUser.getUserNo(), now);
+
+                var wsKey = new tricatch.oe.hub.model.WsKey();
+                wsKey.setWsNo(workspace.getWsNo());
+                wsKey.setUserNo(hubUser.getUserNo());
+                wsKey.setWrappedWsKey(founderWrappedWsKey);
+                wsKey.setCreatedBy(hubUser.getUserNo());
+                wsKey.setUpdatedBy(hubUser.getUserNo());
+                wsKey.setCreateAt(now);
+                wsKey.setUpdatedAt(now);
+                session.getMapper(tricatch.oe.hub.mapper.WsKeyMapper.class).insert(wsKey);
+
+                // Non-login, workspace-owned system account for orphaned-resource ownership later
+                // (cloudGroupService design doc §2.2) - created alongside the workspace so a "no
+                // ws_system yet" state never exists. userId uses '_', which processRegister's
+                // validation (`[A-Za-z0-9._-]+` minus leading/reserved forms handled there) never
+                // produces for a real signup, so it can't collide with a chosen userId.
+                var wsSystemUser = new HubUser();
+                wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
+                wsSystemUser.setPassword(PasswordUtil.hash(java.util.UUID.randomUUID().toString()));
+                wsSystemUser.setRole("ws_system");
+                wsSystemUser.setWsNo(workspace.getWsNo());
+                wsSystemUser.setCreatedBy(hubUser.getUserNo());
+                wsSystemUser.setUpdatedBy(hubUser.getUserNo());
+                wsSystemUser.setCreateAt(now);
+                wsSystemUser.setUpdatedAt(now);
+                userMapper.insert(wsSystemUser);
 
                 var conf = new HubConf();
                 conf.setConfKey("admin");

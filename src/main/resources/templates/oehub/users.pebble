@@ -39,6 +39,62 @@
 
   <h5>{{ msg['users.title'] }}</h5>
 
+  {% if groupMode %}
+  <div class="oe-info-section">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:150px;">
+        <col style="width:175px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="3">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>{{ msg['users.invite.title'] }}</span>
+              <button type="button" class="oe-tbl-btn oe-tbl-btn-action" id="btnCreateInvite" title="{{ msg['users.invite.btn.create'] }}">
+                <span class="oe-icon oe-icon-new" style="width:15px;height:15px"></span>
+              </button>
+            </div>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.invite.col.code'] }}</th>
+          <th>{{ msg['users.invite.col.expires'] }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="invitesTbody">
+        <tr><td colspan="3" class="text-muted text-center py-3">{{ msg['users.invite.empty'] }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="oe-info-section" id="pendingSection" hidden>
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:150px;">
+        <col style="width:175px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="3">
+            <span>{{ msg['users.pending.title'] }}</span>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.pending.col.userid'] }}</th>
+          <th>{{ msg['users.pending.col.requested'] }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="pendingTbody">
+      </tbody>
+    </table>
+  </div>
+
   <div class="oe-info-section">
     <table class="oe-info-table mb-0">
       <colgroup>
@@ -109,6 +165,10 @@
 <script>
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
+  // The "admin" role this screen grants/revokes: 'ws_adm' in group mode (this screen is
+  // workspace-scoped and must never grant the instance-wide 'adm'), 'adm' in standalone
+  // (unchanged - no separate ws_adm role in practice there). See AdminUserController.apiSetRole.
+  var ADMIN_ROLE = '{{ groupMode ? "ws_adm" : "adm" }}';
   var searchTimer;
   var currentUsers = [];
   var sortCol = null;
@@ -149,8 +209,8 @@
       var av = a[sortCol] || '';
       var bv = b[sortCol] || '';
       if (sortCol === 'role') {
-        av = av === 'adm' ? 0 : 1;
-        bv = bv === 'adm' ? 0 : 1;
+        av = av === ADMIN_ROLE ? 0 : 1;
+        bv = bv === ADMIN_ROLE ? 0 : 1;
         return (av - bv) * sortDir;
       }
       if (!av && bv) return 1;
@@ -191,7 +251,7 @@
   }
 
   function roleIconHtml(role) {
-    var isAdmin = role === 'adm';
+    var isAdmin = role === ADMIN_ROLE;
     var cls = isAdmin ? 'oe-icon-admin oe-role-icon-admin' : 'oe-icon-user oe-role-icon-user';
     var title = isAdmin ? ' title="' + escHtml(MSG['users.role.admin']) + '"' : '';
     return '<span class="oe-icon ' + cls + ' oe-role-icon"' + title + '></span>';
@@ -199,7 +259,7 @@
 
   function actionHtml(userId, role) {
     var isSelf  = userId === currentUserId;
-    var isAdmin = role === 'adm';
+    var isAdmin = role === ADMIN_ROLE;
     var roleIcon     = isAdmin ? 'oe-icon-revoke-admin' : 'oe-icon-grant-admin';
     var roleTitle    = isAdmin ? MSG['users.btn.revoke.admin'] : MSG['users.btn.grant.admin'];
     var roleDisabled = (isAdmin && isSelf) ? ' disabled' : '';
@@ -240,8 +300,8 @@
     var btn = this;
     var row = btn.closest('tr');
     var userNo = row.dataset.userNo;
-    var newRole = row.dataset.role === 'adm' ? 'usr' : 'adm';
-    var confirmMsg = newRole === 'adm' ? MSG['confirm.grant.admin'] : MSG['confirm.revoke.admin'];
+    var newRole = row.dataset.role === ADMIN_ROLE ? 'usr' : ADMIN_ROLE;
+    var confirmMsg = newRole === ADMIN_ROLE ? MSG['confirm.grant.admin'] : MSG['confirm.revoke.admin'];
     if (!confirm(confirmMsg)) return;
     btn.disabled = true;
     fetch('/api/admin/users/' + userNo + '/role', {
@@ -300,13 +360,60 @@
     });
   });
 
+  // Workspace-key rotation on member departure (e2eEncryption design doc §7): the DEK behind
+  // every 'public'/'collabo' row never changes, only which key wraps it, so "rotation" is just a
+  // fresh wrap per remaining member (their public key, already known) and per shared row (their
+  // DEK, unwrapped with the OLD workspace key and re-wrapped with the new one) - no content is
+  // ever re-encrypted. Runs entirely in this browser; the server only ever receives the
+  // already-wrapped output (same server-blind pattern as approval, §5).
+  async function rotateWorkspaceKeyExcluding(excludeUserNo) {
+    const oldWsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    if (!oldWsKey) throw new Error('no cached workspace key');
+    const newWsKey = await OE_CRYPTO.generateWorkspaceKey();
+
+    const memberWraps = [];
+    for (const u of currentUsers) {
+      if (String(u.userNo) === String(excludeUserNo) || !u.publicKey) continue;
+      const publicKey = await OE_CRYPTO.importPublicKey(u.publicKey);
+      const wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(newWsKey, publicKey);
+      memberWraps.push({ userNo: u.userNo, wrappedWsKey: wrappedWsKey });
+    }
+
+    const rows = await (await fetch('/api/admin/workspace/rotation-rows')).json();
+    const contentRewraps = [];
+    for (const row of rows) {
+      const dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(row.wrappedContentKey, oldWsKey);
+      const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, newWsKey);
+      contentRewraps.push({ hostsId: row.hostsId, wrappedContentKey: wrappedContentKey });
+    }
+
+    const res = await fetch('/api/admin/workspace/rotate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ memberWraps: memberWraps, contentRewraps: contentRewraps })
+    });
+    if (!res.ok) throw new Error('rotation failed');
+    await OE_SESSION_KEYS.saveWorkspaceKey(newWsKey);
+  }
+
   function onDelete() {
     var btn = this;
     var row = btn.closest('tr');
     var userNo = row.dataset.userNo;
     if (!confirm(MSG['confirm.delete.user'])) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo, { method: 'DELETE' })
+    var rotation = window.OE_GROUP_MODE ? rotateWorkspaceKeyExcluding(userNo) : Promise.resolve();
+    rotation
+      .catch(function () {
+        // Rotation failing shouldn't strand the departure entirely - the account itself still
+        // gets removed below, just without a fresh key (design doc §9: resume/retry strategy for
+        // a partial rotation is still an open question, so this is the "at least don't block the
+        // core action" fallback for now). Surface it distinctly so a ws_adm knows to retry later.
+        showToast(MSG['toast.rotation.failed']);
+      })
+      .then(function () {
+        return fetch('/api/admin/users/' + userNo, { method: 'DELETE' });
+      })
       .then(function (r) {
         if (r.ok) {
           showToast(MSG['toast.user.deleted']);
@@ -323,7 +430,160 @@
       });
   }
 
+  function loadPending() {
+    fetch('/api/admin/users/pending')
+      .then(function (r) { return r.json(); })
+      .then(renderPending)
+      .catch(function () {});
+  }
+
+  function renderPending(pending) {
+    var section = document.getElementById('pendingSection');
+    var tbody = document.getElementById('pendingTbody');
+    if (!pending || pending.length === 0) {
+      section.hidden = true;
+      tbody.innerHTML = '';
+      return;
+    }
+    section.hidden = false;
+    tbody.innerHTML = pending.map(function (u) {
+      return '<tr data-user-no="' + u.userNo + '" data-public-key="' + escHtml(u.publicKey || '') + '">' +
+        '<td>' + escHtml(u.userId) + '</td>' +
+        '<td class="small text-muted">' + escHtml(u.createAt) + '</td>' +
+        '<td class="text-end">' +
+        '<button class="oe-tbl-btn oe-tbl-btn-action btn-approve-pending" title="' + escHtml(MSG['users.btn.approve']) + '">' +
+        '<span class="oe-icon oe-icon-grant-admin" style="width:15px;height:15px"></span></button>' +
+        ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-reject-pending ms-1" title="' + escHtml(MSG['users.btn.reject']) + '">' +
+        '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>' +
+        '</td></tr>';
+    }).join('');
+    tbody.querySelectorAll('.btn-approve-pending').forEach(function (btn) {
+      btn.addEventListener('click', onApprovePending);
+    });
+    tbody.querySelectorAll('.btn-reject-pending').forEach(function (btn) {
+      btn.addEventListener('click', onRejectPending);
+    });
+  }
+
+  function onApprovePending() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var userNo = row.dataset.userNo;
+    var publicKeyB64 = row.dataset.publicKey;
+    if (!confirm(MSG['confirm.approve.user'])) return;
+    btn.disabled = true;
+
+    approveWithWorkspaceKeyWrap(userNo, publicKeyB64).catch(function (err) {
+      console.error('Approve failed:', err);
+      btn.disabled = false;
+      showToast(MSG['toast.user.approve.failed']);
+    });
+  }
+
+  async function approveWithWorkspaceKeyWrap(userNo, publicKeyB64) {
+    var row = document.querySelector('tr[data-user-no="' + userNo + '"]');
+    var btn = row.querySelector('.btn-approve-pending');
+
+    // The approving ws_adm must have their own workspace key cached from login (e2eEncryption
+    // design doc §3/§5) - if not (e.g. this account predates the crypto wiring, or the cache was
+    // never populated), approval can't proceed: there would be nothing correct to wrap.
+    var wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    if (!wsKey || !publicKeyB64) {
+      btn.disabled = false;
+      showToast(MSG['toast.user.approve.failed']);
+      return;
+    }
+    var publicKey = await OE_CRYPTO.importPublicKey(publicKeyB64);
+    var wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, publicKey);
+
+    var r = await fetch('/api/admin/users/' + userNo + '/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wrappedWsKey: wrappedWsKey })
+    });
+    if (r.ok) {
+      showToast(MSG['toast.user.approved']);
+      row.remove();
+      if (!document.getElementById('pendingTbody').children.length) document.getElementById('pendingSection').hidden = true;
+      loadUsers('');
+    } else {
+      btn.disabled = false;
+      showToast(MSG['toast.user.approve.failed']);
+    }
+  }
+
+  function onRejectPending() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var userNo = row.dataset.userNo;
+    if (!confirm(MSG['confirm.reject.user'])) return;
+    btn.disabled = true;
+    fetch('/api/admin/users/' + userNo + '/reject', { method: 'POST' })
+      .then(function (r) {
+        if (r.ok) {
+          showToast(MSG['toast.user.rejected']);
+          row.remove();
+          if (!document.getElementById('pendingTbody').children.length) document.getElementById('pendingSection').hidden = true;
+        } else {
+          btn.disabled = false;
+          showToast(MSG['toast.user.reject.failed']);
+        }
+      }).catch(function () {
+        btn.disabled = false;
+        showToast(MSG['toast.user.reject.failed']);
+      });
+  }
+
+  function loadInvites() {
+    var tbody = document.getElementById('invitesTbody');
+    if (!tbody) return; // group mode only - section isn't rendered in standalone
+    fetch('/api/admin/invites')
+      .then(function (r) { return r.json(); })
+      .then(renderInvites)
+      .catch(function () {});
+  }
+
+  function renderInvites(invites) {
+    var tbody = document.getElementById('invitesTbody');
+    if (!invites || invites.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center py-3">' + escHtml(MSG['users.invite.empty']) + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = invites.map(function (i) {
+      return '<tr data-invite-code="' + escHtml(i.inviteCode) + '">' +
+        '<td class="setup-mono">' + escHtml(i.inviteCode) + '</td>' +
+        '<td class="small text-muted">' + escHtml(i.expiresAt) + '</td>' +
+        '<td class="text-end"><button class="oe-tbl-btn oe-tbl-btn-action btn-copy-invite" title="' + escHtml(MSG['ui.copy.clipboard']) + '">' +
+        '<span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span></button></td></tr>';
+    }).join('');
+    tbody.querySelectorAll('.btn-copy-invite').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var code = btn.closest('tr').dataset.inviteCode;
+        var url = location.origin + '/register?invite=' + encodeURIComponent(code);
+        copyToClipboard(url).then(function () { showToast(MSG['toast.copied']); });
+      });
+    });
+  }
+
+  var btnCreateInvite = document.getElementById('btnCreateInvite');
+  if (btnCreateInvite) {
+    btnCreateInvite.addEventListener('click', function () {
+      btnCreateInvite.disabled = true;
+      fetch('/api/admin/invites', { method: 'POST' })
+        .then(function (r) {
+          btnCreateInvite.disabled = false;
+          if (r.ok) { loadInvites(); return; }
+          showToast(MSG['toast.invite.create.failed']);
+        }).catch(function () {
+          btnCreateInvite.disabled = false;
+          showToast(MSG['toast.invite.create.failed']);
+        });
+    });
+  }
+
   loadUsers('');
+  loadPending();
+  loadInvites();
 })();
 </script>
 <script>initWidthToggle(document.getElementById('usersApp'), document.getElementById('btnToggleWidth'));</script>

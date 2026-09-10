@@ -29,8 +29,12 @@
             {% if error %}
             <div class="alert alert-danger py-2" role="alert">{{ msg[error] }}</div>
             {% endif %}
+            {% if info %}
+            <div class="alert alert-info py-2" role="alert">{{ msg[info] }}</div>
+            {% endif %}
+            <div class="alert alert-danger py-2 d-none" id="loginErrorBox" role="alert"></div>
 
-            <form method="post" action="/login" autocomplete="off">
+            <form method="post" action="/login" autocomplete="off" id="loginForm">
               <input type="hidden" name="_csrf" value="{{ csrfToken }}">
               <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -52,7 +56,7 @@
               </div>
 
               <div class="d-grid">
-                <button type="submit" class="oe-modal-btn justify-content-center">{{ msg['auth.signin'] }}</button>
+                <button type="submit" class="oe-modal-btn justify-content-center" id="btnLoginSubmit">{{ msg['auth.signin'] }}</button>
               </div>
             </form>
           </div>
@@ -66,6 +70,85 @@
     </div>
   </div>
 </div>
+<script>window.MSG = {{ msgJson | raw }};</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/crypto.js"></script>
+<script src="/js/session-keys.js"></script>
+<script>
+(function () {
+  var form = document.getElementById('loginForm');
+  var submitBtn = document.getElementById('btnLoginSubmit');
+  var submitBtnDefaultText = submitBtn.textContent;
+  var errorBox = document.getElementById('loginErrorBox');
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.remove('d-none');
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (submitBtn.disabled) return;
+    errorBox.classList.add('d-none');
+    submitBtn.disabled = true;
+
+    var password = form.password.value;
+    var body = new URLSearchParams();
+    body.set('_csrf', form._csrf.value);
+    body.set('redirect', form.redirect.value);
+    body.set('userId', form.userId.value);
+    body.set('password', password);
+    body.set('rememberMe', form.rememberMe.checked ? 'on' : '');
+
+    fetch('/login', { method: 'POST', body: body, redirect: 'follow' })
+      .then(async function (response) {
+        if (!response.redirected) {
+          // processLogin re-renders login.pebble (200, no redirect) on any failure - pull the
+          // error message out of that response rather than replacing the whole document.
+          var doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+          var serverError = doc.querySelector('.alert-danger');
+          showError(serverError ? serverError.textContent.trim() : MSG['auth.error.invalid.credentials']);
+          submitBtn.disabled = false;
+          return;
+        }
+
+        var landingUrl = response.url;
+        try {
+          await unwrapAndCacheSessionKeys(password);
+        } catch (err) {
+          // Login itself already succeeded server-side (the cookie is set) - a key-unwrap
+          // failure here shouldn't strand the user on the login page, just leave content
+          // encrypted for this session (pages that need it will re-prompt as appropriate, not
+          // yet wired - e2eEncryption design doc §9 follow-up).
+          console.error('Key unwrap failed after login:', err);
+        }
+        location.href = landingUrl;
+      })
+      .catch(function (err) {
+        console.error('Login request failed:', err);
+        submitBtn.disabled = false;
+        showError(MSG['auth.error.invalid.credentials']);
+      });
+  });
+
+  async function unwrapAndCacheSessionKeys(password) {
+    var res = await fetch('/api/user/crypto-keys');
+    if (!res.ok) return;
+    var data = await res.json();
+    if (!data.wrappedPrivateKey) return; // pre-e2e accounts with no keypair yet
+
+    var record = JSON.parse(data.wrappedPrivateKey);
+    var salt = new Uint8Array(OE_CRYPTO.base64ToBuf(record.salt));
+    var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(password, salt);
+    var privateKey = await OE_CRYPTO.unwrapPrivateKey(record, passwordKek);
+    await OE_SESSION_KEYS.savePrivateKey(privateKey);
+
+    if (data.wrappedWsKey) {
+      var wsKey = await OE_CRYPTO.unwrapWorkspaceKeyForUser(data.wrappedWsKey, privateKey);
+      await OE_SESSION_KEYS.saveWorkspaceKey(wsKey);
+    }
+  }
+})();
+</script>
 </body>
 </html>
