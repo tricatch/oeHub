@@ -1047,8 +1047,8 @@ const FWDPROXY_PORT = 36980;
     document.getElementById('metaCreator').textContent = p ? (p.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = p ? (fmtDateTime(p.updatedAt) || '—') : '—';
     const editorEl = document.getElementById('metaEditor');
-    editorEl.textContent = (p && p.lastEditorUserId && p.lastEditorUserId !== p.userId)
-      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + p.lastEditorUserId + ')'
+    editorEl.textContent = (p && p.updatedByUserId && p.updatedByUserId !== p.userId)
+      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + p.updatedByUserId + ')'
       : '';
   }
 

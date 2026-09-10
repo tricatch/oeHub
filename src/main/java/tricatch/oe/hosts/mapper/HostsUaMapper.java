@@ -7,28 +7,28 @@ import java.util.List;
 
 public interface HostsUaMapper {
 
-    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE user_no IS NULL ORDER BY sort_order, create_at")
+    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, created_by, updated_by, create_at, updated_at FROM HOSTS_UA WHERE user_no IS NULL ORDER BY sort_order, create_at")
     List<HostsUa> findAll();
 
-    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE user_no IS NULL OR user_no = #{userNo} ORDER BY CASE WHEN user_no IS NOT NULL THEN 0 ELSE 1 END, sort_order, create_at")
+    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, created_by, updated_by, create_at, updated_at FROM HOSTS_UA WHERE user_no IS NULL OR user_no = #{userNo} ORDER BY CASE WHEN user_no IS NOT NULL THEN 0 ELSE 1 END, sort_order, create_at")
     List<HostsUa> findAllForUser(@Param("userNo") Long userNo);
 
-    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId}")
+    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, created_by, updated_by, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId}")
     HostsUa findById(String uaId);
 
     // Scoped to global presets only — for the admin "global preset" endpoints, so an admin editing
     // a preset by id can never reach into another user's personal preset (user_no IS NOT NULL).
-    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no IS NULL")
+    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, created_by, updated_by, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no IS NULL")
     HostsUa findByIdGlobal(String uaId);
 
-    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no = #{userNo}")
+    @Select("SELECT ua_id, ua_name, ua_value, sort_order, user_no, created_by, updated_by, create_at, updated_at FROM HOSTS_UA WHERE ua_id = #{uaId} AND user_no = #{userNo}")
     HostsUa findByIdAndUserNo(@Param("uaId") String uaId, @Param("userNo") Long userNo);
 
-    @Insert("INSERT INTO HOSTS_UA (ua_id, ua_name, ua_value, sort_order, user_no, create_at, updated_at) " +
-            "VALUES (#{uaId}, #{uaName}, #{uaValue}, #{sortOrder}, #{userNo}, #{createAt}, #{updatedAt})")
+    @Insert("INSERT INTO HOSTS_UA (ua_id, ua_name, ua_value, sort_order, user_no, created_by, updated_by, create_at, updated_at) " +
+            "VALUES (#{uaId}, #{uaName}, #{uaValue}, #{sortOrder}, #{userNo}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})")
     void insert(HostsUa hostsUa);
 
-    @Update("UPDATE HOSTS_UA SET ua_name = #{uaName}, ua_value = #{uaValue}, sort_order = #{sortOrder}, updated_at = #{updatedAt} WHERE ua_id = #{uaId}")
+    @Update("UPDATE HOSTS_UA SET ua_name = #{uaName}, ua_value = #{uaValue}, sort_order = #{sortOrder}, updated_by = #{updatedBy}, updated_at = #{updatedAt} WHERE ua_id = #{uaId}")
     int update(HostsUa hostsUa);
 
     @Delete("DELETE FROM HOSTS_UA WHERE ua_id = #{uaId}")

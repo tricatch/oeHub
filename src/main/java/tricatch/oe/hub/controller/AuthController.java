@@ -289,7 +289,9 @@ public class AuthController {
         user.setCreateAt(now);
 
         try (var session = sqlSessionFactory.openSession()) {
-            session.getMapper(HubUserMapper.class).insert(user);
+            var mapper = session.getMapper(HubUserMapper.class);
+            mapper.insert(user);
+            mapper.selfReferenceAudit(user.getUserNo());
             session.commit();
         }
 

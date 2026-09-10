@@ -30,7 +30,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @BeforeEach
     void resetWhitelist() {
-        ForwardProxyServer.setWhitelist("");
+        ForwardProxyServer.setWhitelist("", 0L);
     }
 
     private HubUser insertUserWithPassword(String userId, String rawPassword) {
@@ -91,13 +91,13 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void isWhitelisted_emptyList_allowsAnyHost() {
-        ForwardProxyServer.setWhitelist("");
+        ForwardProxyServer.setWhitelist("", 0L);
         assertThat(ForwardProxyServer.isWhitelisted("example.com")).isTrue();
     }
 
     @Test
     void isWhitelisted_matchesExactAndWildcardSubdomain_caseInsensitively() {
-        ForwardProxyServer.setWhitelist("*.Example.com\nfoo.com\n# comment\n\n");
+        ForwardProxyServer.setWhitelist("*.Example.com\nfoo.com\n# comment\n\n", 0L);
         assertThat(ForwardProxyServer.isWhitelisted("EXAMPLE.com")).isTrue();
         assertThat(ForwardProxyServer.isWhitelisted("api.example.com")).isTrue();
         assertThat(ForwardProxyServer.isWhitelisted("foo.com")).isTrue();
@@ -179,7 +179,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_nonWhitelistedDestination_isRedirectedToBlockedPage() {
-        ForwardProxyServer.setWhitelist("only-this.example.com");
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
         var addr = ForwardProxyServer.overrideFor("anyone", "not-whitelisted.example.com:443", "10.1.1.1", "10.1.1.1");
         assertThat(addr).isNotNull();
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();

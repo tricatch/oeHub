@@ -1,8 +1,8 @@
 package tricatch.oe.hosts.model;
 
-import java.time.LocalDateTime;
+import tricatch.oe.hub.model.Auditable;
 
-public class HostsProf {
+public class HostsProf extends Auditable {
     private String hostsId;
     private Long userNo;
     private String hostsProfile;
@@ -11,10 +11,8 @@ public class HostsProf {
     private int sortOrder;
     private String visibility;
     private String parentId;
-    private Long lastEditedBy;
-    private LocalDateTime updatedAt;
     private String userId;
-    private String lastEditorUserId;
+    private String updatedByUserId;
 
     public String getHostsId() { return hostsId; }
     public void setHostsId(String hostsId) { this.hostsId = hostsId; }
@@ -40,12 +38,6 @@ public class HostsProf {
     public String getParentId() { return parentId; }
     public void setParentId(String parentId) { this.parentId = parentId; }
 
-    public Long getLastEditedBy() { return lastEditedBy; }
-    public void setLastEditedBy(Long lastEditedBy) { this.lastEditedBy = lastEditedBy; }
-
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
-
     public String getUserId() {
         return userId;
     }
@@ -54,6 +46,6 @@ public class HostsProf {
         this.userId = userId;
     }
 
-    public String getLastEditorUserId() { return lastEditorUserId; }
-    public void setLastEditorUserId(String lastEditorUserId) { this.lastEditorUserId = lastEditorUserId; }
+    public String getUpdatedByUserId() { return updatedByUserId; }
+    public void setUpdatedByUserId(String updatedByUserId) { this.updatedByUserId = updatedByUserId; }
 }

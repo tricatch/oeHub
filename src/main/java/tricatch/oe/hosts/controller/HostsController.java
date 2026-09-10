@@ -261,6 +261,7 @@ public class HostsController {
             if (ua == null) { ctx.status(404); return; }
             if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
             if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
+            ua.setUpdatedBy(user.getUserNo());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ua.setMine(true);
@@ -291,6 +292,8 @@ public class HostsController {
         ua.setUaName(uaName.trim());
         ua.setUaValue(uaValue.trim());
         ua.setUserNo(user.getUserNo());
+        ua.setCreatedBy(user.getUserNo());
+        ua.setUpdatedBy(user.getUserNo());
         ua.setCreateAt(now);
         ua.setUpdatedAt(now);
         try (var session = sqlSessionFactory.openSession(true)) {
@@ -321,6 +324,7 @@ public class HostsController {
                 var ua = mapper.findByIdAndUserNo((String) ids.get(i), user.getUserNo());
                 if (ua == null) continue;
                 ua.setSortOrder(i);
+                ua.setUpdatedBy(user.getUserNo());
                 ua.setUpdatedAt(LocalDateTime.now());
                 mapper.update(ua);
             }
@@ -359,6 +363,8 @@ public class HostsController {
         url.setUrlName(urlName.trim());
         url.setUrlValue(urlValue.trim());
         url.setUserNo(user.getUserNo());
+        url.setCreatedBy(user.getUserNo());
+        url.setUpdatedBy(user.getUserNo());
         url.setCreateAt(now);
         url.setUpdatedAt(now);
         try (var session = sqlSessionFactory.openSession(true)) {
@@ -380,6 +386,7 @@ public class HostsController {
             if (url == null) { ctx.status(404); return; }
             if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
             if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
+            url.setUpdatedBy(user.getUserNo());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             url.setMine(true);
@@ -406,6 +413,7 @@ public class HostsController {
                 var url = mapper.findByIdAndUserNo((String) ids.get(i), user.getUserNo());
                 if (url == null) continue;
                 url.setSortOrder(i);
+                url.setUpdatedBy(user.getUserNo());
                 url.setUpdatedAt(LocalDateTime.now());
                 mapper.update(url);
             }

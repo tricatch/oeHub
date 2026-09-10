@@ -81,6 +81,10 @@ public class ReverseProxyServer {
             var toSave = new HubConf();
             toSave.setConfKey(KEY_OID_SECRET);
             toSave.setConfVal(java.util.Base64.getEncoder().encodeToString(secret));
+            // No HTTP request / logged-in actor at JVM-startup secret generation time.
+            toSave.setCreatedBy(0L);
+            toSave.setUpdatedBy(0L);
+            toSave.setCreateAt(java.time.LocalDateTime.now());
             toSave.setUpdatedAt(java.time.LocalDateTime.now());
             mapper.upsert(toSave);
             session.commit();
@@ -94,9 +98,9 @@ public class ReverseProxyServer {
         return ipIdentifierEnabled;
     }
 
-    public static void setIpIdentifierEnabled(boolean enabled) {
+    public static void setIpIdentifierEnabled(boolean enabled, Long actorUserNo) {
         ipIdentifierEnabled = enabled;
-        new ProxyConfService(sqlSessionFactory).set(KEY_IP_IDENTIFIER_ENABLED, null, String.valueOf(enabled));
+        new ProxyConfService(sqlSessionFactory).set(KEY_IP_IDENTIFIER_ENABLED, null, String.valueOf(enabled), actorUserNo);
     }
 
     // Exposed so ForwardProxyServer can recognize a ${PROXY_SVR} self-loop connection (its own

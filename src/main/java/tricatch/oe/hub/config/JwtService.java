@@ -112,10 +112,15 @@ public class JwtService {
         return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(bytes));
     }
 
+    // No HTTP request / logged-in actor at JVM-startup key generation time, so attribute it to
+    // the reserved "system" sentinel (0L) rather than a real HUB_USR.user_no (see CLAUDE.md).
     private static void upsert(HubConfMapper mapper, String kid, String val, LocalDateTime now) {
         var conf = new HubConf();
         conf.setConfKey(kid);
         conf.setConfVal(val);
+        conf.setCreatedBy(0L);
+        conf.setUpdatedBy(0L);
+        conf.setCreateAt(now);
         conf.setUpdatedAt(now);
         mapper.upsert(conf);
     }

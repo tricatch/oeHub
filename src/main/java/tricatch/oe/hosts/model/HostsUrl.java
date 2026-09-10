@@ -1,16 +1,14 @@
 package tricatch.oe.hosts.model;
 
-import java.time.LocalDateTime;
+import tricatch.oe.hub.model.Auditable;
 
-public class HostsUrl {
+public class HostsUrl extends Auditable {
     private String urlId;
     private String urlName;
     private String urlValue;
     private int sortOrder;
     private Long userNo;
     private boolean mine;
-    private LocalDateTime createAt;
-    private LocalDateTime updatedAt;
 
     public String getUrlId() { return urlId; }
     public void setUrlId(String urlId) { this.urlId = urlId; }
@@ -29,10 +27,4 @@ public class HostsUrl {
 
     public boolean isMine() { return mine; }
     public void setMine(boolean mine) { this.mine = mine; }
-
-    public LocalDateTime getCreateAt() { return createAt; }
-    public void setCreateAt(LocalDateTime createAt) { this.createAt = createAt; }
-
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

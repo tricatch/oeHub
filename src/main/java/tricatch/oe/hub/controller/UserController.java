@@ -138,6 +138,7 @@ public class UserController {
                 return;
             }
             target.setPassword(PasswordUtil.hash(newPassword));
+            target.setUpdatedBy(hubUser.getUserNo());
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updatePassword(target);
             session.commit();

@@ -124,11 +124,16 @@ public class SetupController {
                 hubUser.setRole("adm");
                 hubUser.setUpdatedAt(now);
                 hubUser.setCreateAt(now);
-                session.getMapper(HubUserMapper.class).insert(hubUser);
+                var userMapper = session.getMapper(HubUserMapper.class);
+                userMapper.insert(hubUser);
+                userMapper.selfReferenceAudit(hubUser.getUserNo());
 
                 var conf = new HubConf();
                 conf.setConfKey("admin");
                 conf.setConfVal(userId);
+                conf.setCreatedBy(hubUser.getUserNo());
+                conf.setUpdatedBy(hubUser.getUserNo());
+                conf.setCreateAt(now);
                 conf.setUpdatedAt(now);
                 session.getMapper(HubConfMapper.class).upsert(conf);
 
@@ -219,10 +224,13 @@ public class SetupController {
             ctx.status(400); return;
         }
         var now = LocalDateTime.now();
+        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
         var url = new HostsUrl();
         url.setUrlId(UUID.randomUUID().toString().replace("-", "").substring(0, 32));
         url.setUrlName(urlName.trim());
         url.setUrlValue(urlValue.trim());
+        url.setCreatedBy(actorUserNo);
+        url.setUpdatedBy(actorUserNo);
         url.setCreateAt(now);
         url.setUpdatedAt(now);
         try (var session = sqlSessionFactory.openSession(true)) {
@@ -242,6 +250,7 @@ public class SetupController {
             if (url == null) { ctx.status(404); return; }
             if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
             if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
+            url.setUpdatedBy(AuthController.currentUser(ctx).getUserNo());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             ctx.json(url);
@@ -259,12 +268,14 @@ public class SetupController {
 
     public void apiSetupUrlReorder(Context ctx) throws Exception {
         var ids = objectMapper.readValue(ctx.body(), List.class);
+        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUrlMapper.class);
             for (int i = 0; i < ids.size(); i++) {
                 var url = mapper.findByIdGlobal((String) ids.get(i));
                 if (url == null) continue;
                 url.setSortOrder(i);
+                url.setUpdatedBy(actorUserNo);
                 url.setUpdatedAt(LocalDateTime.now());
                 mapper.update(url);
             }
@@ -286,10 +297,13 @@ public class SetupController {
             ctx.status(400); return;
         }
         var now = LocalDateTime.now();
+        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
         var ua = new HostsUa();
         ua.setUaId(UUID.randomUUID().toString().replace("-", "").substring(0, 32));
         ua.setUaName(uaName.trim());
         ua.setUaValue(uaValue.trim());
+        ua.setCreatedBy(actorUserNo);
+        ua.setUpdatedBy(actorUserNo);
         ua.setCreateAt(now);
         ua.setUpdatedAt(now);
         try (var session = sqlSessionFactory.openSession(true)) {
@@ -309,6 +323,7 @@ public class SetupController {
             if (ua == null) { ctx.status(404); return; }
             if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
             if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
+            ua.setUpdatedBy(AuthController.currentUser(ctx).getUserNo());
             ua.setUpdatedAt(LocalDateTime.now());
             mapper.update(ua);
             ctx.json(ua);
@@ -326,12 +341,14 @@ public class SetupController {
 
     public void apiSetupUaReorder(Context ctx) throws Exception {
         var ids = objectMapper.readValue(ctx.body(), List.class);
+        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
             for (int i = 0; i < ids.size(); i++) {
                 var ua = mapper.findByIdGlobal((String) ids.get(i));
                 if (ua == null) continue;
                 ua.setSortOrder(i);
+                ua.setUpdatedBy(actorUserNo);
                 ua.setUpdatedAt(LocalDateTime.now());
                 mapper.update(ua);
             }
@@ -342,7 +359,7 @@ public class SetupController {
     public void saveOidDomainDefault(Context ctx) {
         var domainList = ctx.formParam("oidDomainDefault");
         if (domainList == null) domainList = "";
-        settings.saveOidDomainDefault(domainList.trim());
+        settings.saveOidDomainDefault(domainList.trim(), AuthController.currentUser(ctx).getUserNo());
         ctx.redirect("/setup?savedOid=1");
     }
 

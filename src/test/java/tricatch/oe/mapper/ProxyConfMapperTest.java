@@ -15,6 +15,10 @@ class ProxyConfMapperTest extends MapperTestBase {
         c.setUserNo(userNo);
         c.setConfKey(key);
         c.setConfVal(val);
+        var actor = userNo != null ? userNo : 0L;
+        c.setCreatedBy(actor);
+        c.setUpdatedBy(actor);
+        c.setCreateAt(LocalDateTime.now());
         c.setUpdatedAt(LocalDateTime.now());
         return c;
     }

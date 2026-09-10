@@ -36,10 +36,13 @@ public class AdminHostsUrlController {
             return;
         }
         var now = LocalDateTime.now();
+        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
         var url = new HostsUrl();
         url.setUrlId(UUID.randomUUID().toString().replace("-", "").substring(0, 32));
         url.setUrlName(urlName.trim());
         url.setUrlValue(urlValue.trim());
+        url.setCreatedBy(actorUserNo);
+        url.setUpdatedBy(actorUserNo);
         url.setCreateAt(now);
         url.setUpdatedAt(now);
         try (var session = sqlSessionFactory.openSession(true)) {
@@ -63,6 +66,7 @@ public class AdminHostsUrlController {
             if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
             if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
             if (body.get("sortOrder") instanceof Number n) url.setSortOrder(n.intValue());
+            url.setUpdatedBy(AuthController.currentUser(ctx).getUserNo());
             url.setUpdatedAt(LocalDateTime.now());
             mapper.update(url);
             ctx.json(url);
@@ -80,12 +84,14 @@ public class AdminHostsUrlController {
 
     public void apiReorder(Context ctx) throws Exception {
         var ids = objectMapper.readValue(ctx.body(), List.class);
+        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
         try (var session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(HostsUrlMapper.class);
             for (int i = 0; i < ids.size(); i++) {
                 var url = mapper.findByIdGlobal((String) ids.get(i));
                 if (url == null) continue;
                 url.setSortOrder(i);
+                url.setUpdatedBy(actorUserNo);
                 url.setUpdatedAt(LocalDateTime.now());
                 mapper.update(url);
             }

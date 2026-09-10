@@ -20,6 +20,11 @@ class ProxyVhostMapperTest extends MapperTestBase {
         v.setSelected(false);
         v.setSortOrder(0);
         v.setVisibility("public");
+        // The real actor is always positive, even for a collabo parent row whose user_no is
+        // stored negative (see ProxyVhostService.convertToCollabo) - mirror that here too.
+        v.setCreatedBy(Math.abs(userNo));
+        v.setUpdatedBy(Math.abs(userNo));
+        v.setCreateAt(LocalDateTime.now());
         v.setUpdatedAt(LocalDateTime.now());
         return v;
     }
@@ -255,9 +260,9 @@ class ProxyVhostMapperTest extends MapperTestBase {
             assertThat(mapper.findByVhostId(original.getVhostId()).getVhostContent()).isEqualTo("updated: true");
             assertThat(mapper.findByVhostId(ref.getVhostId()).getVhostContent()).isEqualTo("updated: true");
 
-            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — last_edited_by만 collab으로 반영
+            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — updated_by만 collab으로 반영
             assertThat(mapper.findByVhostId(original.getVhostId()).getUserId()).isEqualTo(owner.getUserId());
-            assertThat(mapper.findByVhostId(ref.getVhostId()).getLastEditorUserId()).isEqualTo(collab.getUserId());
+            assertThat(mapper.findByVhostId(ref.getVhostId()).getUpdatedByUserId()).isEqualTo(collab.getUserId());
 
             // owner의 참조 목록
             var ownerRefs = mapper.findReferencesByUserNo(owner.getUserNo());

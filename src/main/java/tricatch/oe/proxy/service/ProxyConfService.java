@@ -24,14 +24,21 @@ public class ProxyConfService {
         }
     }
 
-    public void set(String confKey, Long userNo, String value) {
+    // actorUserNo is who is performing this save (a logged-in user for their own config, or the
+    // admin saving a global config with userNo == null) - only used for created_by/updated_by,
+    // never confused with the config's own (possibly null / global) userNo.
+    public void set(String confKey, Long userNo, String value, Long actorUserNo) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyConfMapper.class);
+            var now = LocalDateTime.now();
             var conf = new ProxyConf();
             conf.setUserNo(userNo);
             conf.setConfKey(confKey);
             conf.setConfVal(value);
-            conf.setUpdatedAt(LocalDateTime.now());
+            conf.setCreatedBy(actorUserNo);
+            conf.setUpdatedBy(actorUserNo);
+            conf.setCreateAt(now);
+            conf.setUpdatedAt(now);
             mapper.upsert(conf);
             session.commit();
         }

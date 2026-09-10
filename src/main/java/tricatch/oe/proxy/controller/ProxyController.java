@@ -359,9 +359,9 @@ public class ProxyController {
                 ctx.status(400).result("Invalid vhost configuration");
                 return;
             }
-            confService.set(name, hubUser.getUserNo(), value);
+            confService.set(name, hubUser.getUserNo(), value, hubUser.getUserNo());
         } else {
-            confService.set(name, hubUser.getUserNo(), value);
+            confService.set(name, hubUser.getUserNo(), value, hubUser.getUserNo());
         }
         ctx.status(204);
     }
@@ -426,7 +426,7 @@ public class ProxyController {
             } else {
                 ReverseProxyServer.clearVirtualHosts(userNo);
             }
-            confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "");
+            confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "", userNo);
         } catch (Exception e) {
             logger.warn("Failed to apply vhost config for user {}: {}", userNo, e.getMessage());
             throw new VhostApplyException(e);

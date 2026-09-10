@@ -18,6 +18,9 @@ class HostsUaMapperTest extends MapperTestBase {
         u.setUaValue("Mozilla/5.0 (" + name + ")");
         u.setSortOrder(0);
         u.setUserNo(userNo);
+        var actor = userNo != null ? userNo : 0L;
+        u.setCreatedBy(actor);
+        u.setUpdatedBy(actor);
         u.setCreateAt(now);
         u.setUpdatedAt(now);
         return u;

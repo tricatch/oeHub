@@ -20,6 +20,11 @@ class HostsProfMapperTest extends MapperTestBase {
         h.setSelected(false);
         h.setSortOrder(0);
         h.setVisibility("public");
+        // The real actor is always positive, even for a collabo parent row whose user_no is
+        // stored negative (see HostsProfService.convertToCollabo) - mirror that here too.
+        h.setCreatedBy(Math.abs(userNo));
+        h.setUpdatedBy(Math.abs(userNo));
+        h.setCreateAt(LocalDateTime.now());
         h.setUpdatedAt(LocalDateTime.now());
         return h;
     }
@@ -222,9 +227,9 @@ class HostsProfMapperTest extends MapperTestBase {
             assertThat(mapper.findByHostsId(original.getHostsId()).getHostsContent()).isEqualTo("updated content");
             assertThat(mapper.findByHostsId(ref.getHostsId()).getHostsContent()).isEqualTo("updated content");
 
-            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — last_edited_by만 collab으로 반영
+            // 소유자 표시는 collab이 수정해도 여전히 원 소유자(owner) — updated_by만 collab으로 반영
             assertThat(mapper.findByHostsId(original.getHostsId()).getUserId()).isEqualTo(owner.getUserId());
-            assertThat(mapper.findByHostsId(ref.getHostsId()).getLastEditorUserId()).isEqualTo(collab.getUserId());
+            assertThat(mapper.findByHostsId(ref.getHostsId()).getUpdatedByUserId()).isEqualTo(collab.getUserId());
 
             // owner의 참조 목록
             var ownerRefs = mapper.findReferencesByUserNo(owner.getUserNo());

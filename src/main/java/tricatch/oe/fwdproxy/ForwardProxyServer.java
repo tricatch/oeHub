@@ -170,9 +170,9 @@ public class ForwardProxyServer {
         return whitelistText;
     }
 
-    public static void setWhitelist(String text) {
+    public static void setWhitelist(String text, Long actorUserNo) {
         applyWhitelist(text != null ? text : "");
-        new ProxyConfService(sqlSessionFactory).set(KEY_WHITELIST, null, whitelistText);
+        new ProxyConfService(sqlSessionFactory).set(KEY_WHITELIST, null, whitelistText, actorUserNo);
     }
 
     private static void applyWhitelist(String text) {

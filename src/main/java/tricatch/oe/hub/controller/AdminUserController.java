@@ -120,6 +120,7 @@ public class AdminUserController {
                 return;
             }
             target.setRole(newRole);
+            target.setUpdatedBy(currentUser != null ? currentUser.getUserNo() : null);
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updateRole(target);
             session.commit();
@@ -131,6 +132,7 @@ public class AdminUserController {
         Long userNo;
         try { userNo = Long.parseLong(ctx.pathParam("userNo")); }
         catch (NumberFormatException e) { ctx.status(400).result("Invalid user ID"); return; }
+        var currentUser = AuthController.currentUser(ctx);
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HubUserMapper.class);
             var target = mapper.findByUserNo(userNo);
@@ -140,6 +142,7 @@ public class AdminUserController {
             }
             var newPassword = generatePassword();
             target.setPassword(PasswordUtil.hash(newPassword));
+            target.setUpdatedBy(currentUser != null ? currentUser.getUserNo() : null);
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updatePassword(target);
             session.commit();

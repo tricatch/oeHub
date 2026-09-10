@@ -12,13 +12,13 @@ public interface HostsProfMapper {
         SELECT h.hosts_id, h.user_no, h.hosts_profile,
                COALESCE(p.hosts_content, h.hosts_content) AS hosts_content,
                h.selected, h.sort_order, h.visibility,
-               h.parent_id, COALESCE(p.last_edited_by, h.last_edited_by) AS last_edited_by,
+               h.parent_id, h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
-               u.user_id, e.user_id AS last_editor_user_id
+               u.user_id, e.user_id AS updated_by_user_id
         FROM HOSTS_PFILE h
         LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
-        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.last_edited_by, h.last_edited_by)
+        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
         WHERE h.user_no = #{userNo}
         ORDER BY h.sort_order ASC, h.updated_at ASC
         """)
@@ -28,13 +28,13 @@ public interface HostsProfMapper {
         SELECT h.hosts_id, h.user_no, h.hosts_profile,
                COALESCE(p.hosts_content, h.hosts_content) AS hosts_content,
                h.selected, h.sort_order, h.visibility,
-               h.parent_id, COALESCE(p.last_edited_by, h.last_edited_by) AS last_edited_by,
+               h.parent_id, h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
-               u.user_id, e.user_id AS last_editor_user_id
+               u.user_id, e.user_id AS updated_by_user_id
         FROM HOSTS_PFILE h
         LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
-        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.last_edited_by, h.last_edited_by)
+        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
         WHERE h.hosts_id = #{hostsId}
         """)
     HostsProf findByHostsId(String hostsId);
@@ -66,46 +66,46 @@ public interface HostsProfMapper {
 
     @Insert("""
         INSERT INTO HOSTS_PFILE (hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order,
-                                 visibility, parent_id, updated_at)
+                                 visibility, parent_id, created_by, updated_by, create_at, updated_at)
         VALUES (#{hostsId}, #{userNo}, #{hostsProfile}, #{hostsContent}, #{selected}, #{sortOrder},
-                #{visibility}, #{parentId}, #{updatedAt})
+                #{visibility}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
         """)
     void insert(HostsProf hostsProf);
 
     @Insert("""
         INSERT INTO HOSTS_PFILE (hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order,
-                                 visibility, parent_id, updated_at)
+                                 visibility, parent_id, created_by, updated_by, create_at, updated_at)
         SELECT #{hostsId}, #{userNo}, #{hostsProfile}, #{hostsContent}, #{selected},
                COALESCE(MAX(sort_order), -1) + 1,
-               #{visibility}, #{parentId}, #{updatedAt}
+               #{visibility}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
         FROM HOSTS_PFILE
         WHERE user_no = #{userNo}
         """)
     void insertWithAutoSortOrder(HostsProf hostsProf);
 
-    @Update("UPDATE HOSTS_PFILE SET hosts_content = #{hostsContent}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    @Update("UPDATE HOSTS_PFILE SET hosts_content = #{hostsContent}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateContent(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("hostsContent") String hostsContent, @Param("updatedAt") LocalDateTime updatedAt);
 
     // user_no stays the original creator's — this row's owner is looked up as -user_no elsewhere
     // (findByHostsId/findByUserNo), and reassigning it on every collaborator edit both
     // mis-attributes ownership and can collide with the uq_hosts_pfile_user_profile unique
-    // constraint. last_edited_by is the dedicated column for who last touched shared content.
-    @Update("UPDATE HOSTS_PFILE SET hosts_content = #{hostsContent}, last_edited_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{parentId} AND user_no < 0")
+    // constraint. updated_by is the dedicated column for who last touched shared content.
+    @Update("UPDATE HOSTS_PFILE SET hosts_content = #{hostsContent}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{parentId} AND user_no < 0")
     void updateContentByParentId(@Param("parentId") String parentId, @Param("userNo") Long userNo, @Param("hostsContent") String hostsContent, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE HOSTS_PFILE SET hosts_profile = #{hostsProfile}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    @Update("UPDATE HOSTS_PFILE SET hosts_profile = #{hostsProfile}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateProfile(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("hostsProfile") String hostsProfile, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE HOSTS_PFILE SET selected = #{selected}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    @Update("UPDATE HOSTS_PFILE SET selected = #{selected}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateSelected(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("selected") boolean selected, @Param("updatedAt") LocalDateTime updatedAt);
 
     @Update("UPDATE HOSTS_PFILE SET sort_order = #{sortOrder} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateSortOrder(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("sortOrder") int sortOrder);
 
-    @Update("UPDATE HOSTS_PFILE SET visibility = #{visibility}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    @Update("UPDATE HOSTS_PFILE SET visibility = #{visibility}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateVisibility(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("visibility") String visibility, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE HOSTS_PFILE SET parent_id = #{parentId}, hosts_content = '', visibility = 'collabo', updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    @Update("UPDATE HOSTS_PFILE SET parent_id = #{parentId}, hosts_content = '', visibility = 'collabo', updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void setAsCollaboRef(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("parentId") String parentId, @Param("updatedAt") LocalDateTime updatedAt);
 
     @Delete("DELETE FROM HOSTS_PFILE WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")

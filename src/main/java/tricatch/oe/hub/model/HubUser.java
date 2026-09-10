@@ -4,14 +4,12 @@ import tricatch.oe.proxy.util.OidUtil;
 
 import java.time.LocalDateTime;
 
-public class HubUser {
+public class HubUser extends Auditable {
     private Long userNo;
     private String userId;
     private String password;
     private String role;
     private int tokenVersion;
-    private LocalDateTime createAt;
-    private LocalDateTime updatedAt;
     private LocalDateTime lastLoginAt;
 
     public Long getUserNo() { return userNo; }
@@ -30,12 +28,6 @@ public class HubUser {
 
     public int getTokenVersion() { return tokenVersion; }
     public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
-
-    public LocalDateTime getCreateAt() { return createAt; }
-    public void setCreateAt(LocalDateTime createAt) { this.createAt = createAt; }
-
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }

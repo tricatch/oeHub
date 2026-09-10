@@ -64,7 +64,11 @@ public class ProxyVhostService {
             vhost.setVhostProfile(nextUniqueName(existingNames(mapper, userNo), "new vhost"));
             vhost.setVhostContent(exampleContent());
             vhost.setSelected(false);
-            vhost.setUpdatedAt(LocalDateTime.now());
+            var now = LocalDateTime.now();
+            vhost.setCreatedBy(userNo);
+            vhost.setUpdatedBy(userNo);
+            vhost.setCreateAt(now);
+            vhost.setUpdatedAt(now);
             vhost.setVisibility("public");
             mapper.insertWithAutoSortOrder(vhost);
             session.commit();
@@ -169,7 +173,11 @@ public class ProxyVhostService {
             copy.setVhostProfile(nextUniqueName(existingNames(mapper, userNo), source.getVhostProfile()));
             copy.setVhostContent(source.getVhostContent());
             copy.setSelected(false);
-            copy.setUpdatedAt(LocalDateTime.now());
+            var now = LocalDateTime.now();
+            copy.setCreatedBy(userNo);
+            copy.setUpdatedBy(userNo);
+            copy.setCreateAt(now);
+            copy.setUpdatedAt(now);
             copy.setVisibility("public");
             mapper.insertWithAutoSortOrder(copy);
             session.commit();
@@ -190,7 +198,11 @@ public class ProxyVhostService {
             ref.setVhostProfile(nextUniqueName(existingNames(mapper, userNo), parent.getVhostProfile()));
             ref.setVhostContent("");
             ref.setSelected(false);
-            ref.setUpdatedAt(LocalDateTime.now());
+            var now = LocalDateTime.now();
+            ref.setCreatedBy(userNo);
+            ref.setUpdatedBy(userNo);
+            ref.setCreateAt(now);
+            ref.setUpdatedAt(now);
             ref.setVisibility("collabo");
             ref.setParentId(parentId);
             mapper.insertWithAutoSortOrder(ref);
@@ -228,6 +240,11 @@ public class ProxyVhostService {
             parent.setVhostContent(vhost.getVhostContent());
             parent.setSelected(false);
             parent.setSortOrder(0);
+            // The real actor is always the positive userNo, even though ownership (user_no) is
+            // stored negative for this row.
+            parent.setCreatedBy(userNo);
+            parent.setUpdatedBy(userNo);
+            parent.setCreateAt(now);
             parent.setUpdatedAt(now);
             parent.setVisibility("collabo");
             mapper.insert(parent);
@@ -263,7 +280,11 @@ public class ProxyVhostService {
                 var name = nextUniqueName(existingNames, entry.getVhostProfile());
                 entry.setVhostProfile(name);
                 existingNames.add(name.toLowerCase());
-                entry.setUpdatedAt(LocalDateTime.now());
+                var now = LocalDateTime.now();
+                entry.setCreatedBy(userNo);
+                entry.setUpdatedBy(userNo);
+                entry.setCreateAt(now);
+                entry.setUpdatedAt(now);
                 if (entry.getVisibility() == null) entry.setVisibility("public");
                 mapper.insert(entry);
             }

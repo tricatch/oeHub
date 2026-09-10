@@ -796,8 +796,8 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     document.getElementById('metaCreator').textContent = v ? (v.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = v ? (fmtDateTime(v.updatedAt) || '—') : '—';
     const editorEl = document.getElementById('metaEditor');
-    editorEl.textContent = (v && v.lastEditorUserId && v.lastEditorUserId !== v.userId)
-      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + v.lastEditorUserId + ')'
+    editorEl.textContent = (v && v.updatedByUserId && v.updatedByUserId !== v.userId)
+      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + v.updatedByUserId + ')'
       : '';
   }
 

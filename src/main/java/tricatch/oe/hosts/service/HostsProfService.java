@@ -58,7 +58,11 @@ public class HostsProfService {
             hosts.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), "new hosts"));
             hosts.setHostsContent(exampleContent());
             hosts.setSelected(false);
-            hosts.setUpdatedAt(LocalDateTime.now());
+            var now = LocalDateTime.now();
+            hosts.setCreatedBy(userNo);
+            hosts.setUpdatedBy(userNo);
+            hosts.setCreateAt(now);
+            hosts.setUpdatedAt(now);
             hosts.setVisibility("public");
             mapper.insertWithAutoSortOrder(hosts);
             session.commit();
@@ -155,7 +159,11 @@ public class HostsProfService {
             copy.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), source.getHostsProfile()));
             copy.setHostsContent(source.getHostsContent());
             copy.setSelected(false);
-            copy.setUpdatedAt(LocalDateTime.now());
+            var now = LocalDateTime.now();
+            copy.setCreatedBy(userNo);
+            copy.setUpdatedBy(userNo);
+            copy.setCreateAt(now);
+            copy.setUpdatedAt(now);
             copy.setVisibility("public");
             mapper.insertWithAutoSortOrder(copy);
             session.commit();
@@ -176,7 +184,11 @@ public class HostsProfService {
             ref.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), parent.getHostsProfile()));
             ref.setHostsContent("");
             ref.setSelected(false);
-            ref.setUpdatedAt(LocalDateTime.now());
+            var now = LocalDateTime.now();
+            ref.setCreatedBy(userNo);
+            ref.setUpdatedBy(userNo);
+            ref.setCreateAt(now);
+            ref.setUpdatedAt(now);
             ref.setVisibility("collabo");
             ref.setParentId(parentId);
             mapper.insertWithAutoSortOrder(ref);
@@ -214,6 +226,12 @@ public class HostsProfService {
             parent.setHostsContent(hosts.getHostsContent());
             parent.setSelected(false);
             parent.setSortOrder(0);
+            // The real actor is always the positive userNo, even though ownership (user_no) is
+            // stored negative for this row — created_by/updated_by must never carry that sign
+            // convention, or resolving them back to a HUB_USR row would fail.
+            parent.setCreatedBy(userNo);
+            parent.setUpdatedBy(userNo);
+            parent.setCreateAt(now);
             parent.setUpdatedAt(now);
             parent.setVisibility("collabo");
             mapper.insert(parent);
@@ -249,7 +267,11 @@ public class HostsProfService {
                 var name = nextUniqueName(existingNames, entry.getHostsProfile());
                 entry.setHostsProfile(name);
                 existingNames.add(name.toLowerCase());
-                entry.setUpdatedAt(LocalDateTime.now());
+                var now = LocalDateTime.now();
+                entry.setCreatedBy(userNo);
+                entry.setUpdatedBy(userNo);
+                entry.setCreateAt(now);
+                entry.setUpdatedAt(now);
                 if (entry.getVisibility() == null) entry.setVisibility("public");
                 mapper.insert(entry);
             }

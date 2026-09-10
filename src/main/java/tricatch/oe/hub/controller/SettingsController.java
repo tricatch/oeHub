@@ -64,7 +64,7 @@ public class SettingsController {
     public void apiSaveOidDomainDefault(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var domainList = ((String) body.getOrDefault("domainList", "")).trim();
-        saveOidDomainDefault(domainList);
+        saveOidDomainDefault(domainList, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("domainList", domainList));
     }
 
@@ -73,8 +73,8 @@ public class SettingsController {
         return v != null ? v : "";
     }
 
-    public void saveOidDomainDefault(String domainList) {
-        proxyConfService.set(KEY_OID_DOMAIN_LIST, null, domainList);
+    public void saveOidDomainDefault(String domainList, Long actorUserNo) {
+        proxyConfService.set(KEY_OID_DOMAIN_LIST, null, domainList, actorUserNo);
     }
 
     /** Personal domain list for a user, falling back to the admin default when unset. */
@@ -84,7 +84,7 @@ public class SettingsController {
     }
 
     public void saveOidDomainListForUser(Long userNo, String domainList) {
-        proxyConfService.set(KEY_OID_DOMAIN_LIST, userNo, domainList);
+        proxyConfService.set(KEY_OID_DOMAIN_LIST, userNo, domainList, userNo);
     }
 
     // ── oeProxy identifier (OID / IP) ─────────────────────────────────────────
@@ -92,7 +92,7 @@ public class SettingsController {
     public void apiSaveIdentifier(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var ipEnabled = Boolean.TRUE.equals(body.get("ipEnabled"));
-        ReverseProxyServer.setIpIdentifierEnabled(ipEnabled);
+        ReverseProxyServer.setIpIdentifierEnabled(ipEnabled, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("ipEnabled", ipEnabled));
     }
 
@@ -101,7 +101,7 @@ public class SettingsController {
     public void apiSaveFwdProxyWhitelist(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var whitelist = ((String) body.getOrDefault("whitelist", "")).trim();
-        ForwardProxyServer.setWhitelist(whitelist);
+        ForwardProxyServer.setWhitelist(whitelist, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("whitelist", whitelist));
     }
 
