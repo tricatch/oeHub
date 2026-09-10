@@ -137,6 +137,19 @@ const OE_CRYPTO = (function () {
     return new Uint8Array(base64ToBuf(padded));
   }
 
+  // Recovery verifier (design doc §3 "복구 플로우 프로토콜"): a one-way HKDF derivation of the
+  // recovery code bytes, sent to the server so it can authenticate a recovery attempt without
+  // ever seeing the code itself - the code bytes are the AES-GCM key that unwraps the private
+  // key, so only this derived value may ever leave the browser.
+  async function deriveRecoveryVerifier(recoveryBytes) {
+    const key = await crypto.subtle.importKey('raw', recoveryBytes, 'HKDF', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: new TextEncoder().encode('oehub-recovery-verifier') },
+      key, 256
+    );
+    return bufToBase64(bits);
+  }
+
   // ---- Workspace key (AES-256-KW) ----
 
   async function generateWorkspaceKey() {
@@ -215,6 +228,7 @@ const OE_CRYPTO = (function () {
     deriveKeyFromPassword,
     wrapPrivateKey, unwrapPrivateKey,
     generateRecoveryKeyBytes, importRecoveryKeyAsAesGcm, formatRecoveryDisplayCode, parseRecoveryDisplayCode,
+    deriveRecoveryVerifier,
     generateWorkspaceKey, wrapWorkspaceKeyForUser, unwrapWorkspaceKeyForUser,
     generateContentKey, encryptContent, decryptContent,
     wrapContentKeyWithPersonalKey, unwrapContentKeyWithPersonalKey,

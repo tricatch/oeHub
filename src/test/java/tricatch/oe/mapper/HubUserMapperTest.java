@@ -97,6 +97,7 @@ class HubUserMapperTest extends MapperTestBase {
         user.setPublicKey("pub-key-b64");
         user.setWrappedPrivateKey("wrapped-priv-b64");
         user.setWrappedPrivateKeyRecovery("wrapped-priv-recovery-b64");
+        user.setRecoveryVerifier("recovery-verifier-hash");
         user.setCreateAt(now);
         user.setUpdatedAt(now);
 
@@ -108,6 +109,7 @@ class HubUserMapperTest extends MapperTestBase {
             assertThat(found.getPublicKey()).isEqualTo("pub-key-b64");
             assertThat(found.getWrappedPrivateKey()).isEqualTo("wrapped-priv-b64");
             assertThat(found.getWrappedPrivateKeyRecovery()).isEqualTo("wrapped-priv-recovery-b64");
+            assertThat(found.getRecoveryVerifier()).isEqualTo("recovery-verifier-hash");
         }
     }
 
@@ -120,6 +122,7 @@ class HubUserMapperTest extends MapperTestBase {
             assertThat(found.getPublicKey()).isNull();
             assertThat(found.getWrappedPrivateKey()).isNull();
             assertThat(found.getWrappedPrivateKeyRecovery()).isNull();
+            assertThat(found.getRecoveryVerifier()).isNull();
         }
     }
 
@@ -142,19 +145,43 @@ class HubUserMapperTest extends MapperTestBase {
     }
 
     @Test
-    void updateWrappedPrivateKeyRecovery_updatesOnlyThatColumn() {
+    void updateWrappedPrivateKeyRecovery_updatesRecoveryPairOnly() {
         var user = insertUser("reissueuser");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HubUserMapper.class);
             var originalPassword = user.getPassword();
             user.setWrappedPrivateKeyRecovery("reissued-recovery-wrap-b64");
+            user.setRecoveryVerifier("reissued-verifier-hash");
             user.setUpdatedBy(user.getUserNo());
             user.setUpdatedAt(LocalDateTime.now());
             mapper.updateWrappedPrivateKeyRecovery(user);
 
             var found = mapper.findByUserNo(user.getUserNo());
             assertThat(found.getWrappedPrivateKeyRecovery()).isEqualTo("reissued-recovery-wrap-b64");
+            assertThat(found.getRecoveryVerifier()).isEqualTo("reissued-verifier-hash");
             assertThat(found.getPassword()).isEqualTo(originalPassword);
+        }
+    }
+
+    @Test
+    void resetPasswordViaRecovery_updatesAllFourColumnsAndBumpsTokenVersion() {
+        var user = insertUser("recoveryresetuser");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HubUserMapper.class);
+            user.setPassword("reset-password-hash");
+            user.setWrappedPrivateKey("reset-wrapped-priv-b64");
+            user.setWrappedPrivateKeyRecovery("reset-recovery-wrap-b64");
+            user.setRecoveryVerifier("reset-verifier-hash");
+            user.setUpdatedBy(user.getUserNo());
+            user.setUpdatedAt(LocalDateTime.now());
+            mapper.resetPasswordViaRecovery(user);
+
+            var found = mapper.findByUserNo(user.getUserNo());
+            assertThat(found.getPassword()).isEqualTo("reset-password-hash");
+            assertThat(found.getWrappedPrivateKey()).isEqualTo("reset-wrapped-priv-b64");
+            assertThat(found.getWrappedPrivateKeyRecovery()).isEqualTo("reset-recovery-wrap-b64");
+            assertThat(found.getRecoveryVerifier()).isEqualTo("reset-verifier-hash");
+            assertThat(found.getTokenVersion()).isEqualTo(1);
         }
     }
 

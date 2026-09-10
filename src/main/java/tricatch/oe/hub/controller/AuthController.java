@@ -163,10 +163,13 @@ public class AuthController {
     public void showLogin(Context ctx) {
         var redirect = ctx.queryParam("redirect");
         var registered = ctx.queryParam("registered");
+        var reset = ctx.queryParam("reset");
         ctx.render("templates/login.pebble", Map.of(
             "redirect", redirect != null ? redirect : "",
             "error", "",
-            "info", "pending".equals(registered) ? "auth.info.registered.pending" : ""
+            "info", "pending".equals(registered) ? "auth.info.registered.pending"
+                  : "done".equals(reset) ? "auth.info.password.reset"
+                  : ""
         ));
     }
 
@@ -349,8 +352,10 @@ public class AuthController {
         var publicKey = ctx.formParam("publicKey");
         var wrappedPrivateKey = ctx.formParam("wrappedPrivateKey");
         var wrappedPrivateKeyRecovery = ctx.formParam("wrappedPrivateKeyRecovery");
+        var recoveryVerifier = ctx.formParam("recoveryVerifier");
         if (publicKey == null || publicKey.isBlank() || wrappedPrivateKey == null || wrappedPrivateKey.isBlank()
-                || wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()) {
+                || wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()
+                || recoveryVerifier == null || recoveryVerifier.isBlank()) {
             renderRegisterError(ctx, "auth.error.crypto.required", userId);
             return;
         }
@@ -362,6 +367,7 @@ public class AuthController {
         user.setPublicKey(publicKey);
         user.setWrappedPrivateKey(wrappedPrivateKey);
         user.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
+        user.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
         user.setUpdatedAt(now);
         user.setCreateAt(now);
 
@@ -502,6 +508,112 @@ public class AuthController {
             }
         }
         ctx.render("templates/register.pebble", model);
+    }
+
+    public void showRecover(Context ctx) {
+        ctx.render("templates/recover.pebble", Map.of());
+    }
+
+    /** Step 1 of the recovery flow (e2eEncryption design doc §3 "복구 플로우 프로토콜"): verifies
+     *  the caller holds the recovery code without the server ever seeing the code itself, by
+     *  checking a one-way HKDF derivation of it (recoveryVerifier) against the bcrypt hash stored
+     *  at signup/reissue/reset time. Shares the login throttle and its DUMMY_PASSWORD_HASH timing-
+     *  parity pattern, and returns one generic error for every failure mode (unknown user, a
+     *  pre-this-feature account with no verifier yet, or a wrong code) so account existence isn't
+     *  enumerable. */
+    @SuppressWarnings("unchecked")
+    public void apiRecoverVerify(Context ctx) {
+        String ip = ctx.ip();
+        if (isLoginLocked(ip)) {
+            ctx.status(429).json(Map.of("error", "too_many_attempts"));
+            return;
+        }
+
+        var body = ctx.bodyAsClass(Map.class);
+        var userId = (String) body.get("userId");
+        var recoveryVerifier = (String) body.get("recoveryVerifier");
+
+        HubUser hubUser = findUser(userId);
+        String hashToCheck = (hubUser != null && hubUser.getRecoveryVerifier() != null)
+            ? hubUser.getRecoveryVerifier() : DUMMY_PASSWORD_HASH;
+        boolean isCorrect = PasswordUtil.matches(recoveryVerifier != null ? recoveryVerifier : "", hashToCheck);
+
+        if (hubUser == null || hubUser.getRecoveryVerifier() == null || recoveryVerifier == null || !isCorrect) {
+            recordLoginFailure(ip);
+            ctx.status(400).json(Map.of("error", "invalid"));
+            return;
+        }
+
+        ctx.json(Map.of("wrappedPrivateKeyRecovery", hubUser.getWrappedPrivateKeyRecovery()));
+    }
+
+    /** Step 2 of the recovery flow: re-verifies the same old recoveryVerifier (proof from step 1
+     *  isn't carried server-side anywhere - re-sending it here is what makes a separate reset
+     *  token/session unnecessary, design doc §3), then replaces password + both recovery columns
+     *  in one update and bumps token_version to invalidate any existing session/remember-me
+     *  cookie - same reasoning as a self-service password change. recordLoginSuccess only fires
+     *  here, on the actual reset, not on step 1's mere verification. */
+    @SuppressWarnings("unchecked")
+    public void apiRecoverReset(Context ctx) {
+        String ip = ctx.ip();
+        if (isLoginLocked(ip)) {
+            ctx.status(429).json(Map.of("error", "too_many_attempts"));
+            return;
+        }
+
+        var body = ctx.bodyAsClass(Map.class);
+        var userId = (String) body.get("userId");
+        var recoveryVerifier = (String) body.get("recoveryVerifier");
+        var newPassword = (String) body.get("newPassword");
+        var confirmPassword = (String) body.get("confirmPassword");
+        var newWrappedPrivateKey = (String) body.get("newWrappedPrivateKey");
+        var newWrappedPrivateKeyRecovery = (String) body.get("newWrappedPrivateKeyRecovery");
+        var newRecoveryVerifier = (String) body.get("newRecoveryVerifier");
+
+        HubUser hubUser = findUser(userId);
+        String hashToCheck = (hubUser != null && hubUser.getRecoveryVerifier() != null)
+            ? hubUser.getRecoveryVerifier() : DUMMY_PASSWORD_HASH;
+        boolean isCorrect = PasswordUtil.matches(recoveryVerifier != null ? recoveryVerifier : "", hashToCheck);
+
+        if (hubUser == null || hubUser.getRecoveryVerifier() == null || recoveryVerifier == null || !isCorrect) {
+            recordLoginFailure(ip);
+            ctx.status(400).json(Map.of("error", "invalid"));
+            return;
+        }
+
+        if (newPassword == null || newPassword.isBlank()) {
+            ctx.status(400).json(Map.of("error", "password_required"));
+            return;
+        }
+        if (newPassword.length() < 8) {
+            ctx.status(400).json(Map.of("error", "password_too_short"));
+            return;
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            ctx.status(400).json(Map.of("error", "password_mismatch"));
+            return;
+        }
+        if (newWrappedPrivateKey == null || newWrappedPrivateKey.isBlank()
+                || newWrappedPrivateKeyRecovery == null || newWrappedPrivateKeyRecovery.isBlank()
+                || newRecoveryVerifier == null || newRecoveryVerifier.isBlank()) {
+            ctx.status(400).json(Map.of("error", "crypto_required"));
+            return;
+        }
+
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HubUserMapper.class);
+            hubUser.setPassword(PasswordUtil.hash(newPassword));
+            hubUser.setWrappedPrivateKey(newWrappedPrivateKey);
+            hubUser.setWrappedPrivateKeyRecovery(newWrappedPrivateKeyRecovery);
+            hubUser.setRecoveryVerifier(PasswordUtil.hash(newRecoveryVerifier));
+            hubUser.setUpdatedBy(hubUser.getUserNo());
+            hubUser.setUpdatedAt(LocalDateTime.now());
+            mapper.resetPasswordViaRecovery(hubUser);
+            session.commit();
+        }
+
+        recordLoginSuccess(ip);
+        ctx.status(204);
     }
 
     public void logout(Context ctx) {

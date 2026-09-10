@@ -244,6 +244,36 @@ class CryptoPrimitivesTest {
     }
 
     @Test
+    void recoveryVerifier_sameBytesSameVerifier_differentBytesDifferentVerifier_neverEqualsRawBytes() {
+        // e2eEncryption design doc §3 "복구 플로우 프로토콜": the verifier must be a deterministic,
+        // one-way derivation of the recovery code bytes - deterministic so the server can compare
+        // it across the verify and reset requests, one-way so it never leaks the raw AES-GCM key
+        // material those bytes actually are.
+        var page = newPage();
+        Object result = page.evaluate("""
+            async () => {
+                const bytesA = OE_CRYPTO.generateRecoveryKeyBytes();
+                const bytesB = OE_CRYPTO.generateRecoveryKeyBytes();
+
+                const verifierA1 = await OE_CRYPTO.deriveRecoveryVerifier(bytesA);
+                const verifierA2 = await OE_CRYPTO.deriveRecoveryVerifier(bytesA);
+                const verifierB = await OE_CRYPTO.deriveRecoveryVerifier(bytesB);
+
+                return {
+                    sameBytesSameVerifier: verifierA1 === verifierA2,
+                    differentBytesDifferentVerifier: verifierA1 !== verifierB,
+                    verifierNotEqualToRawBytes: verifierA1 !== OE_CRYPTO.bufToBase64(bytesA)
+                };
+            }
+            """);
+        var map = (Map<?, ?>) result;
+        assertThat((Boolean) map.get("sameBytesSameVerifier")).isTrue();
+        assertThat((Boolean) map.get("differentBytesDifferentVerifier")).isTrue();
+        assertThat((Boolean) map.get("verifierNotEqualToRawBytes")).isTrue();
+        page.close();
+    }
+
+    @Test
     void workspaceKey_wrapForMultipleMembers_eachUnwrapsIndependently() {
         var page = newPage();
         Object ok = page.evaluate("""

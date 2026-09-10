@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="{{ currentLocale }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ msg['recover.title'] }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/brand.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/auth.css">
+</head>
+<body class="bg-light">
+<div class="d-flex min-vh-100 auth-wrap">
+  <div class="container py-2">
+    <div class="row justify-content-center">
+      <div class="col-12 auth-col auth-col-narrow">
+
+        <div class="text-center mb-3">
+          <a href="/" class="text-decoration-none">
+            <img src="/icon/oe_logo_original.svg" alt="oeHub Logo" class="oe-brand-logo">
+            <h1 class="oe-brand-title">oeHub</h1>
+          </a>
+        </div>
+
+        <div class="card shadow-sm">
+          <div class="card-body p-4">
+            <h2 class="h5 text-center mb-4">{{ msg['recover.title'] }}</h2>
+
+            <div class="alert alert-danger py-2 d-none" id="recoverErrorBox" role="alert"></div>
+
+            <div id="recoverStep1">
+              <div class="form-text mb-3">{{ msg['recover.step1.help'] }}</div>
+              <form id="recoverStep1Form" autocomplete="off">
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['auth.userid'] }}</label>
+                  <input type="text" name="userId" class="form-control" autofocus>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['recover.code'] }}</label>
+                  <input type="text" name="recoveryCode" class="form-control setup-mono">
+                </div>
+                <div class="d-grid">
+                  <button type="submit" class="oe-modal-btn justify-content-center" id="btnRecoverVerify">{{ msg['recover.verify'] }}</button>
+                </div>
+              </form>
+            </div>
+
+            <div id="recoverStep2" class="d-none">
+              <div class="form-text mb-3">{{ msg['recover.step2.help'] }}</div>
+              <form id="recoverStep2Form" autocomplete="off">
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['recover.new.password'] }}</label>
+                  <input type="password" name="newPassword" class="form-control">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">{{ msg['auth.confirm.password'] }}</label>
+                  <input type="password" name="confirmPassword" class="form-control">
+                </div>
+                <div class="d-grid">
+                  <button type="submit" class="oe-modal-btn justify-content-center" id="btnRecoverReset">{{ msg['recover.reset'] }}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-center text-muted mt-3 small">
+          <a href="/login">{{ msg['recover.back.login'] }}</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="oe-toast" id="toast">
+  <span class="oe-icon oe-icon-success" style="width:21px;height:21px"></span>
+  <span class="oe-toast-msg"></span>
+</div>
+
+{% include "templates/_recovery-code-modal.pebble" %}
+
+<script>window.MSG = {{ msgJson | raw }};</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/crypto.js"></script>
+<script src="/js/util.js"></script>
+<script src="/js/recovery-code-modal.js"></script>
+<script>
+(function () {
+  var step1 = document.getElementById('recoverStep1');
+  var step2 = document.getElementById('recoverStep2');
+  var step1Form = document.getElementById('recoverStep1Form');
+  var step2Form = document.getElementById('recoverStep2Form');
+  var verifyBtn = document.getElementById('btnRecoverVerify');
+  var verifyBtnDefaultText = verifyBtn.textContent;
+  var resetBtn = document.getElementById('btnRecoverReset');
+  var resetBtnDefaultText = resetBtn.textContent;
+  var errorBox = document.getElementById('recoverErrorBox');
+  var recoveryModal = new bootstrap.Modal(document.getElementById('recoveryCodeModal'));
+  var pendingNewRecoveryCode = '';
+
+  // This page's own modal is only ever used to show a freshly-reissued code after a successful
+  // reset (unlike register.pebble/setup.pebble's account-creation use), so this notice is always
+  // relevant here - simplest to inject once rather than parameterize the shared partial.
+  document.querySelector('#recoveryCodeModal .modal-body').insertAdjacentHTML('afterbegin',
+    '<div class="alert alert-info py-2 small mb-3">' + escHtml(MSG['recover.new.code.info']) + '</div>');
+
+  OE_RECOVERY_CODE_MODAL.bind({
+    codeInputId: 'recoveryCodeValue', copyBtnId: 'btnCopyRecoveryCode', downloadBtnId: 'btnDownloadRecoveryCode',
+    getCode: function () { return pendingNewRecoveryCode; }
+  });
+  document.getElementById('btnRecoveryCodeContinue').addEventListener('click', function () {
+    recoveryModal.hide();
+    location.href = '/login?reset=done';
+  });
+
+  function showError(key) {
+    errorBox.textContent = MSG[key];
+    errorBox.classList.remove('d-none');
+  }
+  function clearError() {
+    errorBox.classList.add('d-none');
+  }
+
+  var verifiedUserId = '';
+  var recoveryVerifier = '';
+  var privateKey = null;
+
+  step1Form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (verifyBtn.disabled) return;
+    clearError();
+
+    var userId = step1Form.userId.value;
+    var codeText = step1Form.recoveryCode.value;
+
+    var recoveryBytes;
+    try {
+      recoveryBytes = OE_CRYPTO.parseRecoveryDisplayCode(codeText);
+    } catch (err) {
+      showError('recover.error.invalid');
+      return;
+    }
+
+    verifyBtn.disabled = true;
+
+    verifyAndUnwrap(userId, recoveryBytes).catch(function (err) {
+      console.error('Recovery verify failed:', err);
+    }).finally(function () {
+      verifyBtn.disabled = false;
+      verifyBtn.textContent = verifyBtnDefaultText;
+    });
+  });
+
+  async function verifyAndUnwrap(userId, recoveryBytes) {
+    var verifier = await OE_CRYPTO.deriveRecoveryVerifier(recoveryBytes);
+
+    var res = await fetch('/api/recover/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: userId, recoveryVerifier: verifier })
+    });
+
+    if (res.status === 429) { showError('auth.error.too.many.attempts'); return; }
+    if (!res.ok) { showError('recover.error.invalid'); return; }
+
+    var data = await res.json();
+    var kek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
+    var record;
+    try {
+      record = JSON.parse(data.wrappedPrivateKeyRecovery);
+      privateKey = await OE_CRYPTO.unwrapPrivateKey(record, kek);
+    } catch (err) {
+      showError('recover.error.invalid');
+      return;
+    }
+
+    verifiedUserId = userId;
+    recoveryVerifier = verifier;
+    step1.classList.add('d-none');
+    step2.classList.remove('d-none');
+    step2Form.newPassword.focus();
+  }
+
+  step2Form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (resetBtn.disabled) return;
+    clearError();
+
+    var newPassword = step2Form.newPassword.value;
+    var confirmPassword = step2Form.confirmPassword.value;
+    if (!newPassword || newPassword.length < 8) { showError('auth.error.password.too.short'); return; }
+    if (newPassword !== confirmPassword) { showError('auth.error.password.mismatch'); return; }
+
+    resetBtn.disabled = true;
+    resetBtn.textContent = MSG['recover.resetting'];
+
+    doReset(newPassword, confirmPassword).catch(function (err) {
+      console.error('Recovery reset failed:', err);
+      showError('recover.error.invalid');
+    }).finally(function () {
+      resetBtn.disabled = false;
+      resetBtn.textContent = resetBtnDefaultText;
+    });
+  });
+
+  async function doReset(newPassword, confirmPassword) {
+    var salt = OE_CRYPTO.randomBytes(16);
+    var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(newPassword, salt);
+    var passwordWrap = await OE_CRYPTO.wrapPrivateKey(privateKey, passwordKek);
+    var newWrappedPrivateKey = JSON.stringify({
+      salt: OE_CRYPTO.bufToBase64(salt), iv: passwordWrap.iv, wrapped: passwordWrap.wrapped
+    });
+
+    var newRecoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
+    var newRecoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(newRecoveryBytes);
+    var newRecoveryWrap = await OE_CRYPTO.wrapPrivateKey(privateKey, newRecoveryKek);
+    var newWrappedPrivateKeyRecovery = JSON.stringify({ iv: newRecoveryWrap.iv, wrapped: newRecoveryWrap.wrapped });
+    var newRecoveryVerifier = await OE_CRYPTO.deriveRecoveryVerifier(newRecoveryBytes);
+
+    var res = await fetch('/api/recover/reset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: verifiedUserId, recoveryVerifier: recoveryVerifier,
+        newPassword: newPassword, confirmPassword: confirmPassword,
+        newWrappedPrivateKey: newWrappedPrivateKey,
+        newWrappedPrivateKeyRecovery: newWrappedPrivateKeyRecovery,
+        newRecoveryVerifier: newRecoveryVerifier
+      })
+    });
+
+    if (res.status === 429) { showError('auth.error.too.many.attempts'); return; }
+    if (!res.ok) {
+      var data = await res.json().catch(function () { return {}; });
+      var key = data.error === 'password_too_short' ? 'auth.error.password.too.short'
+              : data.error === 'password_mismatch'   ? 'auth.error.password.mismatch'
+              : 'recover.error.invalid';
+      showError(key);
+      return;
+    }
+
+    pendingNewRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(newRecoveryBytes);
+    document.getElementById('recoveryCodeValue').value = pendingNewRecoveryCode;
+    recoveryModal.show();
+  }
+})();
+</script>
+</body>
+</html>

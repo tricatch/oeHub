@@ -121,9 +121,11 @@ public class SetupController {
         var publicKey = ctx.formParam("publicKey");
         var wrappedPrivateKey = ctx.formParam("wrappedPrivateKey");
         var wrappedPrivateKeyRecovery = ctx.formParam("wrappedPrivateKeyRecovery");
+        var recoveryVerifier = ctx.formParam("recoveryVerifier");
         var founderWrappedWsKey = ctx.formParam("founderWrappedWsKey");
         if (publicKey == null || publicKey.isBlank() || wrappedPrivateKey == null || wrappedPrivateKey.isBlank()
                 || wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()
+                || recoveryVerifier == null || recoveryVerifier.isBlank()
                 || founderWrappedWsKey == null || founderWrappedWsKey.isBlank()) {
             ctx.render("templates/setup.pebble", buildModel("auth.error.crypto.required", "", "generate"));
             return;
@@ -157,6 +159,7 @@ public class SetupController {
                 hubUser.setPublicKey(publicKey);
                 hubUser.setWrappedPrivateKey(wrappedPrivateKey);
                 hubUser.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
+                hubUser.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
                 hubUser.setUpdatedAt(now);
                 hubUser.setCreateAt(now);
                 var userMapper = session.getMapper(HubUserMapper.class);

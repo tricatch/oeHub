@@ -1,0 +1,29 @@
+<!-- Recovery code - shown once, right when a recovery code is (re)issued. Shared by
+     register.pebble, setup.pebble and recover.pebble (CLAUDE.md "shared markup used in two or
+     more places" rule) - element ids are fixed and referenced directly by e2e tests, so they must
+     not change. Click handlers live in /js/recovery-code-modal.js, bound by each including page. -->
+<div class="modal fade" id="recoveryCodeModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['auth.recovery.title'] }}</h5>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small mb-3">{{ msg['auth.recovery.warning'] }}</div>
+        <div class="input-group mb-2">
+          <input type="text" class="form-control setup-mono" id="recoveryCodeValue" readonly>
+          <button type="button" class="btn btn-sm btn-oe-secondary" id="btnCopyRecoveryCode" title="{{ msg['ui.copy.clipboard'] }}">
+            <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+          </button>
+        </div>
+        <button type="button" class="btn btn-sm btn-oe-secondary" id="btnDownloadRecoveryCode">
+          <span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>
+          {{ msg['auth.recovery.download'] }}
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain justify-content-center" id="btnRecoveryCodeContinue">{{ msg['auth.recovery.continue'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>

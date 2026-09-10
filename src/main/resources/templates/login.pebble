@@ -65,6 +65,9 @@
         <div class="text-center text-muted mt-3 small">
           {{ msg['auth.no.account'] }} <a href="/register">{{ msg['auth.signup'] }}</a>
         </div>
+        <div class="text-center text-muted mt-1 small">
+          <a href="/recover">{{ msg['auth.forgot.password'] }}</a>
+        </div>
 
       </div>
     </div>

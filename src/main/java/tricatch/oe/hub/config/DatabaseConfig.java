@@ -121,6 +121,7 @@ public class DatabaseConfig {
                     public_key                   CLOB NULL,
                     wrapped_private_key          CLOB NULL,
                     wrapped_private_key_recovery CLOB NULL,
+                    recovery_verifier VARCHAR(128) NULL,
                     created_by    BIGINT NULL,
                     updated_by    BIGINT NULL,
                     create_at     TIMESTAMP NOT NULL,

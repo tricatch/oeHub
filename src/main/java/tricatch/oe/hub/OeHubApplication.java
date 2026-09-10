@@ -220,6 +220,13 @@ public class OeHubApplication {
                 if ("/api/proxy/ca".equals(ctx.path())) {
                     return;
                 }
+                // Password recovery must be reachable by a locked-out, logged-out caller by
+                // definition - it's the account-level auth check itself (recovery verifier /
+                // bcrypt), same trust boundary as /login (e2eEncryption design doc §3 "복구 플로우
+                // 프로토콜").
+                if ("/api/recover/verify".equals(ctx.path()) || "/api/recover/reset".equals(ctx.path())) {
+                    return;
+                }
                 if (AuthController.currentUser(ctx) == null) {
                     ctx.status(401).result("Unauthorized");
                     ctx.skipRemainingHandlers();
@@ -295,6 +302,9 @@ public class OeHubApplication {
             });
             config.routes.get("/register", auth::showRegister);
             config.routes.post("/register", auth::processRegister);
+            config.routes.get("/recover", auth::showRecover);
+            config.routes.post("/api/recover/verify", auth::apiRecoverVerify);
+            config.routes.post("/api/recover/reset",  auth::apiRecoverReset);
 
             // Admin settings
             config.routes.get("/oehub/settings",              settings::showSettings);

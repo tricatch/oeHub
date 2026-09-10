@@ -105,6 +105,7 @@
 <script src="/js/crypto.js"></script>
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
+<script src="/js/recovery-code-modal.js"></script>
 <script>
   // Cached private/workspace keys (e2eEncryption design doc §3) are only meaningful for the
   // session that unwrapped them - clear them on the way out so the next login starts clean.
@@ -318,11 +319,12 @@
     var recoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
     var recoveryWrap = await OE_CRYPTO.wrapPrivateKey(privateKey, recoveryKek);
     var wrappedPrivateKeyRecovery = JSON.stringify({ iv: recoveryWrap.iv, wrapped: recoveryWrap.wrapped });
+    var recoveryVerifier = await OE_CRYPTO.deriveRecoveryVerifier(recoveryBytes);
     pendingReissuedRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(recoveryBytes);
 
     var res = await fetch('/api/user/recovery-key', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ wrappedPrivateKeyRecovery: wrappedPrivateKeyRecovery })
+      body: JSON.stringify({ wrappedPrivateKeyRecovery: wrappedPrivateKeyRecovery, recoveryVerifier: recoveryVerifier })
     });
     if (!res.ok) { showToast(MSG['toast.recovery.reissue.failed']); return; }
 
@@ -330,20 +332,9 @@
     new bootstrap.Modal(document.getElementById('reissueRecoveryModal')).show();
   });
 
-  document.getElementById('btnCopyReissuedRecoveryCode').addEventListener('click', function () {
-    copyToClipboard(pendingReissuedRecoveryCode).then(function () { showToast(MSG['toast.copied']); });
-  });
-
-  document.getElementById('btnDownloadReissuedRecoveryCode').addEventListener('click', function () {
-    var blob = new Blob([pendingReissuedRecoveryCode + '\n'], { type: 'text/plain' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'oeHub-recovery-code.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  OE_RECOVERY_CODE_MODAL.bind({
+    codeInputId: 'reissueRecoveryCodeValue', copyBtnId: 'btnCopyReissuedRecoveryCode', downloadBtnId: 'btnDownloadReissuedRecoveryCode',
+    getCode: function () { return pendingReissuedRecoveryCode; }
   });
 
   document.getElementById('btnReissueRecoveryContinue').addEventListener('click', function () {

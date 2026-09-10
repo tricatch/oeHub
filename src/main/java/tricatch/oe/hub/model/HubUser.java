@@ -14,6 +14,7 @@ public class HubUser extends Auditable {
     private String publicKey;
     private String wrappedPrivateKey;
     private String wrappedPrivateKeyRecovery;
+    private String recoveryVerifier;
     private LocalDateTime lastLoginAt;
 
     public Long getUserNo() { return userNo; }
@@ -44,6 +45,9 @@ public class HubUser extends Auditable {
 
     public String getWrappedPrivateKeyRecovery() { return wrappedPrivateKeyRecovery; }
     public void setWrappedPrivateKeyRecovery(String wrappedPrivateKeyRecovery) { this.wrappedPrivateKeyRecovery = wrappedPrivateKeyRecovery; }
+
+    public String getRecoveryVerifier() { return recoveryVerifier; }
+    public void setRecoveryVerifier(String recoveryVerifier) { this.recoveryVerifier = recoveryVerifier; }
 
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }

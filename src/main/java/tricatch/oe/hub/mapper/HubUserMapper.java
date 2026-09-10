@@ -8,7 +8,7 @@ import java.util.List;
 public interface HubUserMapper {
 
     String COLS = "user_no, user_id, password, role, ws_no, token_version, "
-        + "public_key, wrapped_private_key, wrapped_private_key_recovery, "
+        + "public_key, wrapped_private_key, wrapped_private_key_recovery, recovery_verifier, "
         + "created_by, updated_by, create_at, updated_at, last_login_at";
 
     @Select("SELECT " + COLS + " FROM HUB_USR WHERE user_no = #{userNo}")
@@ -40,11 +40,11 @@ public interface HubUserMapper {
     @Select("SELECT " + COLS + " FROM HUB_USR WHERE role = 'pending' AND ws_no = #{wsNo} ORDER BY user_no")
     List<HubUser> findAllPendingByWsNo(Long wsNo);
 
-    // public_key/wrapped_private_key/wrapped_private_key_recovery are all nullable and NULL by
-    // default here - set on the HubUser object before calling insert() once the signup flow
-    // generates a keypair client-side (e2eEncryption design doc §3); not yet wired in.
-    @Insert("INSERT INTO HUB_USR (user_id, password, role, ws_no, public_key, wrapped_private_key, wrapped_private_key_recovery, create_at, updated_at) "
-        + "VALUES (#{userId}, #{password}, #{role}, #{wsNo}, #{publicKey}, #{wrappedPrivateKey}, #{wrappedPrivateKeyRecovery}, #{createAt}, #{updatedAt})")
+    // public_key/wrapped_private_key/wrapped_private_key_recovery/recovery_verifier are all
+    // nullable and NULL by default here - set on the HubUser object before calling insert() once
+    // the signup flow generates a keypair client-side (e2eEncryption design doc §3).
+    @Insert("INSERT INTO HUB_USR (user_id, password, role, ws_no, public_key, wrapped_private_key, wrapped_private_key_recovery, recovery_verifier, create_at, updated_at) "
+        + "VALUES (#{userId}, #{password}, #{role}, #{wsNo}, #{publicKey}, #{wrappedPrivateKey}, #{wrappedPrivateKeyRecovery}, #{recoveryVerifier}, #{createAt}, #{updatedAt})")
     @Options(useGeneratedKeys = true, keyProperty = "userNo")
     void insert(HubUser hubUser);
 
@@ -75,8 +75,18 @@ public interface HubUserMapper {
 
     // Recovery-code reissue (e2eEncryption design doc §3) - doesn't touch password/private-key
     // wrap, just replaces which recovery code can unwrap the (unchanged) private key.
-    @Update("UPDATE HUB_USR SET wrapped_private_key_recovery = #{wrappedPrivateKeyRecovery}, updated_by = #{updatedBy}, updated_at = #{updatedAt} WHERE user_no = #{userNo}")
+    // wrapped_private_key_recovery and recovery_verifier are a pair (design doc §3 "복구 플로우
+    // 프로토콜") and must always be updated together - one without the other silently breaks
+    // recovery (either an unverifiable wrap, or a verifier for a code the client no longer has).
+    @Update("UPDATE HUB_USR SET wrapped_private_key_recovery = #{wrappedPrivateKeyRecovery}, recovery_verifier = #{recoveryVerifier}, updated_by = #{updatedBy}, updated_at = #{updatedAt} WHERE user_no = #{userNo}")
     void updateWrappedPrivateKeyRecovery(HubUser hubUser);
+
+    // Recovery flow's self-service reset (e2eEncryption design doc §3 "복구 플로우 프로토콜"):
+    // replaces password, both recovery-related columns (new recovery code issued as part of
+    // reset), and bumps token_version to invalidate any existing session/remember-me cookie -
+    // same reasoning as updatePassword().
+    @Update("UPDATE HUB_USR SET password = #{password}, wrapped_private_key = #{wrappedPrivateKey}, wrapped_private_key_recovery = #{wrappedPrivateKeyRecovery}, recovery_verifier = #{recoveryVerifier}, token_version = token_version + 1, updated_by = #{updatedBy}, updated_at = #{updatedAt} WHERE user_no = #{userNo}")
+    void resetPasswordViaRecovery(HubUser hubUser);
 
     @Update("UPDATE HUB_USR SET last_login_at = #{lastLoginAt} WHERE user_no = #{userNo}")
     void updateLastLoginAt(HubUser hubUser);

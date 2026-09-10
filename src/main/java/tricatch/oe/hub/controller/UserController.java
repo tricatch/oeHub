@@ -204,7 +204,9 @@ public class UserController {
         var hubUser = AuthController.currentUser(ctx);
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var wrappedPrivateKeyRecovery = (String) body.get("wrappedPrivateKeyRecovery");
-        if (wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()) {
+        var recoveryVerifier = (String) body.get("recoveryVerifier");
+        if (wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()
+                || recoveryVerifier == null || recoveryVerifier.isBlank()) {
             ctx.status(400).json(Map.of("error", "crypto_required"));
             return;
         }
@@ -213,6 +215,7 @@ public class UserController {
             var target = mapper.findByUserNo(hubUser.getUserNo());
             if (target == null) { ctx.status(404); return; }
             target.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
+            target.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
             target.setUpdatedBy(hubUser.getUserNo());
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updateWrappedPrivateKeyRecovery(target);
