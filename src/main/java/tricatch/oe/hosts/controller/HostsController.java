@@ -83,9 +83,13 @@ public class HostsController {
         // client couldn't have produced ahead of time (e2eEncryption design doc §1) - an ordinary
         // content edit never sends this, since the key never changes on its own.
         var wrappedContentKey = (String) body.get("wrappedContentKey");
+        // Present when the row has a live public link (e2eEncryption design doc §6 "living link"
+        // redesign) - the caller's browser already re-encrypted the same content with the link's
+        // own DEK, so the link stays up to date with this save.
+        var linkContent = (String) body.get("linkContent");
         var updated = wrappedContentKey != null
                 ? hostsProfService.updateContentAndKey(hostId, hubUser.getUserNo(), content, wrappedContentKey)
-                : hostsProfService.updateContent(hostId, hubUser.getUserNo(), content);
+                : hostsProfService.updateContent(hostId, hubUser.getUserNo(), content, linkContent);
         if (updated == null) { ctx.status(404); return; }
         if (updated.isSelected()) {
             ForwardProxyServer.refreshUserHosts(hubUser);
@@ -216,22 +220,26 @@ public class HostsController {
         ctx.render("templates/oehub/hosts-share.pebble", model);
     }
 
-    // Issues (linkContent present) or revokes (absent/null) the fully-public, no-login link
-    // snapshot (e2eEncryption design doc §6's last item) - linkContent is already ciphertext from
-    // the caller's browser, encrypted with a fresh DEK that never reaches this server unwrapped;
-    // the caller embeds that raw key in the share URL's fragment itself. Authenticated (/api/*
-    // filter) but otherwise open to any member of the row's own workspace (mirrors §8's "public
-    // content is jointly owned" model - HostsProfMapper.updateLinkContent enforces the scope).
+    // Issues (both fields present) or revokes (empty body) the fully-public, no-login link
+    // (e2eEncryption design doc §6 "living link" redesign) - linkContent is already ciphertext from
+    // the caller's browser, and wrappedLinkKey is that same DEK wrapped with the caller's
+    // workspace key so any member's browser can refresh linkContent on a later save; the raw key
+    // itself never reaches this server, only the URL fragment. Authenticated (/api/* filter) but
+    // otherwise open to any member of the row's own workspace (mirrors §8's "public content is
+    // jointly owned" model - HostsProfMapper.updateLinkContent enforces the scope).
     @SuppressWarnings("unchecked")
     public void apiSetLink(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
         var hostsId = ctx.pathParam("hostsId");
         String linkContent = null;
+        String wrappedLinkKey = null;
         if (ctx.body() != null && !ctx.body().isBlank()) {
             var body = objectMapper.readValue(ctx.body(), Map.class);
             linkContent = (String) body.get("linkContent");
+            wrappedLinkKey = (String) body.get("wrappedLinkKey");
         }
-        var updated = hostsProfService.setPublicLink(hostsId, hubUser.getUserNo(), linkContent);
+        if ((linkContent == null) != (wrappedLinkKey == null)) { ctx.status(400); return; }
+        var updated = hostsProfService.setPublicLink(hostsId, hubUser.getUserNo(), linkContent, wrappedLinkKey);
         if (updated == null) { ctx.status(404); return; }
         ctx.status(204);
     }
@@ -261,6 +269,10 @@ public class HostsController {
     public void apiExport(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
         var profiles = hostsProfService.list(hubUser.getUserNo());
+        // The public link (linkContent/wrappedLinkKey) is per-workspace derived data - wrappedLinkKey
+        // can never be unwrapped outside the workspace it was wrapped in, so it's meaningless (and
+        // potentially misleading) in an export (e2eEncryption design doc §6).
+        profiles.forEach(p -> { p.setLinkContent(null); p.setWrappedLinkKey(null); });
         var loadingUrl = hostConfService.get(hubUser.getUserNo(), "open_url");
         var incognito = hostConfService.get(hubUser.getUserNo(), "incognito");
         var export = Map.of(

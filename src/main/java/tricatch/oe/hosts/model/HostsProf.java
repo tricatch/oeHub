@@ -15,11 +15,16 @@ public class HostsProf extends Auditable {
     // 'collabo'/'public') - null under standalone, where hostsContent stays plaintext
     // (e2eEncryption design doc §1's oe.mode=group-only scope, corrected during implementation).
     private String wrappedContentKey;
-    // Snapshot ciphertext for the fully-public, no-login-required link (e2eEncryption design doc
-    // §6's last item): encrypted with its OWN, separate DEK that's never wrapped by anything and
-    // never stored anywhere - it lives only in the share URL's fragment. Null until a link has
-    // been issued; issuing/revoking never touches hostsContent/wrappedContentKey. 'public' only.
+    // Ciphertext for the fully-public, no-login-required link (e2eEncryption design doc §6 "living
+    // link" redesign): encrypted with its own DEK, independent of wrappedContentKey, kept in sync
+    // with hostsContent on every save via wrappedLinkKey below so the link never goes stale. The
+    // raw key still only ever appears in the share URL's fragment. Null until a link has been
+    // issued; issuing/revoking never touches hostsContent/wrappedContentKey. 'public' only.
     private String linkContent;
+    // Wraps the link's own DEK with the workspace key (e2eEncryption design doc §6 "living link"
+    // redesign) so any member's browser can re-encrypt linkContent on every save - null until a
+    // link has been issued, paired 1:1 with linkContent (both null or both set).
+    private String wrappedLinkKey;
     private String userId;
     private String updatedByUserId;
 
@@ -52,6 +57,9 @@ public class HostsProf extends Auditable {
 
     public String getLinkContent() { return linkContent; }
     public void setLinkContent(String linkContent) { this.linkContent = linkContent; }
+
+    public String getWrappedLinkKey() { return wrappedLinkKey; }
+    public void setWrappedLinkKey(String wrappedLinkKey) { this.wrappedLinkKey = wrappedLinkKey; }
 
     public String getUserId() {
         return userId;

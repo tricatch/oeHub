@@ -363,6 +363,13 @@ const FWDPROXY_PORT = 36980;
   // here (never persisted) so a save can re-encrypt with the same key without re-unwrapping.
   const dekByHostId = {};
 
+  // Public-link DEK cache (e2eEncryption design doc §6 "living link" redesign) - separate from
+  // dekByHostId since a link uses its own DEK, independent of the row's normal content key.
+  // Populated on "Generate" and on reopening the modal for a row that already has a
+  // wrappedLinkKey (unwrapped with the workspace key), so flushSaveFor can refresh link_content
+  // on every save without re-unwrapping each time.
+  const linkDekByHostId = {};
+
   async function decryptProfileInPlace(p) {
     if (!window.OE_GROUP_MODE || !p.wrappedContentKey) return;
     try {
@@ -588,13 +595,35 @@ const FWDPROXY_PORT = 36980;
     await flushSaveFor(activeHostId, editor.getValue());
   }
 
+  // Re-encrypts and attaches linkContent to the save body when this row has a live public link
+  // (e2eEncryption design doc §6 "living link" redesign), so the link stays in sync with every
+  // edit. Never throws - a failure here must not block saving the actual content.
+  async function attachLinkContentForSave(body, hostId, content) {
+    const p = profiles.find(x => x.hostsId === hostId);
+    if (!p || !p.wrappedLinkKey) return;
+    try {
+      let linkDek = linkDekByHostId[hostId];
+      if (!linkDek) {
+        const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+        linkDek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedLinkKey, wsKey);
+        linkDekByHostId[hostId] = linkDek;
+      }
+      const linkEnc = await OE_CRYPTO.encryptContent(content, linkDek);
+      body.linkContent = JSON.stringify(linkEnc);
+    } catch (err) {
+      console.warn('Failed to refresh public link content for ' + hostId + ':', err);
+    }
+  }
+
   async function flushSaveFor(hostId, content) {
     if (crc32(content) === savedCrc) return;
     try {
       const payload = await encryptForSave(hostId, content);
+      const body = {content: payload};
+      await attachLinkContentForSave(body, hostId, content);
       const res = await fetch('/api/hosts/' + hostId + '/content', {
         method: 'PATCH', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content: payload})
+        body: JSON.stringify(body)
       });
       if (res.ok) {
         const updated = await res.json();
@@ -770,32 +799,63 @@ const FWDPROXY_PORT = 36980;
   });
 
   // ── Public (no-login) link ────────────────────────────────
-  // The raw DEK travels only in the URL fragment (never sent to the server, never stored
-  // anywhere) - so a lost/forgotten link can only be replaced by generating a fresh one, and
-  // there is no "show the current link" affordance here (e2eEncryption design doc §6's last item,
-  // the snapshot/1st-version trade-off already flagged in §9).
-  document.getElementById('btnPublicLink').addEventListener('click', () => {
+  // The raw DEK still travels only in the URL fragment, never sent to the server - but the DEK
+  // itself is also wrapped with the workspace key and stored as wrappedLinkKey (e2eEncryption
+  // design doc §6 "living link" redesign), so any member's browser can recover the current URL by
+  // unwrapping it, and flushSaveFor (above) keeps link_content in sync with every edit.
+  document.getElementById('btnPublicLink').addEventListener('click', async () => {
     if (!activeHostId) return;
-    document.getElementById('publicLinkResultWrap').classList.add('d-none');
-    document.getElementById('publicLinkValue').value = '';
+    const hostId = activeHostId;
+    const resultWrap = document.getElementById('publicLinkResultWrap');
+    const linkValueInput = document.getElementById('publicLinkValue');
+    const btnRevoke = document.getElementById('btnRevokePublicLink');
+    resultWrap.classList.add('d-none');
+    linkValueInput.value = '';
+    btnRevoke.disabled = true;
     new bootstrap.Modal(document.getElementById('publicLinkModal')).show();
+
+    const p = profiles.find(x => x.hostsId === hostId);
+    if (!p || !p.wrappedLinkKey) return;
+    try {
+      let dek = linkDekByHostId[hostId];
+      if (!dek) {
+        const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+        dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedLinkKey, wsKey);
+        linkDekByHostId[hostId] = dek;
+      }
+      const rawKeyBuf = await crypto.subtle.exportKey('raw', dek);
+      const keyB64url = OE_CRYPTO.bufToBase64(rawKeyBuf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      if (activeHostId !== hostId) return; // a newer selection has since taken over
+      linkValueInput.value = location.origin + '/link/' + hostId + '/oelink#key=' + keyB64url;
+      resultWrap.classList.remove('d-none');
+      btnRevoke.disabled = false;
+    } catch (e) {
+      console.warn('Failed to recover public link for ' + hostId + ':', e);
+    }
   });
 
   document.getElementById('btnGeneratePublicLink').addEventListener('click', async () => {
     if (!activeHostId) return;
+    const hostId = activeHostId;
     try {
       const dek = await OE_CRYPTO.generateContentKey();
       const enc = await OE_CRYPTO.encryptContent(editor.getValue(), dek);
       const rawKeyBuf = await crypto.subtle.exportKey('raw', dek);
       const keyB64url = OE_CRYPTO.bufToBase64(rawKeyBuf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      const res = await fetch('/api/hosts/' + activeHostId + '/link', {
+      const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+      const wrappedLinkKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey);
+      const res = await fetch('/api/hosts/' + hostId + '/link', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ linkContent: JSON.stringify(enc) })
+        body: JSON.stringify({ linkContent: JSON.stringify(enc), wrappedLinkKey: wrappedLinkKey })
       });
       if (!res.ok) throw new Error('failed');
-      const url = location.origin + '/link/' + activeHostId + '/oelink#key=' + keyB64url;
+      const p = profiles.find(x => x.hostsId === hostId);
+      if (p) p.wrappedLinkKey = wrappedLinkKey;
+      linkDekByHostId[hostId] = dek;
+      const url = location.origin + '/link/' + hostId + '/oelink#key=' + keyB64url;
       document.getElementById('publicLinkValue').value = url;
       document.getElementById('publicLinkResultWrap').classList.remove('d-none');
+      document.getElementById('btnRevokePublicLink').disabled = false;
     } catch (e) {
       showToast(MSG['toast.public.link.failed']);
     }
@@ -807,10 +867,14 @@ const FWDPROXY_PORT = 36980;
 
   document.getElementById('btnRevokePublicLink').addEventListener('click', async () => {
     if (!activeHostId) return;
-    const res = await fetch('/api/hosts/' + activeHostId + '/link', {
+    const hostId = activeHostId;
+    const res = await fetch('/api/hosts/' + hostId + '/link', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
     });
     if (res.ok) {
+      const p = profiles.find(x => x.hostsId === hostId);
+      if (p) p.wrappedLinkKey = null;
+      delete linkDekByHostId[hostId];
       showToast(MSG['toast.public.link.revoked']);
       bootstrap.Modal.getInstance(document.getElementById('publicLinkModal')).hide();
     } else {
@@ -1319,7 +1383,13 @@ const FWDPROXY_PORT = 36980;
     if (res.ok) {
       const updated = await res.json();
       const p = profiles.find(x => x.hostsId === activeHostId);
-      if (p) { p.visibility = updated.visibility; p.parentId = updated.parentId; p.wrappedContentKey = updated.wrappedContentKey; }
+      if (p) {
+        p.visibility = updated.visibility; p.parentId = updated.parentId; p.wrappedContentKey = updated.wrappedContentKey;
+        // The server auto-revokes any live link when visibility leaves 'public' (design doc §6),
+        // so updated.wrappedLinkKey already reflects that - just mirror it and drop the cached DEK.
+        p.wrappedLinkKey = updated.wrappedLinkKey;
+        if (!p.wrappedLinkKey) delete linkDekByHostId[activeHostId];
+      }
       const updatedP = profiles.find(x => x.hostsId === activeHostId);
       visibilitySelect.disabled = !!(updatedP && updatedP.parentId);
       applyVisibilityStyle();

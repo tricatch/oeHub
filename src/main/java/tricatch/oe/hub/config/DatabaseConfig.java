@@ -184,6 +184,7 @@ public class DatabaseConfig {
                     parent_id         VARCHAR(32)    NULL,
                     wrapped_content_key CLOB         NULL,
                     link_content        CLOB         NULL,
+                    wrapped_link_key    CLOB         NULL,
                     created_by        BIGINT         NOT NULL,
                     updated_by        BIGINT         NULL,
                     create_at         TIMESTAMP      NOT NULL,

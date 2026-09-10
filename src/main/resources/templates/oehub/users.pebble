@@ -424,7 +424,15 @@
     for (const row of rows) {
       const dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(row.wrappedContentKey, oldWsKey);
       const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, newWsKey);
-      contentRewraps.push({ hostsId: row.hostsId, wrappedContentKey: wrappedContentKey });
+      const rewrap = { hostsId: row.hostsId, wrappedContentKey: wrappedContentKey };
+      // Rows with a live public link also carry their link's own DEK, wrapped the same way
+      // (e2eEncryption design doc §6 "living link" redesign) - it must rotate in lockstep with
+      // wrappedContentKey or every live link would silently break on its next save.
+      if (row.wrappedLinkKey) {
+        const linkDek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(row.wrappedLinkKey, oldWsKey);
+        rewrap.wrappedLinkKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(linkDek, newWsKey);
+      }
+      contentRewraps.push(rewrap);
       done++;
       if (onProgress) onProgress(done, total);
     }

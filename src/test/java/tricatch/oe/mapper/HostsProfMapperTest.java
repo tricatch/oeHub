@@ -451,4 +451,85 @@ class HostsProfMapperTest extends MapperTestBase {
             assertThat(mapper.findByHostsId(pub.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-new");
         }
     }
+
+    // "Living link" redesign (e2eEncryption design doc §6): the link's own DEK is now wrapped by
+    // the workspace key and stored alongside its ciphertext, so link_content/wrapped_link_key
+    // travel together as a pair.
+    @Test
+    void updateLinkContent_issuesBothColumnsTogether() {
+        var user = insertUser("linkIssueUser");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var hosts = newHosts(user.getUserNo(), "linked profile", "content");
+            mapper.insert(hosts);
+
+            mapper.updateLinkContent(hosts.getHostsId(), TEST_WS_NO, "link-ciphertext", "wrapped-link-key");
+            var found = mapper.findByHostsId(hosts.getHostsId());
+            assertThat(found.getLinkContent()).isEqualTo("link-ciphertext");
+            assertThat(found.getWrappedLinkKey()).isEqualTo("wrapped-link-key");
+
+            // Revoke: both null together.
+            mapper.updateLinkContent(hosts.getHostsId(), TEST_WS_NO, null, null);
+            var revoked = mapper.findByHostsId(hosts.getHostsId());
+            assertThat(revoked.getLinkContent()).isNull();
+            assertThat(revoked.getWrappedLinkKey()).isNull();
+        }
+    }
+
+    @Test
+    void syncLinkContent_isNoOpWithoutALiveLink_andUpdatesWhenOneExists() {
+        var user = insertUser("linkSyncUser");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var hosts = newHosts(user.getUserNo(), "sync profile", "content");
+            mapper.insert(hosts);
+
+            // No link issued yet (wrapped_link_key IS NULL) - a content save must never mint one.
+            mapper.syncLinkContent(hosts.getHostsId(), TEST_WS_NO, "should-not-be-stored");
+            assertThat(mapper.findByHostsId(hosts.getHostsId()).getLinkContent()).isNull();
+
+            mapper.updateLinkContent(hosts.getHostsId(), TEST_WS_NO, "initial-link", "wrapped-link-key");
+            mapper.syncLinkContent(hosts.getHostsId(), TEST_WS_NO, "refreshed-link");
+            var found = mapper.findByHostsId(hosts.getHostsId());
+            assertThat(found.getLinkContent()).isEqualTo("refreshed-link");
+            assertThat(found.getWrappedLinkKey()).isEqualTo("wrapped-link-key");
+        }
+    }
+
+    @Test
+    void clearLink_nullsBothColumns() {
+        var user = insertUser("linkClearUser");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var hosts = newHosts(user.getUserNo(), "clear profile", "content");
+            mapper.insert(hosts);
+            mapper.updateLinkContent(hosts.getHostsId(), TEST_WS_NO, "link-ciphertext", "wrapped-link-key");
+
+            mapper.clearLink(hosts.getHostsId());
+            var found = mapper.findByHostsId(hosts.getHostsId());
+            assertThat(found.getLinkContent()).isNull();
+            assertThat(found.getWrappedLinkKey()).isNull();
+        }
+    }
+
+    @Test
+    void updateWrappedLinkKeyForRotation_onlyChangesRowsThatHaveALiveLink() {
+        var user = insertUser("linkRotationUser");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var linked = newHosts(user.getUserNo(), "linked rotation profile", "content");
+            mapper.insert(linked);
+            mapper.updateLinkContent(linked.getHostsId(), TEST_WS_NO, "link-ciphertext", "wrapped-old");
+
+            var unlinked = newHosts(user.getUserNo(), "unlinked rotation profile", "content");
+            mapper.insert(unlinked);
+
+            mapper.updateWrappedLinkKeyForRotation(linked.getHostsId(), TEST_WS_NO, "wrapped-new");
+            assertThat(mapper.findByHostsId(linked.getHostsId()).getWrappedLinkKey()).isEqualTo("wrapped-new");
+
+            // No live link on this row - rotation must not create one.
+            mapper.updateWrappedLinkKeyForRotation(unlinked.getHostsId(), TEST_WS_NO, "wrapped-hacked");
+            assertThat(mapper.findByHostsId(unlinked.getHostsId()).getWrappedLinkKey()).isNull();
+        }
+    }
 }

@@ -61,6 +61,9 @@ public class UserController {
         var userNo = hubUser.getUserNo();
 
         var hostsProfiles = hostsProfService.list(userNo);
+        // Same exclusion as HostsController.apiExport - the public link is per-workspace derived
+        // data and meaningless (wrappedLinkKey can't be unwrapped) outside it (design doc §6).
+        hostsProfiles.forEach(p -> { p.setLinkContent(null); p.setWrappedLinkKey(null); });
         var openUrl  = hostConfService.get(userNo, "open_url");
         var incognito = hostConfService.get(userNo, "incognito");
         var proxyVhosts = proxyVhostService.list(userNo);

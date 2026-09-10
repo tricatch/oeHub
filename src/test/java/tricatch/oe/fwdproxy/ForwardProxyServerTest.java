@@ -216,7 +216,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
         var hostsService = new tricatch.oe.hosts.service.HostsProfService(FACTORY);
         var profile = hostsService.create(user.getUserNo());
-        hostsService.updateContent(profile.getHostsId(), user.getUserNo(), "127.0.0.1 foo.oe");
+        hostsService.updateContent(profile.getHostsId(), user.getUserNo(), "127.0.0.1 foo.oe", null);
         hostsService.toggleSelected(profile.getHostsId(), user.getUserNo());
         ForwardProxyServer.refreshUserHosts(user);
 

@@ -79,7 +79,13 @@ public class HostsProfService {
         }
     }
 
-    public HostsProf updateContent(String hostId, Long userNo, String content) {
+    // linkContent (group mode only) is the caller's fresh re-encryption of the same content with
+    // the row's existing link DEK (unwrapped client-side via wrappedLinkKey) - the "living link"
+    // sync (e2eEncryption design doc §6). Null means either standalone or no live link to refresh;
+    // never mints a new link (syncLinkContent's own wrapped_link_key IS NOT NULL guard enforces
+    // that server-side too). Collabo reference rows (parentId != null) never carry a link of their
+    // own, so linkContent is simply ignored on that branch.
+    public HostsProf updateContent(String hostId, Long userNo, String content, String linkContent) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var record = mapper.findByHostsId(hostId);
@@ -89,6 +95,12 @@ public class HostsProfService {
                 mapper.updateContentByParentId(record.getParentId(), userNo, content, now);
             } else {
                 mapper.updateContent(hostId, userNo, content, now);
+                if (linkContent != null) {
+                    var caller = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+                    if (caller != null) {
+                        mapper.syncLinkContent(hostId, caller.getWsNo(), linkContent);
+                    }
+                }
             }
             session.commit();
             return mapper.findByHostsId(hostId);
@@ -283,6 +295,12 @@ public class HostsProfService {
             // identical guard in copyProfile.
             if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
             mapper.updateVisibility(hostId, userNo, visibility, wrappedContentKey, LocalDateTime.now());
+            // Auto-revoke any live public link the moment visibility leaves 'public' (e2eEncryption
+            // design doc §6) - previously the "Generate"/"Revoke" button was merely disabled here
+            // while an already-issued link stayed live and reachable at its URL.
+            if (!"public".equals(visibility)) {
+                mapper.clearLink(hostId);
+            }
             session.commit();
             return mapper.findByHostsId(hostId);
         }
@@ -316,6 +334,10 @@ public class HostsProfService {
             parent.setVisibility("collabo");
             mapper.insert(parent);
             mapper.setAsCollaboRef(hostId, userNo, parent.getHostsId(), now);
+            // Auto-revoke (design doc §6): 'collabo' is a restricted audience, defeating the whole
+            // point of a fully-public no-login link - same reasoning as updateVisibility's
+            // downgrade to 'private' above.
+            mapper.clearLink(hostId);
             session.commit();
             return mapper.findByHostsId(hostId);
         }
@@ -385,18 +407,23 @@ public class HostsProfService {
         }
     }
 
-    // Fully-public, no-login link (e2eEncryption design doc §6's last item): linkContent is
-    // already-encrypted ciphertext (its own fresh DEK, never wrapped/stored anywhere - the caller
-    // embeds the raw key in the share URL's fragment only). null revokes. 'public' only - private
-    // is pointless here and collabo's restricted audience defeats the point of "anyone, no login".
-    public HostsProf setPublicLink(String hostId, Long callerUserNo, String linkContent) {
+    // Fully-public, no-login link (e2eEncryption design doc §6 "living link" redesign): linkContent
+    // is already-encrypted ciphertext and wrappedLinkKey is that same DEK wrapped with the caller's
+    // workspace key, so any workspace member's browser can re-encrypt on later saves - the raw key
+    // itself still only ever appears in the share URL's fragment. Both null revokes; exactly one
+    // null is rejected (a link is issued/revoked as a pair, never half-updated) by returning null,
+    // same signal as "not found"/"not public" below - the controller maps either to an error
+    // response. 'public' only - private is pointless here and collabo's restricted audience
+    // defeats the point of "anyone, no login".
+    public HostsProf setPublicLink(String hostId, Long callerUserNo, String linkContent, String wrappedLinkKey) {
+        if ((linkContent == null) != (wrappedLinkKey == null)) return null;
         try (var session = sqlSessionFactory.openSession()) {
             var hostsMapper = session.getMapper(HostsProfMapper.class);
             var hosts = hostsMapper.findByHostsId(hostId);
             if (hosts == null || !"public".equals(hosts.getVisibility())) return null;
             var caller = session.getMapper(HubUserMapper.class).findByUserNo(callerUserNo);
             if (caller == null) return null;
-            hostsMapper.updateLinkContent(hostId, caller.getWsNo(), linkContent);
+            hostsMapper.updateLinkContent(hostId, caller.getWsNo(), linkContent, wrappedLinkKey);
             session.commit();
             return hostsMapper.findByHostsId(hostId);
         }

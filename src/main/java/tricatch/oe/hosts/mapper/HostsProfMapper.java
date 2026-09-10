@@ -13,6 +13,7 @@ public interface HostsProfMapper {
                COALESCE(p.hosts_content, h.hosts_content) AS hosts_content,
                h.selected, h.sort_order, h.visibility,
                h.parent_id, COALESCE(p.wrapped_content_key, h.wrapped_content_key) AS wrapped_content_key,
+               h.wrapped_link_key,
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
@@ -31,6 +32,7 @@ public interface HostsProfMapper {
                h.selected, h.sort_order, h.visibility,
                h.parent_id, COALESCE(p.wrapped_content_key, h.wrapped_content_key) AS wrapped_content_key,
                h.link_content,
+               h.wrapped_link_key,
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
@@ -164,7 +166,7 @@ public interface HostsProfMapper {
     // already excludes them - only parses/hosts_content are relevant, hostsId+wrappedContentKey
     // is otherwise enough for the rotation loop.
     @Select("""
-        SELECT h.hosts_id, h.wrapped_content_key
+        SELECT h.hosts_id, h.wrapped_content_key, h.wrapped_link_key
         FROM HOSTS_PFILE h
         JOIN HUB_USR u ON u.user_no = CASE WHEN h.user_no < 0 THEN -h.user_no ELSE h.user_no END
         WHERE u.ws_no = #{wsNo}
@@ -190,15 +192,34 @@ public interface HostsProfMapper {
         """)
     void updateWrappedContentKeyForRotation(@Param("hostsId") String hostsId, @Param("wsNo") Long wsNo, @Param("wrappedContentKey") String wrappedContentKey);
 
-    // Issues (non-null) or revokes (null) the fully-public, no-login link snapshot (e2eEncryption
-    // design doc §6's last item). Deliberately does NOT touch hosts_content/wrapped_content_key -
-    // the link uses its own separate DEK, so the normal (workspace-key) access path is completely
-    // unaffected by issuing or revoking a link. Scoped to 'public' rows in the caller's own
-    // workspace - any member may issue/revoke, matching §8's "public is jointly owned" model, the
-    // same reasoning already applied to updateContentByParentId for collabo/public shared edits.
+    // Rotation-only re-wrap for the link's own DEK (e2eEncryption design doc §6 "living link"
+    // redesign, §7 rotation) - same shape/scoping as updateWrappedContentKeyForRotation above, and
+    // likewise never touches updated_by/updated_at. Guarded by wrapped_link_key IS NOT NULL so a
+    // row with no live link is simply skipped (matches syncLinkContent/updateLinkContent's own
+    // never-create-a-link-here guard).
     @Update("""
         UPDATE HOSTS_PFILE
-        SET link_content = #{linkContent}
+        SET wrapped_link_key = #{wrappedLinkKey}
+        WHERE hosts_id = #{hostsId}
+          AND wrapped_link_key IS NOT NULL
+          AND hosts_id IN (
+            SELECT h.hosts_id FROM HOSTS_PFILE h
+            JOIN HUB_USR u ON u.user_no = CASE WHEN h.user_no < 0 THEN -h.user_no ELSE h.user_no END
+            WHERE u.ws_no = #{wsNo}
+          )
+        """)
+    void updateWrappedLinkKeyForRotation(@Param("hostsId") String hostsId, @Param("wsNo") Long wsNo, @Param("wrappedLinkKey") String wrappedLinkKey);
+
+    // Issues (both non-null) or revokes (both null) the fully-public, no-login link (e2eEncryption
+    // design doc §6 "living link" redesign). Deliberately does NOT touch hosts_content/
+    // wrapped_content_key - the link uses its own separate DEK, so the normal (workspace-key)
+    // access path is completely unaffected by issuing or revoking a link. Scoped to 'public' rows
+    // in the caller's own workspace - any member may issue/revoke, matching §8's "public is
+    // jointly owned" model, the same reasoning already applied to updateContentByParentId for
+    // collabo/public shared edits.
+    @Update("""
+        UPDATE HOSTS_PFILE
+        SET link_content = #{linkContent}, wrapped_link_key = #{wrappedLinkKey}
         WHERE hosts_id = #{hostsId}
           AND visibility = 'public'
           AND hosts_id IN (
@@ -207,7 +228,31 @@ public interface HostsProfMapper {
             WHERE u.ws_no = #{wsNo}
           )
         """)
-    void updateLinkContent(@Param("hostsId") String hostsId, @Param("wsNo") Long wsNo, @Param("linkContent") String linkContent);
+    void updateLinkContent(@Param("hostsId") String hostsId, @Param("wsNo") Long wsNo, @Param("linkContent") String linkContent, @Param("wrappedLinkKey") String wrappedLinkKey);
+
+    // Refreshes an issued link's ciphertext on every content save (the "living link" fix for the
+    // former snapshot trade-off, e2eEncryption design doc §6) - wrapped_link_key IS NOT NULL means
+    // this can only ever refresh an EXISTING link, never mint a new one (that stays
+    // updateLinkContent's job, called explicitly from the "Generate" button). Same wsNo scoping as
+    // updateLinkContent.
+    @Update("""
+        UPDATE HOSTS_PFILE
+        SET link_content = #{linkContent}
+        WHERE hosts_id = #{hostsId}
+          AND wrapped_link_key IS NOT NULL
+          AND hosts_id IN (
+            SELECT h.hosts_id FROM HOSTS_PFILE h
+            JOIN HUB_USR u ON u.user_no = h.user_no
+            WHERE u.ws_no = #{wsNo}
+          )
+        """)
+    void syncLinkContent(@Param("hostsId") String hostsId, @Param("wsNo") Long wsNo, @Param("linkContent") String linkContent);
+
+    // Unconditional auto-revoke used when a row's visibility leaves 'public' (e2eEncryption design
+    // doc §6) - no visibility/workspace guard needed since the caller (HostsProfService) has
+    // already verified ownership/scope for the visibility change itself.
+    @Update("UPDATE HOSTS_PFILE SET link_content = NULL, wrapped_link_key = NULL WHERE hosts_id = #{hostsId}")
+    void clearLink(@Param("hostsId") String hostsId);
 
     // Lightweight name-only projection (skips the CLOB content column) for bulk uniqueness
     // checks in HostsProfService.nextUniqueName - avoids one COUNT round trip per candidate

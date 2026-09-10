@@ -116,6 +116,11 @@ class ExportImportEncryptionTest {
             .findFirst().orElseThrow();
         assertThat((String) exportedRow.get("wrappedContentKey")).isNotBlank();
         assertThat((String) exportedRow.get("hostsContent")).doesNotContain("export-import-probe");
+        // The public link (linkContent/wrappedLinkKey) is per-workspace derived data - it must
+        // never leave in an export, since wrappedLinkKey can't be unwrapped outside the workspace
+        // it was wrapped in (e2eEncryption design doc §6).
+        assertThat(exportedRow.get("linkContent")).isNull();
+        assertThat(exportedRow.get("wrappedLinkKey")).isNull();
 
         var importResult = (Map<?, ?>) page.evaluate("""
             async (exportedJson) => {

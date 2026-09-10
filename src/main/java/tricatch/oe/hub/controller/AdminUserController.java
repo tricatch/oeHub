@@ -177,6 +177,7 @@ public class AdminUserController {
                 var m = new LinkedHashMap<String, Object>();
                 m.put("hostsId", r.getHostsId());
                 m.put("wrappedContentKey", r.getWrappedContentKey());
+                m.put("wrappedLinkKey", r.getWrappedLinkKey());
                 result.add(m);
             }
             ctx.json(result);
@@ -216,6 +217,13 @@ public class AdminUserController {
                     var wrappedContentKey = (String) entry.get("wrappedContentKey");
                     if (hostsId == null || wrappedContentKey == null) continue;
                     hostsMapper.updateWrappedContentKeyForRotation(hostsId, currentUser.getWsNo(), wrappedContentKey);
+                    // Present only for rows that also have a live public link (e2eEncryption
+                    // design doc §6 "living link" redesign) - missing this would silently break
+                    // every live link the moment content is next saved after rotation.
+                    var wrappedLinkKey = (String) entry.get("wrappedLinkKey");
+                    if (wrappedLinkKey != null) {
+                        hostsMapper.updateWrappedLinkKeyForRotation(hostsId, currentUser.getWsNo(), wrappedLinkKey);
+                    }
                 }
             }
             session.commit();
