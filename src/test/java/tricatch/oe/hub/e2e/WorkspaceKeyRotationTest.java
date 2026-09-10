@@ -40,6 +40,8 @@ class WorkspaceKeyRotationTest {
     private static final String STAY_PW = "StayPass123!";
     private static final String LEAVE_ID = "rotLeave";
     private static final String LEAVE_PW = "LeavePass123!";
+    private static final String BLOCKED_ID = "rotBlocked";
+    private static final String BLOCKED_PW = "BlockedPass123!";
     private static final String PROBE_LINE = "127.0.0.1 rotation-probe.oe";
 
     private E2eServer server;
@@ -224,5 +226,113 @@ class WorkspaceKeyRotationTest {
         leavePage.locator("input[name=password]").fill(LEAVE_PW);
         leavePage.locator("#btnLoginSubmit").click();
         assertThat(leavePage.locator("#loginErrorBox")).not().hasClass("d-none");
+    }
+
+    /**
+     * Manual "Rotate Workspace Key" button (design doc §7.1): a ws_adm can trigger the same
+     * rotation computation with nobody excluded - the retry/leak-response path. Also covers the
+     * progress modal (shown while rotating, hidden afterward, counter ends at N/N with N > 0),
+     * delaying the rotation-rows round trip a little so the modal has time to actually render
+     * visible before the (otherwise very fast) rotation completes.
+     */
+    @Test
+    @Order(7)
+    void wsAdmManuallyRotatesTheWorkspaceKey() {
+        var wrappedWsKeyBeforeManual = (String) stayPage.evaluate(
+            "async () => (await (await fetch('/api/user/crypto-keys')).json()).wrappedWsKey");
+        assertThat(wrappedWsKeyBeforeManual).isNotBlank();
+
+        var wrappedContentKeyBeforeManual = rotationRowWrappedContentKey(founderPage, hostsId);
+        assertThat(wrappedContentKeyBeforeManual).isNotBlank();
+
+        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.route("**/api/admin/workspace/rotation-rows", route -> {
+            try { Thread.sleep(400); } catch (InterruptedException ignored) {}
+            route.resume();
+        });
+
+        founderPage.locator("#btnRotateWsKey").click();
+        assertThat(founderPage.locator("#rotationProgressModal")).isVisible();
+        assertThat(founderPage.locator("#toast")).containsText("Workspace key rotated.",
+            new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+        assertThat(founderPage.locator("#rotationProgressModal")).not().isVisible();
+        founderPage.unroute("**/api/admin/workspace/rotation-rows");
+
+        var progressCountText = founderPage.locator("#rotationProgressCount").textContent();
+        var m = Pattern.compile("^(\\d+) / (\\d+)$").matcher(progressCountText.trim());
+        assertThat(m.matches()).isTrue();
+        assertThat(m.group(1)).isEqualTo(m.group(2));
+        assertThat(Integer.parseInt(m.group(1))).isGreaterThan(0);
+
+        var wrappedWsKeyAfterManual = (String) stayPage.evaluate(
+            "async () => (await (await fetch('/api/user/crypto-keys')).json()).wrappedWsKey");
+        assertThat(wrappedWsKeyAfterManual).isNotBlank().isNotEqualTo(wrappedWsKeyBeforeManual);
+
+        var wrappedContentKeyAfterManual = rotationRowWrappedContentKey(founderPage, hostsId);
+        assertThat(wrappedContentKeyAfterManual).isNotEqualTo(wrappedContentKeyBeforeManual);
+
+        login(stayPage, STAY_ID, STAY_PW);
+        stayPage.navigate(server.baseUrl() + "/oehub/hosts");
+        var raw = (Map<?, ?>) stayPage.evaluate(
+            "async (id) => { const list = await (await fetch('/api/hosts')).json(); return list.find(p => p.hostsId === id); }",
+            hostsId);
+        var decrypted = (String) stayPage.evaluate(
+            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+            raw);
+        assertThat(decrypted).contains(PROBE_LINE);
+    }
+
+    private String rotationRowWrappedContentKey(Page adminPage, String hostsId) {
+        var rows = (List<?>) adminPage.evaluate(
+            "async () => await (await fetch('/api/admin/workspace/rotation-rows')).json()");
+        return (String) rows.stream()
+            .map(o -> (Map<?, ?>) o)
+            .filter(m -> hostsId.equals(m.get("hostsId")))
+            .findFirst().orElseThrow()
+            .get("wrappedContentKey");
+    }
+
+    /**
+     * Failed rotation must block the deletion outright (design doc §7.1 policy change from the
+     * earlier "delete anyway" behavior): the departing member must never end up removed while
+     * still holding the old workspace key's shared content.
+     */
+    @Test
+    @Order(8)
+    void rotationFailureBlocksDeletion() {
+        var invite = createInvite(founderPage);
+        var blockedPage = browser.newPage();
+        registerAndConfirmRecovery(blockedPage, invite, BLOCKED_ID, BLOCKED_PW, false);
+        approveOnlyPending(founderPage);
+        blockedPage.close();
+
+        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+
+        var deleteRequests = new java.util.concurrent.atomic.AtomicInteger(0);
+        founderPage.onRequest(req -> {
+            if ("DELETE".equals(req.method()) && req.url().matches(".*/api/admin/users/\\d+$")) {
+                deleteRequests.incrementAndGet();
+            }
+        });
+        founderPage.route("**/api/admin/workspace/rotate", route ->
+            route.fulfill(new com.microsoft.playwright.Route.FulfillOptions().setStatus(500)));
+
+        var blockedRow = founderPage.locator("tbody tr").filter(new com.microsoft.playwright.Locator.FilterOptions().setHasText(BLOCKED_ID));
+        assertThat(blockedRow).hasCount(1);
+        blockedRow.locator(".btn-delete-user").click();
+
+        assertThat(founderPage.locator("#toast")).containsText(
+            "Workspace key rotation failed - the account was not deleted. Retry, or use \"Rotate Workspace Key\".",
+            new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+
+        assertThat(deleteRequests.get()).isZero();
+        assertThat(founderPage.locator("tbody tr").filter(new com.microsoft.playwright.Locator.FilterOptions().setHasText(BLOCKED_ID)))
+            .hasCount(1);
+
+        var stillListed = (List<?>) founderPage.evaluate(
+            "async () => await (await fetch('/api/admin/users')).json()");
+        assertThat(stillListed.stream().map(o -> (Map<?, ?>) o).anyMatch(m -> BLOCKED_ID.equals(m.get("userId")))).isTrue();
+
+        founderPage.unroute("**/api/admin/workspace/rotate");
     }
 }

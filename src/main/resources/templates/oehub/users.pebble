@@ -37,7 +37,12 @@
 
 <div class="settings-main">
 
-  <h5>{{ msg['users.title'] }}</h5>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0">{{ msg['users.title'] }}</h5>
+    {% if groupMode %}
+    <button type="button" class="btn btn-sm btn-oe-secondary" id="btnRotateWsKey" title="{{ msg['tooltip.rotate.ws.key'] }}">{{ msg['users.rotate.ws.key'] }}</button>
+    {% endif %}
+  </div>
 
   {% if groupMode %}
   <div class="oe-info-section">
@@ -157,6 +162,28 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Workspace-key rotation progress modal - non-dismissable, both the delete-member and manual
+     rotation entry points share it (e2eEncryption design doc §7.1). Deliberately not "fade": a
+     rotation can finish (and call hide()) while the fade-in transition from show() is still
+     running, and Bootstrap's Modal.hide() silently no-ops while _isTransitioning is true - no
+     animation means no transition window, so hide() always takes effect. -->
+<div class="modal" id="rotationProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['rotation.progress.title'] }}</h5>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ msg['rotation.progress.text'] }}</p>
+        <div class="progress" style="height: 8px;">
+          <div class="progress-bar oe-progress-bar-brand" id="rotationProgressBar" role="progressbar" style="width: 0%"></div>
+        </div>
+        <div class="small text-muted text-end mt-1"><span id="rotationProgressCount"></span></div>
       </div>
     </div>
   </div>
@@ -360,31 +387,46 @@
     });
   });
 
-  // Workspace-key rotation on member departure (e2eEncryption design doc §7): the DEK behind
-  // every 'public'/'collabo' row never changes, only which key wraps it, so "rotation" is just a
-  // fresh wrap per remaining member (their public key, already known) and per shared row (their
-  // DEK, unwrapped with the OLD workspace key and re-wrapped with the new one) - no content is
-  // ever re-encrypted. Runs entirely in this browser; the server only ever receives the
-  // already-wrapped output (same server-blind pattern as approval, §5).
-  async function rotateWorkspaceKeyExcluding(excludeUserNo) {
+  // Workspace-key rotation, on member departure or manually (e2eEncryption design doc §7/§7.1):
+  // the DEK behind every 'public'/'collabo' row never changes, only which key wraps it, so
+  // "rotation" is just a fresh wrap per remaining member (their public key, already known) and
+  // per shared row (their DEK, unwrapped with the OLD workspace key and re-wrapped with the new
+  // one) - no content is ever re-encrypted. Runs entirely in this browser; the server only ever
+  // receives the already-wrapped output (same server-blind pattern as approval, §5).
+  // excludeUserNo null/undefined means "exclude nobody" (rewrap for every member) - the manual
+  // rotation path uses this. onProgress(done, total), if given, is called once total is known
+  // (after rotation-rows is fetched) and again after each wrap/rewrap.
+  async function rotateWorkspaceKeyExcluding(excludeUserNo, onProgress) {
     const oldWsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
     if (!oldWsKey) throw new Error('no cached workspace key');
     const newWsKey = await OE_CRYPTO.generateWorkspaceKey();
 
+    const eligibleMembers = currentUsers.filter(function (u) {
+      var excluded = excludeUserNo != null && String(u.userNo) === String(excludeUserNo);
+      return !excluded && u.publicKey;
+    });
+    const rows = await (await fetch('/api/admin/workspace/rotation-rows')).json();
+
+    const total = eligibleMembers.length + rows.length;
+    let done = 0;
+    if (onProgress) onProgress(done, total);
+
     const memberWraps = [];
-    for (const u of currentUsers) {
-      if (String(u.userNo) === String(excludeUserNo) || !u.publicKey) continue;
+    for (const u of eligibleMembers) {
       const publicKey = await OE_CRYPTO.importPublicKey(u.publicKey);
       const wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(newWsKey, publicKey);
       memberWraps.push({ userNo: u.userNo, wrappedWsKey: wrappedWsKey });
+      done++;
+      if (onProgress) onProgress(done, total);
     }
 
-    const rows = await (await fetch('/api/admin/workspace/rotation-rows')).json();
     const contentRewraps = [];
     for (const row of rows) {
       const dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(row.wrappedContentKey, oldWsKey);
       const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, newWsKey);
       contentRewraps.push({ hostsId: row.hostsId, wrappedContentKey: wrappedContentKey });
+      done++;
+      if (onProgress) onProgress(done, total);
     }
 
     const res = await fetch('/api/admin/workspace/rotate', {
@@ -396,24 +438,52 @@
     await OE_SESSION_KEYS.saveWorkspaceKey(newWsKey);
   }
 
-  function onDelete() {
+  var rotationProgressModalEl = document.getElementById('rotationProgressModal');
+  var rotationProgressModal = new bootstrap.Modal(rotationProgressModalEl);
+  var rotationProgressBar = document.getElementById('rotationProgressBar');
+  var rotationProgressCount = document.getElementById('rotationProgressCount');
+
+  function updateRotationProgress(done, total) {
+    var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    rotationProgressBar.style.width = pct + '%';
+    rotationProgressCount.textContent = done + ' / ' + total;
+  }
+
+  // Shared by both rotation entry points (delete-member, manual button - design doc §7.1): shows
+  // the non-dismissable progress modal for the duration of the rotation and always hides it again,
+  // success or failure, leaving the outcome toast to the caller.
+  async function runRotationWithProgress(excludeUserNo) {
+    updateRotationProgress(0, 0);
+    rotationProgressModal.show();
+    try {
+      await rotateWorkspaceKeyExcluding(excludeUserNo, updateRotationProgress);
+    } finally {
+      rotationProgressModal.hide();
+    }
+  }
+
+  async function onDelete() {
     var btn = this;
     var row = btn.closest('tr');
     var userNo = row.dataset.userNo;
     if (!confirm(MSG['confirm.delete.user'])) return;
     btn.disabled = true;
-    var rotation = window.OE_GROUP_MODE ? rotateWorkspaceKeyExcluding(userNo) : Promise.resolve();
-    rotation
-      .catch(function () {
-        // Rotation failing shouldn't strand the departure entirely - the account itself still
-        // gets removed below, just without a fresh key (design doc §9: resume/retry strategy for
-        // a partial rotation is still an open question, so this is the "at least don't block the
-        // core action" fallback for now). Surface it distinctly so a ws_adm knows to retry later.
+
+    if (window.OE_GROUP_MODE) {
+      try {
+        await runRotationWithProgress(userNo);
+      } catch (e) {
+        // Rotation failing must block the deletion (design doc §7.1 policy change): proceeding
+        // anyway would strand the departing member with continued access to the old workspace
+        // key's content. Surface it distinctly and let the ws_adm retry (delete again, or use the
+        // manual "Rotate Workspace Key" button).
+        btn.disabled = false;
         showToast(MSG['toast.rotation.failed']);
-      })
-      .then(function () {
-        return fetch('/api/admin/users/' + userNo, { method: 'DELETE' });
-      })
+        return;
+      }
+    }
+
+    fetch('/api/admin/users/' + userNo, { method: 'DELETE' })
       .then(function (r) {
         if (r.ok) {
           showToast(MSG['toast.user.deleted']);
@@ -428,6 +498,24 @@
         btn.disabled = false;
         showToast(MSG['toast.user.delete.failed']);
       });
+  }
+
+  var btnRotateWsKey = document.getElementById('btnRotateWsKey');
+  if (btnRotateWsKey) {
+    btnRotateWsKey.addEventListener('click', function () {
+      if (!confirm(MSG['confirm.rotate.ws.key'])) return;
+      btnRotateWsKey.disabled = true;
+      runRotationWithProgress(null)
+        .then(function () {
+          showToast(MSG['toast.rotation.done']);
+        })
+        .catch(function () {
+          showToast(MSG['toast.rotation.failed.manual']);
+        })
+        .finally(function () {
+          btnRotateWsKey.disabled = false;
+        });
+    });
   }
 
   function loadPending() {

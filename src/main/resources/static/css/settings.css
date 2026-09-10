@@ -89,3 +89,5 @@
 .btn-oe-icon:hover { background: #f0f0f0; color: #343a40; }
 .btn-oe-icon.ua-btn-delete:hover,
 .btn-oe-icon.url-btn-delete:hover { background: #fde8e8; color: #dc3545; }
+
+.oe-progress-bar-brand { background-color: #a8d878; }
