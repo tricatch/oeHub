@@ -71,6 +71,12 @@
 
 - Scripts used in two or more places must be extracted into a shared file under `src/main/resources/static/js/`.
 
+## Documentation Language
+
+- Source code comments (Java, JS, SQL, etc.) are always written in English, regardless of what language the surrounding conversation or task was conducted in.
+- Everything else — `README.md`, `docs/*.md`, and any other design/reference documentation — is written in Korean. This is distinct from the app's own bilingual UI strings (see "i18n — UI Messages" below) and from this file's own English-only rule (see the update rule at the top).
+- When a document under this rule currently exists only in English, treat that as stale and rewrite it in Korean rather than maintaining an English copy alongside it.
+
 ## i18n — UI Messages
 
 - All user-facing UI strings (button labels, toast messages, tooltips, status text, placeholders, confirm prompts, feedback messages) must be defined in `src/main/resources/i18n/messages_en.properties` and mirrored in `messages_ko.properties`.
