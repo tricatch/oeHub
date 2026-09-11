@@ -9,6 +9,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
+import tricatch.oe.hub.config.BackupService;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
 import tricatch.oe.fwdproxy.BlockedPageServer;
@@ -105,6 +106,38 @@ public class SettingsController {
         ctx.json(Map.of("whitelist", whitelist));
     }
 
+    // ── database backup ───────────────────────────────────────────────────────
+
+    public void apiSaveBackupInterval(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        int hours;
+        try {
+            hours = Integer.parseInt(String.valueOf(body.get("intervalHours")).trim());
+        } catch (Exception e) {
+            hours = BackupService.DEFAULT_INTERVAL_HOURS;
+        }
+        if (hours < BackupService.MIN_INTERVAL_HOURS || hours > BackupService.MAX_INTERVAL_HOURS) {
+            hours = BackupService.DEFAULT_INTERVAL_HOURS;
+        }
+        saveBackupIntervalHours(hours, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("intervalHours", hours));
+    }
+
+    private void saveBackupIntervalHours(int hours, Long actorUserNo) {
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var now = LocalDateTime.now();
+            var conf = new HubConf();
+            conf.setConfKey(BackupService.CONF_KEY_INTERVAL_HOURS);
+            conf.setConfVal(String.valueOf(hours));
+            conf.setCreatedBy(actorUserNo);
+            conf.setUpdatedBy(actorUserNo);
+            conf.setCreateAt(now);
+            conf.setUpdatedAt(now);
+            session.getMapper(HubConfMapper.class).upsert(conf);
+        }
+        BackupService.reschedule(hours);
+    }
+
     // ── CA certificate ────────────────────────────────────────────────────────
 
     public boolean isCaConfigured() {
@@ -197,6 +230,8 @@ public class SettingsController {
         model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("fwdproxyWhitelist", ForwardProxyServer.getWhitelist());
+        model.put("backupIntervalHours", BackupService.getIntervalHours());
+        model.put("backupLastAt", formatBackupLastAt(BackupService.getLastBackupAtDisplay()));
         model.put("ca", loadCaInfo());
         model.put("caError", caError);
         model.put("caSuccess", caSuccess);
@@ -237,6 +272,17 @@ public class SettingsController {
             info.put("parseError", true);
         }
         return info;
+    }
+
+    private String formatBackupLastAt(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        try {
+            return LocalDateTime.parse(raw).format(DT_FMT);
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private String getConf(String confKey) {

@@ -21,7 +21,7 @@
 
 ## Database Schema
 
-- Schema migrations use `CREATE TABLE IF NOT EXISTS` only. `ALTER TABLE` is not used during the development phase. To apply schema changes, modify the `CREATE TABLE` statement and restart the application after deleting the H2 database file (`~/oeHub/data/oeHub-h2.*`).
+- Schema migrations use `CREATE TABLE IF NOT EXISTS` only. `ALTER TABLE` is not used during the development phase. To apply schema changes, modify the `CREATE TABLE` statement and restart the application after deleting the H2 database file (`~/oeHub/data/oeHub-h2.*` for `standalone` mode, `~/oeHub/data/oeHub-h2-ws.*` for `workspace` mode — see `AppHome.dbFileName()`).
 - Timestamp columns use the `_at` suffix (e.g. `create_at`, `updated_at`, `last_login_at`). Never use `_dt`.
 - Column ordering rule: business columns first, then timestamp columns at the end in this order: `create_at`, `updated_at`, additional timestamps (e.g. `last_login_at`).
 - When adding a new non-timestamp column, insert it before the timestamp block.

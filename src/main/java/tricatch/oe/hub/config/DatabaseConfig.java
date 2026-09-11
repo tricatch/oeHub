@@ -39,7 +39,7 @@ public class DatabaseConfig {
 
     public static SqlSessionFactory buildSqlSessionFactory() {
         var dataDir = AppHome.oeHubDir().resolve("data");
-        var dbPath = dataDir.resolve("oeHub-h2");
+        var dbPath = dataDir.resolve(AppHome.dbFileName());
 
         var hikariConfig = new HikariConfig();
         hikariConfig.setPoolName("oeHub-h2-pool");

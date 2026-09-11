@@ -26,6 +26,13 @@ public class AppHome {
         return "workspace".equals(System.getProperty("oe.mode", "standalone"));
     }
 
+    // Workspace mode gets a distinct filename so an operator can switch -Doe.mode back and forth
+    // during testing without the two modes' databases colliding on the same file, and so the two
+    // are visually distinguishable on disk later.
+    public static String dbFileName() {
+        return isWorkspaceMode() ? "oeHub-h2-ws" : "oeHub-h2";
+    }
+
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
 
     /**

@@ -2,7 +2,7 @@
 
 이 문서는 oeHub가 사용하는 12개 테이블을 다룬다. 스키마는 `DatabaseConfig.initSchema()`(H2, `CREATE TABLE IF NOT EXISTS`)에 코드로 정의되어 있으며, 이 문서는 그 코드를 그대로 옮긴 것이 아니라 각 테이블의 존재 이유와 컬럼 설계 의도를 설명한다. 정확한 타입/제약조건은 소스가 원본이다.
 
-개발 단계에서는 `ALTER TABLE`을 쓰지 않는다 — 스키마를 바꾸려면 `CREATE TABLE` 문 자체를 고치고, 기존 데이터베이스 파일(`~/oeHub/data/oeHub-h2.*`)을 지운 뒤 재시작한다. `CREATE TABLE IF NOT EXISTS`는 테이블이 이미 있으면 아무 일도 하지 않으므로, 이 파일을 지우지 않고 새 컬럼이 추가된 코드로 재시작하면 기존 테이블에 그 컬럼이 없는 상태로 남아 조회 시 SQL 오류가 난다.
+개발 단계에서는 `ALTER TABLE`을 쓰지 않는다 — 스키마를 바꾸려면 `CREATE TABLE` 문 자체를 고치고, 기존 데이터베이스 파일(`standalone` 모드는 `~/oeHub/data/oeHub-h2.*`, `workspace` 모드는 `~/oeHub/data/oeHub-h2-ws.*`)을 지운 뒤 재시작한다. `CREATE TABLE IF NOT EXISTS`는 테이블이 이미 있으면 아무 일도 하지 않으므로, 이 파일을 지우지 않고 새 컬럼이 추가된 코드로 재시작하면 기존 테이블에 그 컬럼이 없는 상태로 남아 조회 시 SQL 오류가 난다.
 
 ## 공통 규칙
 

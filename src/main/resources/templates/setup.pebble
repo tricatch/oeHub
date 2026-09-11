@@ -223,7 +223,8 @@
         </div>
         {% endif %}
 
-        {# ── Step 4: oeOID Domains ── #}
+        {# ── Step 4: oeOID Domains (oeProxy only - not shown in workspace mode) ── #}
+        {% if not workspaceMode %}
         <div class="oe-info-section">
           <table class="oe-info-table mb-0">
             <colgroup><col style="width:110px;"><col></colgroup>
@@ -272,6 +273,7 @@
           </div>
           {% endif %}
         </div>
+        {% endif %}
 
         {# CA is an oeProxy-only requirement - workspace mode never has one, so admin alone is enough #}
         <div class="text-center mt-2 mb-4">

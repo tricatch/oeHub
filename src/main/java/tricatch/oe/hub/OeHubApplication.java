@@ -13,6 +13,7 @@ import org.h2.tools.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
+import tricatch.oe.hub.config.BackupService;
 import tricatch.oe.hub.config.DatabaseConfig;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.controller.AdminHostsUaController;
@@ -288,10 +289,11 @@ public class OeHubApplication {
             config.routes.get("/setup", setup::showSetup);
             config.routes.post("/setup", setup::processSetup);
             if (!workspaceMode) {
-                // CA setup only makes sense for oeProxy, which doesn't exist in workspace mode -
-                // cloudGroupService design doc §2.6.
+                // CA setup and oID (X-OeHub-Oid) domain defaults only make sense for oeProxy,
+                // which doesn't exist in workspace mode - cloudGroupService design doc §2.6.
                 config.routes.post("/setup/ca/generate", setup::generateCa);
                 config.routes.post("/setup/ca/import",   setup::importCa);
+                config.routes.post("/setup/oid-domain-default", setup::saveOidDomainDefault);
             }
             config.routes.get("/setup/hosts-url",              setup::apiSetupUrlList);
             config.routes.post("/setup/hosts-url",             setup::apiSetupUrlCreate);
@@ -303,7 +305,6 @@ public class OeHubApplication {
             config.routes.patch("/setup/hosts-ua/{uaId}",      setup::apiSetupUaUpdate);
             config.routes.delete("/setup/hosts-ua/{uaId}",     setup::apiSetupUaDelete);
             config.routes.put("/setup/hosts-ua/order",         setup::apiSetupUaReorder);
-            config.routes.post("/setup/oid-domain-default", setup::saveOidDomainDefault);
 
             config.routes.get("/", ctx -> {
                 var model = new HashMap<String, Object>();
@@ -330,6 +331,7 @@ public class OeHubApplication {
             // Admin settings
             config.routes.get("/oehub/settings",              settings::showSettings);
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
+            config.routes.post("/api/admin/settings/backup-interval", settings::apiSaveBackupInterval);
             if (!workspaceMode) {
                 // IP identifier / forward-proxy whitelist / CA are all oeProxy-only concerns -
                 // meaningless (and their backing servers non-existent) under workspace mode.
@@ -549,7 +551,7 @@ public class OeHubApplication {
     }
 
     static String h2JdbcUrl() {
-        var dbPath = AppHome.oeHubDir().resolve("data").resolve("oeHub-h2")
+        var dbPath = AppHome.oeHubDir().resolve("data").resolve(AppHome.dbFileName())
                          .toAbsolutePath().toString().replace("\\", "/");
         return "jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE";
     }
@@ -572,6 +574,7 @@ public class OeHubApplication {
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
         ReverseProxyServer.init(sqlSessionFactory);
         ForwardProxyServer.init(sqlSessionFactory);
+        BackupService.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
         // oe.mode=workspace never starts any of the network-level Proxy servers - see
