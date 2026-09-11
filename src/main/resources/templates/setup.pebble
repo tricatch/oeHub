@@ -366,8 +366,8 @@
     pendingRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(recoveryBytes);
 
     // /setup always founds the workspace this admin belongs to (cloudGroupService design doc
-    // §2.7's standalone bootstrap) - the workspace key is created right here, same as a group-
-    // mode founder registering a new workspace (e2eEncryption design doc §4).
+    // §2.7's standalone bootstrap) - the workspace key is created right here, same as a
+    // workspace-mode founder registering a new workspace (e2eEncryption design doc §4).
     var wsKey = await OE_CRYPTO.generateWorkspaceKey();
     var founderWrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, keyPair.publicKey);
 

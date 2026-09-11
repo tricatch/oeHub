@@ -209,7 +209,7 @@ class WorkspaceAdminConsoleTest {
      * its one workspace) and must not exist there: a workspace's own ws_adm equivalent (the
      * instance 'adm', which passes isWorkspaceAdmin() in standalone) reaches the generic
      * "/oehub/admin/*"/"/api/admin/*" gate fine, but no route is registered behind it, so Javalin
-     * falls through to a plain 404 - the same "unrouted" shape other group-only endpoints have when
+     * falls through to a plain 404 - the same "unrouted" shape other workspace-only endpoints have when
      * hit under the opposite mode.
      */
     @Test

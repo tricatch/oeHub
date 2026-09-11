@@ -111,7 +111,7 @@ class LastAdminGuardTest {
 
     // Values are interpolated straight into the JS source (rather than passed as an evaluate()
     // argument) because Playwright's Java binding cannot serialize a boxed Long as an argument -
-    // same pattern GroupModeKeyWrapTest/WorkspaceKeyRotationTest use for this kind of call.
+    // same pattern WorkspaceModeKeyWrapTest/WorkspaceKeyRotationTest use for this kind of call.
     @SuppressWarnings("unchecked")
     private Map<String, Object> patchRole(Page adminPage, Long userNo, String role) {
         return (Map<String, Object>) adminPage.evaluate(String.format(

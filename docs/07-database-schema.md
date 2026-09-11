@@ -61,7 +61,7 @@ erDiagram
 
 - `visibility` — `private`/`collabo`/`public`. `public`의 의미가 배포 모드에 따라 달라진다([04-deployment-modes.md](04-deployment-modes.md) "visibility의 재해석" 참고).
 - `parent_id` — `collabo` 공유의 참조 행. `HOSTS_PFILE` 자기 자신을 가리키는 자기참조 FK.
-- `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`public`은 워크스페이스키로 감싼다. `group`이 아닌 `standalone`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
+- `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`public`은 워크스페이스키로 감싼다. `workspace`가 아닌 `standalone`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
 - `link_content`/`wrapped_link_key` — "살아있는 공개 링크" 기능 전용([05-end-to-end-encryption.md](05-end-to-end-encryption.md) "공개 링크 공유" 참고). 링크 발급 여부와 무관하게 `hosts_content`/`wrapped_content_key`는 전혀 건드리지 않는다 — 완전히 별개의 암호문 계열이다.
 - `uq_hosts_pfile_user_profile` — 같은 소유자 안에서 프로필 이름 중복 방지. 소유자가 `ws_system`으로 바뀌는 재할당 시 이름이 충돌하면 자동으로 뒤에 번호를 붙여 회피한다.
 
