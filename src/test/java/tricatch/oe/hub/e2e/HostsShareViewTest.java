@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Proves the /share and /api/hosts/{id}/view wiring added on top of hosts.pebble's content
  * encryption (e2eEncryption design doc §9's reinterpretation of cloudGroupService doc §2.4):
- * under oe.mode=group a share link is only viewable by someone already logged in to the SAME
+ * under oe.mode=workspace a share link is only viewable by someone already logged in to the SAME
  * workspace (an anonymous visitor is redirected to /login, a different-workspace member gets
  * 403), the viewer's browser decrypts with its own cached workspace key, another member can view
  * (read-only) a public profile from search results via the new /view endpoint the same way, and
@@ -54,7 +54,7 @@ class HostsShareViewTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=group"));
+        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();

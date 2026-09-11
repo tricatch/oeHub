@@ -20,7 +20,7 @@
 
   <!-- Tools -->
   <div class="row g-4 mb-4">
-    <div class="{{ groupMode ? 'col-md-12' : 'col-md-6' }}">
+    <div class="{{ workspaceMode ? 'col-md-12' : 'col-md-6' }}">
       <a href="/oehub/hosts" class="oe-tool-card card">
         <div class="card-body p-4">
           <div class="oe-tool-name">oeHosts</div>
@@ -32,7 +32,7 @@
         </div>
       </a>
     </div>
-    {% if not groupMode %}
+    {% if not workspaceMode %}
     <div class="col-md-6">
       <a href="/oehub/proxy" class="oe-tool-card card">
         <div class="card-body p-4">

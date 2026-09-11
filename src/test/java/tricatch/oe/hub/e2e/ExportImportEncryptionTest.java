@@ -21,7 +21,7 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
 
 /**
  * Proves that the hosts export/import (GET/POST /api/hosts/export|import) and full-account
- * backup/restore (GET/POST /api/user/backup|restore) round trips carry an encrypted (group mode)
+ * backup/restore (GET/POST /api/user/backup|restore) round trips carry an encrypted (workspace mode)
  * row's wrapped_content_key through unchanged, alongside its ciphertext hosts_content - a real
  * bug found by auditing for other missed call sites after the user caught the "import from share
  * link" gap (e2eEncryption design doc §9): both controllers dropped wrapped_content_key on the
@@ -48,7 +48,7 @@ class ExportImportEncryptionTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT, List.of("-Doe.mode=group"));
+        server = new E2eServer(PORT, List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();

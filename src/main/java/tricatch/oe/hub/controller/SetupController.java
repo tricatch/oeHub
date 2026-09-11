@@ -65,9 +65,9 @@ public class SetupController {
         try (var session = sqlSessionFactory.openSession()) {
             adminOk = session.getMapper(HubConfMapper.class).findByConfKey("admin") != null;
         }
-        // CA is an oeProxy-only requirement - oeProxy doesn't exist under oe.mode=group, so an
+        // CA is an oeProxy-only requirement - oeProxy doesn't exist under oe.mode=workspace, so an
         // admin account alone is "complete" there (cloudGroupService design doc §2.6).
-        boolean caOk = tricatch.oe.hub.config.AppHome.isGroupMode() || settings.isCaConfigured();
+        boolean caOk = tricatch.oe.hub.config.AppHome.isWorkspaceMode() || settings.isCaConfigured();
         adminConfigured = adminOk;
         setupComplete = adminOk && caOk;
         logger.info("Setup state refreshed — admin={}, ca={}, complete={}", adminOk, caOk, setupComplete);

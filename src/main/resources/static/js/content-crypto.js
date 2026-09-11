@@ -1,4 +1,4 @@
-// Shared decrypt helper for group-mode encrypted HOSTS_PFILE content (e2eEncryption design doc
+// Shared decrypt helper for workspace-mode encrypted HOSTS_PFILE content (e2eEncryption design doc
 // §1/§6/§9) - used by both hosts.pebble (the editor) and hosts-share.pebble (the read-only
 // share viewer) so the visibility->KEK branching lives in exactly one place (CLAUDE.md's
 // "extract shared script" rule).

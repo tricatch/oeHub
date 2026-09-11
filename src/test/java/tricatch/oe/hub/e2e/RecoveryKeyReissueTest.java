@@ -41,7 +41,7 @@ class RecoveryKeyReissueTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=group"));
+        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();

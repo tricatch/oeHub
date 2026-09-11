@@ -1,0 +1,139 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['workspaces.title'] }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/settings.css">
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/info-page.css">
+<style>
+  .oe-ws-status { display: inline-block; font-size: 0.72rem; padding: 1px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+  .oe-ws-status-active { background: #dff2b8; color: #3a6b1a; }
+  .oe-ws-status-suspended { background: #f8d7da; color: #842029; }
+  tr.oe-removing { opacity: 0; transition: opacity 0.25s ease; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="workspacesApp">
+<script>(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('workspacesApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
+
+<div class="settings-main">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0">{{ msg['workspaces.title'] }}</h5>
+  </div>
+
+  <div class="oe-info-section">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:120px;">
+        <col style="width:100px;">
+        <col style="width:150px;">
+        <col style="width:80px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="5">
+            <span>{{ msg['workspaces.card.header'] }}</span>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['workspaces.col.name'] }}</th>
+          <th class="text-center">{{ msg['workspaces.col.status'] }}</th>
+          <th class="text-center">{{ msg['workspaces.col.members'] }}</th>
+          <th>{{ msg['workspaces.col.created'] }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="workspacesTbody">
+        <tr><td colspan="5" class="text-muted text-center py-3">{{ msg['workspaces.empty'] }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+</div><!-- /settings-app -->
+
+<script>
+(function () {
+
+  function loadWorkspaces() {
+    fetch('/api/admin/workspaces')
+      .then(function (r) { return r.json(); })
+      .then(renderWorkspaces)
+      .catch(function () {});
+  }
+
+  function statusHtml(status) {
+    var isActive = status === 'active';
+    var cls = isActive ? 'oe-ws-status-active' : 'oe-ws-status-suspended';
+    var label = isActive ? MSG['workspaces.status.active'] : MSG['workspaces.status.suspended'];
+    return '<span class="oe-ws-status ' + cls + '">' + escHtml(label) + '</span>';
+  }
+
+  function actionHtml(status) {
+    var isActive = status === 'active';
+    var icon = isActive ? 'oe-icon-suspend' : 'oe-icon-reactivate';
+    var cls = isActive ? 'oe-tbl-btn-delete' : 'oe-tbl-btn-action';
+    var title = isActive ? MSG['tooltip.suspend.workspace'] : MSG['tooltip.reactivate.workspace'];
+    return '<button class="oe-tbl-btn ' + cls + ' btn-toggle-ws-status" title="' + escHtml(title) + '">' +
+      '<span class="oe-icon ' + icon + '" style="width:15px;height:15px"></span></button>';
+  }
+
+  function renderWorkspaces(workspaces) {
+    var tbody = document.getElementById('workspacesTbody');
+    if (!workspaces || workspaces.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">' + escHtml(MSG['workspaces.empty']) + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = workspaces.map(function (w) {
+      return '<tr data-ws-no="' + w.wsNo + '" data-status="' + w.status + '">' +
+        '<td>' + escHtml(w.wsName) + '</td>' +
+        '<td class="text-center">' + statusHtml(w.status) + '</td>' +
+        '<td class="text-center small text-muted">' + (w.memberCount != null ? w.memberCount : '') + '</td>' +
+        '<td class="small text-muted">' + escHtml(w.createAt) + '</td>' +
+        '<td class="text-end">' + actionHtml(w.status) + '</td>' +
+        '</tr>';
+    }).join('');
+    tbody.querySelectorAll('.btn-toggle-ws-status').forEach(function (btn) {
+      btn.addEventListener('click', onToggleStatus);
+    });
+  }
+
+  function onToggleStatus() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var wsNo = row.dataset.wsNo;
+    var newStatus = row.dataset.status === 'active' ? 'suspended' : 'active';
+    var confirmMsg = newStatus === 'suspended' ? MSG['confirm.suspend.workspace'] : MSG['confirm.reactivate.workspace'];
+    if (!confirm(confirmMsg)) return;
+    btn.disabled = true;
+    fetch('/api/admin/workspaces/' + wsNo + '/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+    }).then(function (r) {
+      if (r.ok) {
+        showToast(MSG['toast.workspace.status.updated']);
+        row.dataset.status = newStatus;
+        row.cells[1].innerHTML = statusHtml(newStatus);
+        row.cells[4].innerHTML = actionHtml(newStatus);
+        row.querySelector('.btn-toggle-ws-status').addEventListener('click', onToggleStatus);
+      } else {
+        btn.disabled = false;
+        showToast(MSG['toast.workspace.status.update.failed']);
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      showToast(MSG['toast.workspace.status.update.failed']);
+    });
+  }
+
+  loadWorkspaces();
+})();
+</script>
+<script>initWidthToggle(document.getElementById('workspacesApp'), document.getElementById('btnToggleWidth'));</script>
+{% endblock %}

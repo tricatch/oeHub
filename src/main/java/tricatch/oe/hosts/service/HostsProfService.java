@@ -53,7 +53,7 @@ public class HostsProfService {
         return create(userNo, null, null);
     }
 
-    // encryptedContent/wrappedContentKey come from the client (group mode only - e2eEncryption
+    // encryptedContent/wrappedContentKey come from the client (workspace mode only - e2eEncryption
     // design doc §1): it generates a DEK, encrypts the example content with it, and wraps the DEK
     // with the workspace key (new profiles default to 'public' visibility, same as below).
     // Both null means standalone/plaintext, unchanged from before this wiring.
@@ -79,7 +79,7 @@ public class HostsProfService {
         }
     }
 
-    // linkContent (group mode only) is the caller's fresh re-encryption of the same content with
+    // linkContent (workspace mode only) is the caller's fresh re-encryption of the same content with
     // the row's existing link DEK (unwrapped client-side via wrappedLinkKey) - the "living link"
     // sync (e2eEncryption design doc §6). Null means either standalone or no live link to refresh;
     // never mints a new link (syncLinkContent's own wrapped_link_key IS NOT NULL guard enforces
@@ -207,7 +207,7 @@ public class HostsProfService {
         return copyProfile(userNo, sourceHostId, null, null);
     }
 
-    // encryptedContent/wrappedContentKey (group mode only): the copy always becomes 'public', so
+    // encryptedContent/wrappedContentKey (workspace mode only): the copy always becomes 'public', so
     // if the source was 'private' the client must unwrap-then-rewrap for the workspace key
     // itself (a plain copy of source's wrap would be wrong) - simplest for the client to just
     // generate a fresh DEK for the copy either way, same as a new create().
@@ -392,7 +392,7 @@ public class HostsProfService {
         }
     }
 
-    // Used by the /share viewer's group-mode workspace gate (e2eEncryption design doc §9's
+    // Used by the /share viewer's workspace-mode workspace gate (e2eEncryption design doc §9's
     // reinterpretation of cloudGroupService doc §2.4: a shared link is only viewable by someone
     // already logged into the SAME workspace, since that's what lets their browser use its
     // cached workspace key to decrypt). Mirrors getOwnerUserId's exact lookup (hostsProf.getUserNo()

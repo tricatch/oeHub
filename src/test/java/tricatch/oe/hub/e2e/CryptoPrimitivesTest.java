@@ -38,7 +38,7 @@ class CryptoPrimitivesTest {
         browser = playwright.chromium().launch();
 
         // OeHubApplication redirects every request except /setup (and static assets) to /setup
-        // until setup is fully complete - in standalone (the default, no oe.mode=group here)
+        // until setup is fully complete - in standalone (the default, no oe.mode=workspace here)
         // that means BOTH an admin account AND a CA certificate (SetupController.isSetupComplete)
         // - /register (where crypto.js is loaded) is no exception, so both steps are needed
         // before any test page here can load it. Mirrors SetupToOeProxyScenarioTest's steps 2-3.

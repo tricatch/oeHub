@@ -182,7 +182,7 @@
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
 <script>
-window.OE_GROUP_MODE = {{ groupMode ? 'true' : 'false' }};
+window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
 (async function() {
   let content;
   try {
@@ -201,7 +201,7 @@ window.OE_GROUP_MODE = {{ groupMode ? 'true' : 'false' }};
       'raw', OE_CRYPTO.base64ToBuf(rawKeyB64), { name: 'AES-GCM' }, false, ['decrypt']);
     content = await OE_CRYPTO.decryptContent(JSON.parse({{ contentJson | raw }}), linkKey);
     {% else %}
-    // Encrypted rows (oe.mode=group, e2eEncryption design doc §1/§6/§9): decrypt() resolves the
+    // Encrypted rows (oe.mode=workspace, e2eEncryption design doc §1/§6/§9): decrypt() resolves the
     // ciphertext with the viewer's own cached workspace key (apiShare already required them to be
     // logged in to this same workspace) and passes plaintext straight through when the row isn't
     // encrypted (standalone), so the rest of this script is unchanged either way.

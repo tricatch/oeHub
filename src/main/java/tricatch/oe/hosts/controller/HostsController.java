@@ -15,8 +15,13 @@ import tricatch.oe.fwdproxy.ForwardProxyServer;
 import tricatch.oe.hosts.model.HostsUa;
 import tricatch.oe.hosts.model.HostsUrl;
 
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,7 +168,7 @@ public class HostsController {
     // Authenticated JSON counterpart to /share/.../text (below): the app itself (not an
     // anonymous visitor) needs another workspace member's public/collabo row - to view it
     // read-only from search results, or for the owner's own "open as text" action - and a plain
-    // synchronous text/plain response can't carry encrypted (group mode) content, since the
+    // synchronous text/plain response can't carry encrypted (workspace mode) content, since the
     // server never holds the key to decrypt it (design doc §1/§9). Callers decrypt client-side
     // with OE_CONTENT_CRYPTO.decrypt(), which also handles the plaintext/standalone case as a
     // no-op passthrough. /api/* already requires a session (OeHubApplication's before-filter).
@@ -172,7 +177,7 @@ public class HostsController {
         var hosts = hostsProfService.get(hostsId);
         if (hosts == null) { ctx.status(404); return; }
         if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
-        if (tricatch.oe.hub.config.AppHome.isGroupMode()) {
+        if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
             var viewer = AuthController.currentUser(ctx);
             var ownerWsNo = hostsProfService.getOwnerWsNo(hostsId);
             if (ownerWsNo == null || !ownerWsNo.equals(viewer.getWsNo())) { ctx.status(403); return; }
@@ -194,15 +199,15 @@ public class HostsController {
         var hosts = hostsProfService.get(hostsId);
         if (hosts == null) { ctx.status(404); return; }
         if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
-        var groupMode = tricatch.oe.hub.config.AppHome.isGroupMode();
-        // Encrypted content (oe.mode=group) can't be decrypted by an anonymous visitor - the
-        // server never holds the workspace key. So under group mode this route stops being a
+        var workspaceMode = tricatch.oe.hub.config.AppHome.isWorkspaceMode();
+        // Encrypted content (oe.mode=workspace) can't be decrypted by an anonymous visitor - the
+        // server never holds the workspace key. So under workspace mode this route stops being a
         // fully public link and instead requires the viewer to already be logged in to the SAME
         // workspace (e2eEncryption design doc §9's reinterpretation of cloudGroupService doc
         // §2.4) - their browser then decrypts with its own cached workspace key, same as
         // hosts.pebble. Standalone content is never encrypted (design doc §1), so it keeps the
         // original fully-public, no-login behavior below.
-        if (groupMode) {
+        if (workspaceMode) {
             var viewer = AuthController.currentUser(ctx);
             if (viewer == null) { ctx.redirect("/login?redirect=" + ctx.path()); return; }
             var ownerWsNo = hostsProfService.getOwnerWsNo(hostsId);
@@ -215,7 +220,7 @@ public class HostsController {
         model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getHostsContent())));
         model.put("wrappedContentKeyJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getWrappedContentKey())));
         model.put("proxyIp", extractProxyIp(ctx));
-        model.put("groupMode", groupMode);
+        model.put("workspaceMode", workspaceMode);
         model.put("linkMode", false);
         ctx.render("templates/oehub/hosts-share.pebble", model);
     }
@@ -245,7 +250,7 @@ public class HostsController {
     }
 
     // Public, unauthenticated viewer for an issued link - a completely separate trust boundary
-    // from apiShare above (which, under group mode, now requires login to the same workspace):
+    // from apiShare above (which, under workspace mode, now requires login to the same workspace):
     // this route never checks who's asking, only that a link was actually issued and not revoked.
     // Reuses hosts-share.pebble in "linkMode": the page gets the link_content ciphertext instead
     // of hosts_content, and the client pulls the raw (never-wrapped) decryption key out of its
@@ -261,9 +266,60 @@ public class HostsController {
         model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getLinkContent())));
         model.put("wrappedContentKeyJson", "null");
         model.put("proxyIp", extractProxyIp(ctx));
-        model.put("groupMode", tricatch.oe.hub.config.AppHome.isGroupMode());
+        model.put("workspaceMode", tricatch.oe.hub.config.AppHome.isWorkspaceMode());
         model.put("linkMode", true);
         ctx.render("templates/oehub/hosts-share.pebble", model);
+    }
+
+    // Text (non-browser) counterpart to apiPublicLink above, for programs like SwitchHosts that
+    // only do a plain periodic GET and can't run the JS needed to read a URL fragment
+    // (e2eEncryption design doc §6's "text version of the public link" decision). The key travels
+    // in the query string instead - visible in server access logs, unlike the fragment - which is
+    // an accepted, disclosed trade-off (see public.link.text.warning) since it's the only way a
+    // tool that just registers one URL can supply it. Same gating as apiPublicLink; any failure to
+    // decode the key or decrypt with it collapses to one generic 400 (design doc: don't tell an
+    // attacker which step failed).
+    public void apiPublicLinkText(Context ctx) {
+        var hostsId = ctx.pathParam("hostsId");
+        var hosts = hostsProfService.getForPublicLink(hostsId);
+        if (hosts == null) { ctx.status(404); return; }
+        var key = ctx.queryParam("key");
+        if (key == null || key.isBlank()) { ctx.status(400); return; }
+        String plaintext;
+        try {
+            var keyBytes = decodeBase64UrlKey(key);
+            plaintext = decryptLinkContent(keyBytes, hosts.getLinkContent());
+        } catch (Exception e) {
+            ctx.status(400); return;
+        }
+        var owner = hostsProfService.getOwnerUserId(hostsId);
+        var modDt = hosts.getUpdatedAt() != null ? hosts.getUpdatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "";
+        var header = "# " + hosts.getHostsProfile() + " / " + owner + " / " + modDt + "\n\n";
+        ctx.contentType("text/plain; charset=utf-8").result(header + plaintext);
+    }
+
+    // Same base64url (no padding) convention as the browser's URL fragment key (hosts.pebble,
+    // OE_CRYPTO.bufToBase64 + '-'/'_' substitution) and crypto.js's parseRecoveryDisplayCode -
+    // mirrored here since this is the query-string counterpart of that same raw key.
+    private static byte[] decodeBase64UrlKey(String key) {
+        var standard = key.replace('-', '+').replace('_', '/');
+        var padding = (4 - standard.length() % 4) % 4;
+        return Base64.getDecoder().decode(standard + "=".repeat(padding));
+    }
+
+    // This project's first server-side AES handling (e2eEncryption design doc §6) - kept as a
+    // single private helper rather than a reusable utility since apiPublicLinkText is its only
+    // caller. linkContentJson is the {iv, ciphertext} shape produced by crypto.js's
+    // encryptContent: standard base64 fields, AES-GCM with a 12-byte IV and WebCrypto's default
+    // 128-bit tag appended to the ciphertext bytes.
+    private String decryptLinkContent(byte[] keyBytes, String linkContentJson) throws Exception {
+        @SuppressWarnings("unchecked")
+        var json = objectMapper.readValue(linkContentJson, Map.class);
+        var ivBytes = Base64.getDecoder().decode((String) json.get("iv"));
+        var ciphertextBytes = Base64.getDecoder().decode((String) json.get("ciphertext"));
+        var cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, ivBytes));
+        return new String(cipher.doFinal(ciphertextBytes), StandardCharsets.UTF_8);
     }
 
     public void apiExport(Context ctx) throws Exception {
@@ -337,10 +393,10 @@ public class HostsController {
         if (hosts == null) { ctx.status(404); return; }
         if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
         if (hosts.getWrappedContentKey() != null) {
-            // Encrypted (oe.mode=group): this endpoint returns a single synchronous plaintext
+            // Encrypted (oe.mode=workspace): this endpoint returns a single synchronous plaintext
             // body, but the server never holds the workspace key needed to decrypt (server-blind
             // by design, e2eEncryption design doc §1) - only the interactive /share page can, via
-            // the logged-in viewer's own browser. See apiShare's group-mode gate above.
+            // the logged-in viewer's own browser. See apiShare's workspace-mode gate above.
             var locale = tricatch.oe.hub.i18n.LocaleContext.get();
             var msg = SHARE_MESSAGES.getOrDefault(locale, SHARE_MESSAGES.get("en")).get("share.text.encrypted");
             ctx.status(409).contentType("text/plain; charset=utf-8").result(msg);

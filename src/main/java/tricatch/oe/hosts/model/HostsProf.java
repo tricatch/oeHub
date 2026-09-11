@@ -13,7 +13,7 @@ public class HostsProf extends Auditable {
     private String parentId;
     // DEK wrapped by the row's KEK (personal key for 'private', workspace key for
     // 'collabo'/'public') - null under standalone, where hostsContent stays plaintext
-    // (e2eEncryption design doc §1's oe.mode=group-only scope, corrected during implementation).
+    // (e2eEncryption design doc §1's oe.mode=workspace-only scope, corrected during implementation).
     private String wrappedContentKey;
     // Ciphertext for the fully-public, no-login-required link (e2eEncryption design doc §6 "living
     // link" redesign): encrypted with its own DEK, independent of wrappedContentKey, kept in sync

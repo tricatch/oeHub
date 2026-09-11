@@ -39,16 +39,16 @@
               <input type="hidden" name="wrappedPrivateKey" id="fldWrappedPrivateKey">
               <input type="hidden" name="wrappedPrivateKeyRecovery" id="fldWrappedPrivateKeyRecovery">
               <input type="hidden" name="recoveryVerifier" id="fldRecoveryVerifier">
-              {% if groupMode and not inviteCode %}
+              {% if workspaceMode and not inviteCode %}
               <input type="hidden" name="founderWrappedWsKey" id="fldFounderWrappedWsKey">
               {% endif %}
-              {% if groupMode and inviteCode %}
+              {% if workspaceMode and inviteCode %}
               <input type="hidden" name="inviteCode" value="{{ inviteCode }}">
               <div class="mb-3">
                 <label class="form-label">{{ msg['auth.invite.joining'] }}</label>
                 <input type="text" class="form-control" value="{{ inviteWsName }}" disabled>
               </div>
-              {% elseif groupMode %}
+              {% elseif workspaceMode %}
               <div class="mb-3">
                 <label class="form-label">{{ msg['auth.workspace.name'] }}</label>
                 <input type="text" name="wsName" class="form-control" value="{{ wsName }}">

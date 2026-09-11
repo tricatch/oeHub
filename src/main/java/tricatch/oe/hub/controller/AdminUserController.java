@@ -8,8 +8,10 @@ import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
+import tricatch.oe.hub.mapper.TeamMapper;
 import tricatch.oe.hub.mapper.WsInviteMapper;
 import tricatch.oe.hub.model.HubUser;
+import tricatch.oe.hub.model.Team;
 import tricatch.oe.hub.model.WsInvite;
 import tricatch.oe.proxy.mapper.ProxyConfMapper;
 import tricatch.oe.proxy.service.ProxyVhostService;
@@ -66,6 +68,10 @@ public class AdminUserController {
                 m.put("createAt", u.getCreateAt() != null ? u.getCreateAt().format(FMT) : "");
                 m.put("updatedAt", u.getUpdatedAt() != null ? u.getUpdatedAt().format(FMT) : "");
                 m.put("lastLoginAt", u.getLastLoginAt() != null ? u.getLastLoginAt().format(FMT) : "");
+                // Team is a pure label/filter (cloudGroupService design doc §2.9) - teamNo drives
+                // the member list's reassignment dropdown, teamName is what's actually displayed.
+                m.put("teamNo", u.getTeamNo());
+                m.put("teamName", u.getTeamName());
                 // Needed client-side to wrap a freshly-rotated workspace key for this member
                 // when another member is deleted (e2eEncryption design doc §7).
                 m.put("publicKey", u.getPublicKey());
@@ -241,11 +247,19 @@ public class AdminUserController {
             return;
         }
         try (var session = sqlSessionFactory.openSession()) {
-            var target = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+            var mapper = session.getMapper(HubUserMapper.class);
+            var target = mapper.findByUserNo(userNo);
             // 404 (not 403) for a cross-workspace target too, so this endpoint never confirms
             // another workspace's user_no exists (cloudGroupService design doc §2.5 isolation).
             if (target == null || !target.getWsNo().equals(currentUser.getWsNo())) {
                 ctx.status(404).result("User not found");
+                return;
+            }
+            // "Last ws_adm" guard (design doc §2.5 "안전장치") - deletion must never leave a
+            // workspace with zero admins, same as the role-demotion guard in apiSetRole below.
+            // Checked before any of the deletion side effects further down run.
+            if ("ws_adm".equals(target.getRole()) && mapper.countWsAdmins(target.getWsNo()) <= 1) {
+                ctx.status(400).json(Map.of("error", "last_ws_admin"));
                 return;
             }
         }
@@ -274,24 +288,38 @@ public class AdminUserController {
         var body = ctx.bodyAsClass(Map.class);
         String newRole = (String) body.get("role");
         // The "promote to admin" toggle targets 'adm' in standalone (unchanged - there's no
-        // separate ws_adm role in practice there, design doc §2.7) but 'ws_adm' in group mode:
+        // separate ws_adm role in practice there, design doc §2.7) but 'ws_adm' in workspace mode:
         // this screen is workspace-scoped, so it must never be able to grant the instance-wide
         // 'adm' role (design doc §2.5 isolation).
-        String adminRole = tricatch.oe.hub.config.AppHome.isGroupMode() ? "ws_adm" : "adm";
+        String adminRole = tricatch.oe.hub.config.AppHome.isWorkspaceMode() ? "ws_adm" : "adm";
         if (!adminRole.equals(newRole) && !"usr".equals(newRole)) {
             ctx.status(400).result("Invalid role");
             return;
         }
         var currentUser = AuthController.currentUser(ctx);
-        if (currentUser != null && userNo.equals(currentUser.getUserNo()) && "usr".equals(newRole)) {
-            ctx.status(400).result("Cannot remove your own admin role");
-            return;
-        }
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HubUserMapper.class);
             var target = mapper.findByUserNo(userNo);
             if (target == null || currentUser == null || !target.getWsNo().equals(currentUser.getWsNo())) {
                 ctx.status(404).result("User not found");
+                return;
+            }
+            // "Last ws_adm" guard (cloudGroupService design doc §2.5 "안전장치") - checked BEFORE
+            // the generic self-guard below, since in workspace mode the only caller who could ever
+            // reach this branch for the sole remaining ws_adm is that admin demoting themselves
+            // (the route itself requires the caller to already be a ws_adm of this workspace, so
+            // if the count is 1 the caller necessarily IS that one row). When both guards would
+            // fire, this one is strictly more informative/actionable ("promote someone else
+            // first") than the generic "can't touch your own role" - only applies when this
+            // screen's admin role IS ws_adm (workspace mode): standalone's 'adm' isn't managed through
+            // this workspace-scoped screen, so it's out of scope here.
+            if ("ws_adm".equals(adminRole) && "usr".equals(newRole) && "ws_adm".equals(target.getRole())
+                    && mapper.countWsAdmins(target.getWsNo()) <= 1) {
+                ctx.status(400).json(Map.of("error", "last_ws_admin"));
+                return;
+            }
+            if (userNo.equals(currentUser.getUserNo()) && "usr".equals(newRole)) {
+                ctx.status(400).result("Cannot remove your own admin role");
                 return;
             }
             target.setRole(newRole);
@@ -332,7 +360,7 @@ public class AdminUserController {
     }
 
     // Outstanding invite codes for the caller's own workspace (cloudGroupService design doc
-    // §2.8) - group mode only in practice, since standalone never exposes the issuance UI, but
+    // §2.8) - workspace mode only in practice, since standalone never exposes the issuance UI, but
     // the endpoint itself has no mode check: any ws_adm (or standalone adm) can call it.
     public void apiListInvites(Context ctx) {
         var currentUser = AuthController.currentUser(ctx);
@@ -342,6 +370,7 @@ public class AdminUserController {
             for (var i : invites) {
                 var m = new LinkedHashMap<String, Object>();
                 m.put("inviteCode", i.getInviteCode());
+                m.put("teamName", i.getTeamName());
                 m.put("createAt", i.getCreateAt() != null ? i.getCreateAt().format(FMT) : "");
                 m.put("expiresAt", i.getExpiresAt() != null ? i.getExpiresAt().format(FMT) : "");
                 result.add(m);
@@ -355,22 +384,184 @@ public class AdminUserController {
     // login-lockout-style fixed constants (not admin-configurable).
     public void apiCreateInvite(Context ctx) {
         var currentUser = AuthController.currentUser(ctx);
-        var now = LocalDateTime.now();
-        var invite = new WsInvite();
-        invite.setInviteCode(generatePassword());
-        invite.setWsNo(currentUser.getWsNo());
-        invite.setCreatedBy(currentUser.getUserNo());
-        invite.setUpdatedBy(currentUser.getUserNo());
-        invite.setCreateAt(now);
-        invite.setUpdatedAt(now);
-        invite.setExpiresAt(now.plusDays(7));
-        try (var session = sqlSessionFactory.openSession(true)) {
-            session.getMapper(WsInviteMapper.class).insert(invite);
+        // teamNo is optional (cloudGroupService design doc §2.8/§2.9) - the request body itself
+        // may be entirely absent (this endpoint historically took none), so an empty body means
+        // "no team" rather than a parse error.
+        Long teamNo = null;
+        var rawBody = ctx.body();
+        if (rawBody != null && !rawBody.isBlank()) {
+            @SuppressWarnings("unchecked")
+            var body = ctx.bodyAsClass(Map.class);
+            if (body.get("teamNo") instanceof Number n) teamNo = n.longValue();
         }
-        var m = new LinkedHashMap<String, Object>();
-        m.put("inviteCode", invite.getInviteCode());
-        m.put("createAt", invite.getCreateAt().format(FMT));
-        m.put("expiresAt", invite.getExpiresAt().format(FMT));
-        ctx.json(m).status(201);
+        try (var session = sqlSessionFactory.openSession(true)) {
+            if (teamNo != null) {
+                var team = session.getMapper(TeamMapper.class).findByTeamNo(teamNo);
+                if (team == null || !team.getWsNo().equals(currentUser.getWsNo())) {
+                    ctx.status(400).result("Invalid team");
+                    return;
+                }
+            }
+            var now = LocalDateTime.now();
+            var invite = new WsInvite();
+            invite.setInviteCode(generatePassword());
+            invite.setWsNo(currentUser.getWsNo());
+            invite.setTeamNo(teamNo);
+            invite.setCreatedBy(currentUser.getUserNo());
+            invite.setUpdatedBy(currentUser.getUserNo());
+            invite.setCreateAt(now);
+            invite.setUpdatedAt(now);
+            invite.setExpiresAt(now.plusDays(7));
+            session.getMapper(WsInviteMapper.class).insert(invite);
+            var m = new LinkedHashMap<String, Object>();
+            m.put("inviteCode", invite.getInviteCode());
+            m.put("createAt", invite.getCreateAt().format(FMT));
+            m.put("expiresAt", invite.getExpiresAt().format(FMT));
+            ctx.json(m).status(201);
+        }
+    }
+
+    // Team management (cloudGroupService design doc §2.9) - any ws_adm in the workspace, no
+    // separate "team admin" role. All four endpoints below are scoped to the caller's own
+    // workspace; workspace mode only (see OeHubApplication route registration).
+
+    public void apiListTeams(Context ctx) {
+        var currentUser = AuthController.currentUser(ctx);
+        try (var session = sqlSessionFactory.openSession()) {
+            var teams = session.getMapper(TeamMapper.class).findByWsNo(currentUser.getWsNo());
+            var result = new ArrayList<Map<String, Object>>(teams.size());
+            for (var t : teams) {
+                var m = new LinkedHashMap<String, Object>();
+                m.put("teamNo", t.getTeamNo());
+                m.put("teamName", t.getTeamName());
+                result.add(m);
+            }
+            ctx.json(result);
+        }
+    }
+
+    public void apiCreateTeam(Context ctx) {
+        var currentUser = AuthController.currentUser(ctx);
+        @SuppressWarnings("unchecked")
+        var body = ctx.bodyAsClass(Map.class);
+        var teamName = body.get("teamName") instanceof String s ? s.trim() : null;
+        if (teamName == null || teamName.isBlank()) {
+            ctx.status(400).result("teamName is required");
+            return;
+        }
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var mapper = session.getMapper(TeamMapper.class);
+            for (var existing : mapper.findByWsNo(currentUser.getWsNo())) {
+                if (existing.getTeamName().equalsIgnoreCase(teamName)) {
+                    ctx.status(409).result("Team name already exists");
+                    return;
+                }
+            }
+            var now = LocalDateTime.now();
+            var team = new Team();
+            team.setWsNo(currentUser.getWsNo());
+            team.setTeamName(teamName);
+            team.setCreatedBy(currentUser.getUserNo());
+            team.setUpdatedBy(currentUser.getUserNo());
+            team.setCreateAt(now);
+            team.setUpdatedAt(now);
+            mapper.insert(team);
+            var m = new LinkedHashMap<String, Object>();
+            m.put("teamNo", team.getTeamNo());
+            m.put("teamName", team.getTeamName());
+            ctx.json(m).status(201);
+        }
+    }
+
+    public void apiRenameTeam(Context ctx) {
+        Long teamNo;
+        try { teamNo = Long.parseLong(ctx.pathParam("teamNo")); }
+        catch (NumberFormatException e) { ctx.status(400).result("Invalid team ID"); return; }
+        var currentUser = AuthController.currentUser(ctx);
+        @SuppressWarnings("unchecked")
+        var body = ctx.bodyAsClass(Map.class);
+        var teamName = body.get("teamName") instanceof String s ? s.trim() : null;
+        if (teamName == null || teamName.isBlank()) {
+            ctx.status(400).result("teamName is required");
+            return;
+        }
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var mapper = session.getMapper(TeamMapper.class);
+            var team = mapper.findByTeamNo(teamNo);
+            // 404 for a cross-workspace team too - same isolation reasoning as apiDeleteUser.
+            if (team == null || !team.getWsNo().equals(currentUser.getWsNo())) {
+                ctx.status(404).result("Team not found");
+                return;
+            }
+            for (var existing : mapper.findByWsNo(currentUser.getWsNo())) {
+                if (!existing.getTeamNo().equals(teamNo) && existing.getTeamName().equalsIgnoreCase(teamName)) {
+                    ctx.status(409).result("Team name already exists");
+                    return;
+                }
+            }
+            mapper.updateName(teamNo, teamName, currentUser.getUserNo(), LocalDateTime.now());
+            ctx.status(200).result("OK");
+        }
+    }
+
+    // Deletion choice: refuse while any member still references this team (see
+    // TeamMapper.delete's javadoc) rather than nulling HUB_USR.team_no out from under them - a
+    // ws_adm who wants to disband a team reassigns its members first.
+    public void apiDeleteTeam(Context ctx) {
+        Long teamNo;
+        try { teamNo = Long.parseLong(ctx.pathParam("teamNo")); }
+        catch (NumberFormatException e) { ctx.status(400).result("Invalid team ID"); return; }
+        var currentUser = AuthController.currentUser(ctx);
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var mapper = session.getMapper(TeamMapper.class);
+            var team = mapper.findByTeamNo(teamNo);
+            if (team == null || !team.getWsNo().equals(currentUser.getWsNo())) {
+                ctx.status(404).result("Team not found");
+                return;
+            }
+            if (mapper.countMembers(teamNo) > 0) {
+                ctx.status(409).result("Team still has members assigned");
+                return;
+            }
+            // Only reachable once the team is confirmed otherwise safe to delete (see
+            // TeamMapper.clearFromInvites's javadoc for why this can't run unconditionally).
+            mapper.clearFromInvites(teamNo);
+            if (mapper.delete(teamNo, currentUser.getWsNo()) == 0) {
+                ctx.status(409).result("Team still has members assigned");
+                return;
+            }
+            ctx.status(204);
+        }
+    }
+
+    // Manual (re)assignment of one member's team from the member list, including clearing it back
+    // to "no team" when teamNo is null (cloudGroupService design doc §2.9).
+    public void apiSetUserTeam(Context ctx) {
+        Long userNo;
+        try { userNo = Long.parseLong(ctx.pathParam("userNo")); }
+        catch (NumberFormatException e) { ctx.status(400).result("Invalid user ID"); return; }
+        @SuppressWarnings("unchecked")
+        var body = ctx.bodyAsClass(Map.class);
+        Long teamNo = body.get("teamNo") instanceof Number n ? n.longValue() : null;
+        var currentUser = AuthController.currentUser(ctx);
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var userMapper = session.getMapper(HubUserMapper.class);
+            var target = userMapper.findByUserNo(userNo);
+            // 404 (not 403) for a cross-workspace target too - same isolation reasoning as
+            // apiSetRole/apiDeleteUser.
+            if (target == null || !target.getWsNo().equals(currentUser.getWsNo())) {
+                ctx.status(404).result("User not found");
+                return;
+            }
+            if (teamNo != null) {
+                var team = session.getMapper(TeamMapper.class).findByTeamNo(teamNo);
+                if (team == null || !team.getWsNo().equals(currentUser.getWsNo())) {
+                    ctx.status(400).result("Invalid team");
+                    return;
+                }
+            }
+            userMapper.updateTeam(userNo, teamNo, currentUser.getUserNo(), LocalDateTime.now());
+            ctx.status(200).result("OK");
+        }
     }
 }

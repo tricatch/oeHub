@@ -45,7 +45,7 @@ public interface HostsProfMapper {
     HostsProf findByHostsId(String hostsId);
 
     // AND u.ws_no = :wsNo on both branches - a no-op filter in standalone (exactly one
-    // workspace) but the actual search/discovery boundary in group mode (cloudGroupService
+    // workspace) but the actual search/discovery boundary in workspace mode (cloudGroupService
     // design doc §2.4). u already joins to the owning user either way, so this adds no new join.
     @Select("""
         SELECT h.hosts_id, h.user_no, h.hosts_profile, h.selected, h.sort_order, h.visibility,
@@ -97,7 +97,7 @@ public interface HostsProfMapper {
     void updateContent(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("hostsContent") String hostsContent, @Param("updatedAt") LocalDateTime updatedAt);
 
     // Only needed right after create() (encrypting the server-generated plaintext example
-    // content client-side, group mode - e2eEncryption design doc §1) - an ordinary content edit
+    // content client-side, workspace mode - e2eEncryption design doc §1) - an ordinary content edit
     // never changes the key, so it goes through plain updateContent above instead.
     @Update("UPDATE HOSTS_PFILE SET hosts_content = #{hostsContent}, wrapped_content_key = #{wrappedContentKey}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateContentAndKey(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("hostsContent") String hostsContent, @Param("wrappedContentKey") String wrappedContentKey, @Param("updatedAt") LocalDateTime updatedAt);

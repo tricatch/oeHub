@@ -125,8 +125,8 @@
           </table>
         </div>
 
-        {# ── Step 3: CA Certificate (oeProxy only - not shown in group mode) ── #}
-        {% if not groupMode %}
+        {# ── Step 3: CA Certificate (oeProxy only - not shown in workspace mode) ── #}
+        {% if not workspaceMode %}
         <div class="oe-info-section">
           <table class="oe-info-table mb-0">
             <colgroup><col style="width:110px;"><col></colgroup>
@@ -273,11 +273,11 @@
           {% endif %}
         </div>
 
-        {# CA is an oeProxy-only requirement - group mode never has one, so admin alone is enough #}
+        {# CA is an oeProxy-only requirement - workspace mode never has one, so admin alone is enough #}
         <div class="text-center mt-2 mb-4">
           <button type="button" class="oe-modal-btn" id="btnGotoLogin"
-                  data-setup-complete="{% if adminConfigured and (groupMode or caConfigured) %}true{% else %}false{% endif %}"
-                  {% if not (adminConfigured and (groupMode or caConfigured)) %}disabled{% endif %}
+                  data-setup-complete="{% if adminConfigured and (workspaceMode or caConfigured) %}true{% else %}false{% endif %}"
+                  {% if not (adminConfigured and (workspaceMode or caConfigured)) %}disabled{% endif %}
                   onclick="location.href='/login'">{{ msg['setup.goto.login'] }}</button>
         </div>
 

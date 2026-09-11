@@ -18,12 +18,12 @@ public class AppHome {
         return Path.of(System.getProperty("user.home"), "oeHub");
     }
 
-    // -Doe.mode=group runs oeHub as a multi-tenant cloud service (oeHosts only, oeProxy fully
+    // -Doe.mode=workspace runs oeHub as a multi-tenant cloud service (oeHosts only, oeProxy fully
     // disabled - see cloudGroupService design doc §2.6). Any other value, or no value at all,
     // is "standalone" (oeHosts + oeProxy, the app's existing single-workspace behavior) - the
     // default, so existing installs keep working unmodified with no flag.
-    public static boolean isGroupMode() {
-        return "group".equals(System.getProperty("oe.mode", "standalone"));
+    public static boolean isWorkspaceMode() {
+        return "workspace".equals(System.getProperty("oe.mode", "standalone"));
     }
 
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");

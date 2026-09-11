@@ -23,6 +23,7 @@ import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
+import tricatch.oe.hub.controller.WorkspaceController;
 import tricatch.oe.hosts.controller.HostsController;
 import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
@@ -89,22 +90,26 @@ public class OeHubApplication {
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        // oe.mode=group disables oeProxy entirely (cloudGroupService design doc §2.6) - the
+        // oe.mode=workspace disables oeProxy entirely (cloudGroupService design doc §2.6) - the
         // controller itself is never constructed, not just unrouted, so no CA/proxy-config file
         // I/O can happen from a code path that's supposed to not exist in this mode.
-        boolean groupMode = AppHome.isGroupMode();
+        boolean workspaceMode = AppHome.isWorkspaceMode();
 
         var jwtService  = new JwtService(sqlSessionFactory);
         var settings    = new SettingsController(sqlSessionFactory, objectMapper);
         var auth        = new AuthController(sqlSessionFactory, jwtService);
         var setup       = new SetupController(sqlSessionFactory, settings, objectMapper, auth);
         var hosts       = new HostsController(sqlSessionFactory, settings, objectMapper);
-        var proxy       = groupMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
+        var proxy       = workspaceMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
         var adminUser   = new AdminUserController(sqlSessionFactory);
         var adminUa     = new AdminHostsUaController(sqlSessionFactory, objectMapper);
         var adminUrl    = new AdminHostsUrlController(sqlSessionFactory, objectMapper);
         var oidExtension = new OidExtensionController(settings);
+        // Instance-admin workspace console (cloudGroupService design doc §2.5/§3 item 2) -
+        // workspace mode only, so constructed unconditionally here (cheap, no I/O) but only
+        // routed below under "if (workspaceMode)", same pattern as ProxyController's inverse.
+        var workspaceCtrl = new WorkspaceController(sqlSessionFactory);
 
         setup.refreshSetupState();
 
@@ -192,15 +197,31 @@ public class OeHubApplication {
             };
             config.routes.before("/oehub/settings", settingsAdminOnly);
             config.routes.before("/oehub/settings/*", settingsAdminOnly);
+            // Instance-admin workspace console (design doc §2.5) is 'adm'-only, unlike the
+            // ws_adm-reachable "/oehub/admin/*" prefix below - a workspace's own ws_adm must never
+            // reach this instance-wide screen (isolation principle), so it needs the stricter
+            // settingsAdminOnly check, not the isWorkspaceAdmin one.
+            if (workspaceMode) {
+                config.routes.before("/oehub/admin/workspaces", settingsAdminOnly);
+                config.routes.before("/api/admin/workspaces", settingsAdminOnly);
+                config.routes.before("/api/admin/workspaces/*", settingsAdminOnly);
+            }
             // User management (member list, pending approval) is workspace-scoped: a workspace's
             // own ws_adm needs it, not just the instance 'adm' - see AuthController.isWorkspaceAdmin.
+            // The workspace console ("/oehub/admin/workspaces", "/api/admin/workspaces*") is the
+            // opposite - instance 'adm' only, already gated (more strictly) by settingsAdminOnly
+            // above - so it's excluded here rather than rejected: in workspace mode isWorkspaceAdmin()
+            // deliberately excludes 'adm' (design doc §2.5 isolation), which would otherwise block
+            // the very instance admin this screen is for.
             config.routes.before("/oehub/admin/*", ctx -> {
+                if (workspaceMode && "/oehub/admin/workspaces".equals(ctx.path())) return;
                 if (!AuthController.isWorkspaceAdmin(AuthController.currentUser(ctx))) {
                     ctx.status(403).result("Forbidden");
                     ctx.skipRemainingHandlers();
                 }
             });
             config.routes.before("/api/admin/*", ctx -> {
+                if (workspaceMode && ctx.path().startsWith("/api/admin/workspaces")) return;
                 if (!AuthController.isWorkspaceAdmin(AuthController.currentUser(ctx))) {
                     ctx.status(403).result("Forbidden");
                     ctx.skipRemainingHandlers();
@@ -266,8 +287,8 @@ public class OeHubApplication {
 
             config.routes.get("/setup", setup::showSetup);
             config.routes.post("/setup", setup::processSetup);
-            if (!groupMode) {
-                // CA setup only makes sense for oeProxy, which doesn't exist in group mode -
+            if (!workspaceMode) {
+                // CA setup only makes sense for oeProxy, which doesn't exist in workspace mode -
                 // cloudGroupService design doc §2.6.
                 config.routes.post("/setup/ca/generate", setup::generateCa);
                 config.routes.post("/setup/ca/import",   setup::importCa);
@@ -309,9 +330,9 @@ public class OeHubApplication {
             // Admin settings
             config.routes.get("/oehub/settings",              settings::showSettings);
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
-            if (!groupMode) {
+            if (!workspaceMode) {
                 // IP identifier / forward-proxy whitelist / CA are all oeProxy-only concerns -
-                // meaningless (and their backing servers non-existent) under group mode.
+                // meaningless (and their backing servers non-existent) under workspace mode.
                 config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
                 config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
                 config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
@@ -366,6 +387,7 @@ public class OeHubApplication {
             // Fully-public link (public, no auth, no workspace membership - e2eEncryption design
             // doc §6's last item) - a distinct trust boundary from /share above.
             config.routes.get("/link/{hostsId}/oelink",             hosts::apiPublicLink);
+            config.routes.get("/link/{hostsId}/oelink/text",        hosts::apiPublicLinkText);
 
             // My info
             config.routes.get("/oehub/my/info", ctx -> {
@@ -385,7 +407,7 @@ public class OeHubApplication {
                 ctx.render("templates/oehub/licenses.pebble", model);
             });
 
-            if (!groupMode) {
+            if (!workspaceMode) {
                 // oeProxy UI
                 config.routes.get("/oehub/proxy", proxy::showProxy);
                 config.routes.get("/oehub/proxy/monitor", proxy::showMonitor);
@@ -437,6 +459,26 @@ public class OeHubApplication {
             config.routes.post("/api/admin/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
             config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
 
+            // Admin: instance-wide workspace console (cloudGroupService design doc §2.5/§3 item 2)
+            // - workspace mode only, meaningless in standalone which has exactly one workspace
+            // (itself, design doc §2.7). 'adm'-only, gated above via settingsAdminOnly.
+            if (workspaceMode) {
+                config.routes.get("/oehub/admin/workspaces",              workspaceCtrl::showWorkspaces);
+                config.routes.get("/api/admin/workspaces",                workspaceCtrl::apiListWorkspaces);
+                config.routes.patch("/api/admin/workspaces/{wsNo}/status", workspaceCtrl::apiUpdateWorkspaceStatus);
+            }
+
+            // Admin: teams (cloudGroupService design doc §2.9) - workspace mode only, meaningless
+            // in standalone's single-workspace-is-the-instance model (design doc §2.7). Same
+            // ws_adm scoping/guard as the rest of "/api/admin/*" above - no separate "team admin" role.
+            if (workspaceMode) {
+                config.routes.get("/api/admin/teams",                 adminUser::apiListTeams);
+                config.routes.post("/api/admin/teams",                adminUser::apiCreateTeam);
+                config.routes.patch("/api/admin/teams/{teamNo}",      adminUser::apiRenameTeam);
+                config.routes.delete("/api/admin/teams/{teamNo}",     adminUser::apiDeleteTeam);
+                config.routes.patch("/api/admin/users/{userNo}/team", adminUser::apiSetUserTeam);
+            }
+
             // Admin: hosts user-agent presets
             config.routes.get("/api/admin/hosts/ua",              adminUa::apiList);
             config.routes.post("/api/admin/hosts/ua",             adminUa::apiCreate);
@@ -448,7 +490,7 @@ public class OeHubApplication {
             config.routes.patch("/api/admin/hosts/url/{urlId}",   adminUrl::apiUpdate);
             config.routes.delete("/api/admin/hosts/url/{urlId}",  adminUrl::apiDelete);
             config.routes.put("/api/admin/hosts/url/order",       adminUrl::apiReorder);
-            if (!groupMode) {
+            if (!workspaceMode) {
                 config.routes.get("/api/proxy/conf/{name}",                     proxy::apiConfGet);
                 config.routes.put("/api/proxy/conf/{name}",                     proxy::apiConfSet);
 
@@ -490,8 +532,8 @@ public class OeHubApplication {
             enriched.put("msg", messages.asMap());
             enriched.put("msgJson", messages.toJson());
             enriched.put("currentLocale", locale);
-            // Templates hide Proxy nav/UI entirely under oe.mode=group - see AppHome.isGroupMode.
-            enriched.put("groupMode", AppHome.isGroupMode());
+            // Templates hide Proxy nav/UI entirely under oe.mode=workspace - see AppHome.isWorkspaceMode.
+            enriched.put("workspaceMode", AppHome.isWorkspaceMode());
             // Set by the CSRF before-filter on this same request; read from the Context attribute
             // (not ctx.cookie()) because a freshly-generated token isn't echoed back in the
             // request's own Cookie header until the browser's next request.
@@ -532,11 +574,11 @@ public class OeHubApplication {
         ForwardProxyServer.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
-        // oe.mode=group never starts any of the network-level Proxy servers - see
+        // oe.mode=workspace never starts any of the network-level Proxy servers - see
         // cloudGroupService design doc §2.6. ReverseProxyServer.init()/ForwardProxyServer.init()
         // just above are cheap, side-effect-light state setup (OID secret, whitelist load) left
         // unconditional rather than touching the restricted tricatch.oe.proxy package further.
-        if (!AppHome.isGroupMode()) {
+        if (!AppHome.isWorkspaceMode()) {
             try {
                 ReverseProxyServer.startSslPassServer();
             } catch (tricatch.oe.proxy.exception.NotReadyCaException e) {

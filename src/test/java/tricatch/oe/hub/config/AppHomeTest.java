@@ -45,50 +45,51 @@ class AppHomeTest {
         AppHome.restrictToOwner(missing); // IOException from setPosixFilePermissions is swallowed
     }
 
-    // isGroupMode() reads a live system property (no caching), so each test sets it and restores
-    // the original value afterward rather than leaving JVM-global state behind for other tests.
+    // isWorkspaceMode() reads a live system property (no caching), so each test sets it and
+    // restores the original value afterward rather than leaving JVM-global state behind for
+    // other tests.
 
     @Test
-    void isGroupMode_unset_defaultsToStandaloneFalse() {
+    void isWorkspaceMode_unset_defaultsToStandaloneFalse() {
         var original = System.getProperty("oe.mode");
         System.clearProperty("oe.mode");
         try {
-            assertThat(AppHome.isGroupMode()).isFalse();
+            assertThat(AppHome.isWorkspaceMode()).isFalse();
         } finally {
             if (original != null) System.setProperty("oe.mode", original);
         }
     }
 
     @Test
-    void isGroupMode_explicitStandalone_isFalse() {
+    void isWorkspaceMode_explicitStandalone_isFalse() {
         var original = System.getProperty("oe.mode");
         System.setProperty("oe.mode", "standalone");
         try {
-            assertThat(AppHome.isGroupMode()).isFalse();
+            assertThat(AppHome.isWorkspaceMode()).isFalse();
         } finally {
             if (original != null) System.setProperty("oe.mode", original); else System.clearProperty("oe.mode");
         }
     }
 
     @Test
-    void isGroupMode_group_isTrue() {
+    void isWorkspaceMode_workspace_isTrue() {
         var original = System.getProperty("oe.mode");
-        System.setProperty("oe.mode", "group");
+        System.setProperty("oe.mode", "workspace");
         try {
-            assertThat(AppHome.isGroupMode()).isTrue();
+            assertThat(AppHome.isWorkspaceMode()).isTrue();
         } finally {
             if (original != null) System.setProperty("oe.mode", original); else System.clearProperty("oe.mode");
         }
     }
 
     @Test
-    void isGroupMode_unrecognizedValue_fallsBackToStandaloneFalse() {
-        // Any value other than exactly "group" is standalone - a typo like "Group" or "cloud"
-        // must not silently disable oeProxy.
+    void isWorkspaceMode_unrecognizedValue_fallsBackToStandaloneFalse() {
+        // Any value other than exactly "workspace" is standalone - a typo like "Workspace" or
+        // "cloud" must not silently disable oeProxy.
         var original = System.getProperty("oe.mode");
         System.setProperty("oe.mode", "cloud");
         try {
-            assertThat(AppHome.isGroupMode()).isFalse();
+            assertThat(AppHome.isWorkspaceMode()).isFalse();
         } finally {
             if (original != null) System.setProperty("oe.mode", original); else System.clearProperty("oe.mode");
         }

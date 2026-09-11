@@ -19,13 +19,13 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves hosts.pebble's content-encryption wiring end to end under oe.mode=group: the server
+ * Proves hosts.pebble's content-encryption wiring end to end under oe.mode=workspace: the server
  * only ever stores ciphertext (a fresh, independent fetch confirms it, not the app's own
  * already-decrypted in-memory copy), the editor still shows real plaintext after a full page
  * reload (a fresh unwrap via the cached workspace key, not a leftover JS variable), and a
  * private<->public visibility flip re-wraps the same DEK without corrupting the content.
  * See aidoc/e2eEncryption/00-design.md §1's correction: this only applies to HOSTS_PFILE under
- * oe.mode=group - the standalone editing e2e tests elsewhere exercise the unencrypted path.
+ * oe.mode=workspace - the standalone editing e2e tests elsewhere exercise the unencrypted path.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -45,7 +45,7 @@ class HostsContentEncryptionTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=group"));
+        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();

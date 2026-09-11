@@ -1,5 +1,6 @@
 package tricatch.oe.hub.e2e;
 
+import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
@@ -44,10 +45,11 @@ class PublicLinkTest {
     private Page page;
     private String hostsId;
     private String linkUrl;
+    private String textUrl;
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=group"));
+        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();
@@ -114,6 +116,8 @@ class PublicLinkTest {
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
         linkUrl = page.locator("#publicLinkValue").inputValue();
         assertThat(linkUrl).contains("/link/" + hostsId + "/oelink#key=");
+        textUrl = page.locator("#publicLinkTextValue").inputValue();
+        assertThat(textUrl).contains("/link/" + hostsId + "/oelink/text?key=");
 
         // The server-persisted row must never contain the raw fragment key or PROBE_LINE in the
         // clear anywhere - link_content is a completely separate ciphertext from hosts_content,
@@ -130,6 +134,42 @@ class PublicLinkTest {
 
     @Test
     @Order(3)
+    void textUrlFetch_matchesTheBrowserLinkContent() {
+        // SwitchHosts-style non-browser client: a plain GET with the key in the query string
+        // (e2eEncryption design doc §6's text-link decision) instead of the URL fragment.
+        APIResponse resp = page.request().get(textUrl);
+        assertThat(resp.status()).isEqualTo(200);
+        assertThat(resp.headers().get("content-type")).contains("text/plain");
+        var body = resp.text();
+        assertThat(body).startsWith("# ");
+        assertThat(body).contains(PROBE_LINE);
+    }
+
+    @Test
+    @Order(4)
+    void wrongKeyInTextUrl_returns400() {
+        var mutated = mutateOneKeyChar(textUrl);
+        APIResponse resp = page.request().get(mutated);
+        assertThat(resp.status()).isEqualTo(400);
+    }
+
+    @Test
+    @Order(5)
+    void missingKeyInTextUrl_returns400() {
+        var withoutKey = textUrl.substring(0, textUrl.indexOf('?'));
+        APIResponse resp = page.request().get(withoutKey);
+        assertThat(resp.status()).isEqualTo(400);
+    }
+
+    private static String mutateOneKeyChar(String url) {
+        var idx = url.indexOf("key=") + 4;
+        var c = url.charAt(idx);
+        var replacement = (c == 'A') ? 'B' : 'A';
+        return url.substring(0, idx) + replacement + url.substring(idx + 1);
+    }
+
+    @Test
+    @Order(6)
     void anonymousVisitorWithNoSessionAtAll_canDecryptAndViewTheLink() {
         var anonContext = browser.newContext(); // fresh, cookie-less - proves no login is needed
         var anonPage = anonContext.newPage();
@@ -140,7 +180,7 @@ class PublicLinkTest {
     }
 
     @Test
-    @Order(4)
+    @Order(7)
     void visitingTheSameUrlWithoutTheFragmentKey_failsToDecrypt() {
         var anonContext = browser.newContext();
         var anonPage = anonContext.newPage();
@@ -152,7 +192,7 @@ class PublicLinkTest {
     }
 
     @Test
-    @Order(5)
+    @Order(8)
     void editingAfterGeneratingALink_liveUpdatesTheSameLink() {
         // The "living link" redesign (e2eEncryption design doc §6): the row's wrapped_link_key
         // lets the editor's browser re-encrypt link_content on every save, so the link URL never
@@ -171,10 +211,17 @@ class PublicLinkTest {
         assertThat(anonPage.locator("#rawContent")).not().containsText(PROBE_LINE,
                 new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
         anonContext.close();
+
+        // The "living link" text URL must stay in sync with the same save - not just the browser one.
+        APIResponse textResp = page.request().get(textUrl);
+        assertThat(textResp.status()).isEqualTo(200);
+        var textBody = textResp.text();
+        assertThat(textBody).contains(SECOND_PROBE_LINE);
+        assertThat(textBody).doesNotContain(PROBE_LINE);
     }
 
     @Test
-    @Order(6)
+    @Order(9)
     void rotatingTheWorkspaceKey_theLinkSurvivesAndKeepsUpdating() {
         // wrapped_link_key must rotate in lockstep with wrapped_content_key (e2eEncryption design
         // doc §6/§7) - otherwise the very next save after a rotation would silently break the
@@ -204,7 +251,7 @@ class PublicLinkTest {
     }
 
     @Test
-    @Order(7)
+    @Order(10)
     void reopeningTheModal_showsTheCurrentUrl() {
         // The raw key can now be recovered by unwrapping wrapped_link_key with the workspace key,
         // so the modal shows the already-issued link immediately instead of requiring a fresh
@@ -214,13 +261,14 @@ class PublicLinkTest {
         assertThat(page.locator("#publicLinkResultWrap")).isVisible(
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
         assertThat(page.locator("#publicLinkValue")).hasValue(linkUrl);
+        assertThat(page.locator("#publicLinkTextValue")).hasValue(textUrl);
         page.locator("#publicLinkModal .btn-close").click();
         assertThat(page.locator("#publicLinkModal.show")).not().isVisible(
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
     }
 
     @Test
-    @Order(8)
+    @Order(11)
     void changingVisibilityAwayFromPublic_autoRevokesTheLink() {
         page.locator("#visibilitySelect").selectOption("private");
         page.waitForTimeout(300);
@@ -229,6 +277,8 @@ class PublicLinkTest {
         var anonPage = anonContext.newPage();
         Response resp = anonPage.navigate(linkUrl);
         assertThat(resp.status()).isEqualTo(404);
+        APIResponse textResp = anonPage.request().get(textUrl);
+        assertThat(textResp.status()).isEqualTo(404);
         anonContext.close();
 
         page.locator("#visibilitySelect").selectOption("public");
@@ -243,7 +293,7 @@ class PublicLinkTest {
     }
 
     @Test
-    @Order(9)
+    @Order(12)
     void revoking_makesTheSameLink404ForAnonymousVisitors() {
         // The previous test's visibility flip auto-revoked the earlier link - issue a fresh one
         // here so this test still proves the "Revoke" button itself works end-to-end.
@@ -253,6 +303,7 @@ class PublicLinkTest {
         assertThat(page.locator("#publicLinkResultWrap")).isVisible(
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
         linkUrl = page.locator("#publicLinkValue").inputValue();
+        textUrl = page.locator("#publicLinkTextValue").inputValue();
 
         page.locator("#btnRevokePublicLink").click();
         assertThat(page.locator("#publicLinkModal.show")).not().isVisible(
@@ -262,6 +313,8 @@ class PublicLinkTest {
         var anonPage = anonContext.newPage();
         Response resp = anonPage.navigate(linkUrl);
         assertThat(resp.status()).isEqualTo(404);
+        APIResponse textResp = anonPage.request().get(textUrl);
+        assertThat(textResp.status()).isEqualTo(404);
         anonContext.close();
     }
 }

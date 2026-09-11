@@ -29,7 +29,7 @@ public class E2eServer implements AutoCloseable {
         this(port, java.util.List.of());
     }
 
-    /** extraJvmArgs are appended after the standard ones below (e.g. "-Doe.mode=group"). */
+    /** extraJvmArgs are appended after the standard ones below (e.g. "-Doe.mode=workspace"). */
     public E2eServer(int port, java.util.List<String> extraJvmArgs) {
         this.port = port;
         this.homeDir = Path.of("build", "e2e-home-" + port).toAbsolutePath();

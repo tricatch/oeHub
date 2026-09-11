@@ -220,6 +220,25 @@ public class AuthController {
             return;
         }
 
+        // Instance-admin workspace suspension (cloudGroupService design doc §2.5 "워크스페이스
+        // 정지 처리", §3 item 2) - a distinct, meaningful error rather than reusing the pending-
+        // approval one, since this is a different situation for the user to understand (their
+        // account itself is fine; the whole workspace was suspended by the instance operator).
+        // Only workspace mode has more than one workspace, so standalone never needs this check
+        // (design doc §2.7).
+        if (AppHome.isWorkspaceMode()) {
+            try (var session = sqlSessionFactory.openSession()) {
+                var workspace = session.getMapper(WorkspaceMapper.class).findByWsNo(hubUser.getWsNo());
+                if (workspace != null && "suspended".equals(workspace.getStatus())) {
+                    ctx.render("templates/login.pebble", Map.of(
+                        "redirect", redirect != null ? redirect : "",
+                        "error", "auth.error.workspace.suspended"
+                    ));
+                    return;
+                }
+            }
+        }
+
         if(logger.isDebugEnabled() ) logger.debug( "login, userId={}, rememberMe={}", userId, rememberMe);
 
         try (var session = sqlSessionFactory.openSession()) {
@@ -234,7 +253,7 @@ public class AuthController {
             // decrypt any 'public'/'collabo' content, which is confusing without a trace. Just log
             // for now rather than auto-reconcile (no browser is available server-side to mint a
             // fresh wrap, and only a ws_adm's browser could ever re-wrap the real workspace key).
-            if (AppHome.isGroupMode() && ("usr".equals(hubUser.getRole()) || "ws_adm".equals(hubUser.getRole()))) {
+            if (AppHome.isWorkspaceMode() && ("usr".equals(hubUser.getRole()) || "ws_adm".equals(hubUser.getRole()))) {
                 var wsKey = session.getMapper(WsKeyMapper.class).findByWsNoAndUserNo(hubUser.getWsNo(), hubUser.getUserNo());
                 if (wsKey == null) {
                     logger.warn("Integrity check failed: user '{}' (userNo={}, wsNo={}) has no HUB_WS_KEY wrap - "
@@ -283,9 +302,9 @@ public class AuthController {
         model.put("inviteWsName", "");
         model.put("inviteError", "");
 
-        // Only group mode has multiple workspaces to create/join - standalone always joins the
+        // Only workspace mode has multiple workspaces to create/join - standalone always joins the
         // single existing one, no picker needed (cloudGroupService design doc §2.7).
-        if (AppHome.isGroupMode()) {
+        if (AppHome.isWorkspaceMode()) {
             var inviteCode = ctx.queryParam("invite");
             if (inviteCode != null && !inviteCode.isBlank()) {
                 try (var session = sqlSessionFactory.openSession()) {
@@ -376,7 +395,7 @@ public class AuthController {
         // becomes its ws_adm immediately, everyone else starts 'pending'. What DOES depend on
         // mode is which of those two paths this form even offers - standalone has exactly one
         // workspace by construction, so it never creates a new one or takes an invite code here.
-        boolean groupMode = AppHome.isGroupMode();
+        boolean workspaceMode = AppHome.isWorkspaceMode();
         var inviteCode = ctx.formParam("inviteCode");
         var wsName = ctx.formParam("wsName");
 
@@ -384,7 +403,7 @@ public class AuthController {
             var wsMapper = session.getMapper(WorkspaceMapper.class);
             var userMapper = session.getMapper(HubUserMapper.class);
 
-            if (groupMode && inviteCode != null && !inviteCode.isBlank()) {
+            if (workspaceMode && inviteCode != null && !inviteCode.isBlank()) {
                 var invite = session.getMapper(WsInviteMapper.class).findByCode(inviteCode.trim());
                 if (invite == null || invite.isUsed() || invite.getExpiresAt().isBefore(now)) {
                     renderRegisterError(ctx, "auth.error.invite.invalid", userId);
@@ -392,6 +411,9 @@ public class AuthController {
                 }
                 user.setRole("pending");
                 user.setWsNo(invite.getWsNo());
+                // A team-scoped invite (cloudGroupService design doc §2.8/§2.9) auto-assigns the
+                // new member to that team at signup - null when the invite didn't specify one.
+                user.setTeamNo(invite.getTeamNo());
                 userMapper.insert(user);
                 userMapper.selfReferenceAudit(user.getUserNo());
                 // Atomic consume, after the insert so it has the new user's user_no for
@@ -406,7 +428,7 @@ public class AuthController {
                 return;
             }
 
-            if (groupMode) {
+            if (workspaceMode) {
                 if (wsName == null || wsName.isBlank()) {
                     renderRegisterError(ctx, "auth.error.wsname.required", userId);
                     return;
@@ -498,7 +520,7 @@ public class AuthController {
         model.put("wsName", wsName != null ? wsName : "");
         model.put("inviteWsName", "");
         model.put("inviteError", "");
-        if (AppHome.isGroupMode() && inviteCode != null && !inviteCode.isBlank()) {
+        if (AppHome.isWorkspaceMode() && inviteCode != null && !inviteCode.isBlank()) {
             try (var session = sqlSessionFactory.openSession()) {
                 var invite = session.getMapper(WsInviteMapper.class).findByCode(inviteCode.trim());
                 if (invite != null && !invite.isUsed() && invite.getExpiresAt().isAfter(LocalDateTime.now())) {
@@ -627,12 +649,12 @@ public class AuthController {
 
     // A user can manage their own workspace's members if they hold 'ws_adm', or - only in
     // standalone, which never assigns 'ws_adm' at all (cloudGroupService design doc §2.7's
-    // simplification) - the instance-wide 'adm'. In group mode 'adm' is deliberately excluded:
+    // simplification) - the instance-wide 'adm'. In workspace mode 'adm' is deliberately excluded:
     // the instance operator must not manage workspace-internal user data (design doc §2.5).
     public static boolean isWorkspaceAdmin(HubUser user) {
         if (user == null) return false;
         if ("ws_adm".equals(user.getRole())) return true;
-        return !tricatch.oe.hub.config.AppHome.isGroupMode() && "adm".equals(user.getRole());
+        return !tricatch.oe.hub.config.AppHome.isWorkspaceMode() && "adm".equals(user.getRole());
     }
 
     private HubUser findUser(String userId) {

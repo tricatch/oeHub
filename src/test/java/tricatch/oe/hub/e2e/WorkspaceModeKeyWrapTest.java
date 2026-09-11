@@ -18,7 +18,7 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves the full workspace-key chain works end to end under oe.mode=group: a founder's browser
+ * Proves the full workspace-key chain works end to end under oe.mode=workspace: a founder's browser
  * generates the workspace key and wraps it for itself at registration (e2eEncryption design doc
  * §4), an invited member joins as 'pending' with no key wrap yet (§5), and the founder's approval
  * bundles a fresh wrap of its own cached workspace key for the new member's public key (§5) - the
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class GroupModeKeyWrapTest {
+class WorkspaceModeKeyWrapTest {
 
     private static final int PORT = 39917;
     private static final String FOUNDER_ID = "kwFounder";
@@ -46,7 +46,7 @@ class GroupModeKeyWrapTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=group"));
+        server = new E2eServer(PORT, java.util.List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();
@@ -63,7 +63,7 @@ class GroupModeKeyWrapTest {
 
     @Test
     @Order(1)
-    void bootstrapsInstanceAdmin_noCaNeededInGroupMode() {
+    void bootstrapsInstanceAdmin_noCaNeededInWorkspaceMode() {
         var page = browser.newPage();
         page.navigate(server.baseUrl() + "/setup");
         page.locator("form[action='/setup'] input[name=userId]").fill("kwInstanceAdmin");
@@ -73,7 +73,7 @@ class GroupModeKeyWrapTest {
         assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
         page.locator("#btnRecoveryCodeContinue").click();
 
-        // group mode never requires a CA (cloudGroupService design doc §2.6) - admin alone makes
+        // workspace mode never requires a CA (cloudGroupService design doc §2.6) - admin alone makes
         // setup complete, so #btnGotoLogin should already be enabled.
         assertThat(page.locator("#btnGotoLogin")).isEnabled();
         page.close();

@@ -10,12 +10,16 @@ public class HubUser extends Auditable {
     private String password;
     private String role;
     private Long wsNo;
+    private Long teamNo;
     private int tokenVersion;
     private String publicKey;
     private String wrappedPrivateKey;
     private String wrappedPrivateKeyRecovery;
     private String recoveryVerifier;
     private LocalDateTime lastLoginAt;
+    // Display-only join field (like HostsProf.updatedByUserId) - never selected outside the
+    // findAll/searchByUserId member-list queries that LEFT JOIN HUB_TEAM.
+    private String teamName;
 
     public Long getUserNo() { return userNo; }
     public void setUserNo(Long userNo) { this.userNo = userNo; }
@@ -34,6 +38,9 @@ public class HubUser extends Auditable {
     public Long getWsNo() { return wsNo; }
     public void setWsNo(Long wsNo) { this.wsNo = wsNo; }
 
+    public Long getTeamNo() { return teamNo; }
+    public void setTeamNo(Long teamNo) { this.teamNo = teamNo; }
+
     public int getTokenVersion() { return tokenVersion; }
     public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
 
@@ -51,4 +58,7 @@ public class HubUser extends Auditable {
 
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
+
+    public String getTeamName() { return teamName; }
+    public void setTeamName(String teamName) { this.teamName = teamName; }
 }
