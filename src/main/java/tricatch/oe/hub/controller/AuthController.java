@@ -439,7 +439,7 @@ public class AuthController {
                 }
                 // The founder generates the workspace key itself, client-side, and wraps it for
                 // their own public key in the same step as the personal keypair above
-                // (e2eEncryption design doc §4 "그룹키는 워크스페이스 생성과 함께 만든다").
+                // (e2eEncryption design doc §4 "워크스페이스키는 워크스페이스 생성과 함께 만든다").
                 var founderWrappedWsKey = ctx.formParam("founderWrappedWsKey");
                 if (founderWrappedWsKey == null || founderWrappedWsKey.isBlank()) {
                     renderRegisterError(ctx, "auth.error.crypto.required", userId);
