@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import java.util.List;
 import java.util.Map;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
@@ -32,29 +33,40 @@ class CryptoPrimitivesTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT);
+        // Workspace mode (e2eEncryption design doc §1): standalone's identity crypto is a dummy
+        // placeholder (nothing ever decrypts it there), so login_unwrapsAndCachesPrivate... below
+        // needs a real account, which only exists in workspace mode. The other tests here just
+        // call OE_CRYPTO primitives directly via page.evaluate() and don't care about server mode
+        // at all, so there's no cost to running the whole class this way.
+        server = new E2eServer(PORT, List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();
 
         // OeHubApplication redirects every request except /setup (and static assets) to /setup
-        // until setup is fully complete - in standalone (the default, no oe.mode=workspace here)
-        // that means BOTH an admin account AND a CA certificate (SetupController.isSetupComplete)
-        // - /register (where crypto.js is loaded) is no exception, so both steps are needed
-        // before any test page here can load it. Mirrors SetupToOeProxyScenarioTest's steps 2-3.
+        // until setup is complete - workspace mode only needs an admin account, no CA
+        // (cloudGroupService design doc §2.6), so this is quicker than standalone's two-step
+        // version.
         var setupPage = browser.newPage();
         setupPage.navigate(server.baseUrl() + "/setup");
-        setupPage.locator("form[action='/setup'] input[name=userId]").fill("cryptotest-admin");
-        setupPage.locator("form[action='/setup'] input[name=password]").fill("AdminPass123!");
-        setupPage.locator("form[action='/setup'] input[name=confirm]").fill("AdminPass123!");
+        setupPage.locator("form[action='/setup'] input[name=userId]").fill("cryptotest-instanceadmin");
+        setupPage.locator("form[action='/setup'] input[name=password]").fill("InstAdminPass123!");
+        setupPage.locator("form[action='/setup'] input[name=confirm]").fill("InstAdminPass123!");
         setupPage.locator("form[action='/setup'] button[type=submit]").click();
         assertThat(setupPage.locator("#recoveryCodeModal.show")).isVisible();
         setupPage.locator("#btnRecoveryCodeContinue").click();
-        setupPage.waitForURL(java.util.regex.Pattern.compile(".*/setup"));
 
-        setupPage.locator("input[name=caName]").fill("Crypto Test CA");
-        setupPage.locator("form[action='/setup/ca/generate'] button[type=submit]").click();
-        setupPage.waitForURL(java.util.regex.Pattern.compile(".*/setup"));
+        // The account login_unwrapsAndCachesPrivateAndWorkspaceKeys... below logs in as: a real
+        // workspace founder, who gets a real keypair, password wrap, and workspace-key wrap.
+        setupPage.navigate(server.baseUrl() + "/register");
+        setupPage.locator("input[name=wsName]").fill("Crypto Test Co");
+        setupPage.locator("input[name=userId]").fill("cryptotest-admin");
+        setupPage.locator("input[name=password]").fill("AdminPass123!");
+        setupPage.locator("input[name=confirmPassword]").fill("AdminPass123!");
+        setupPage.locator("form[action='/register'] button[type=submit]").click();
+        assertThat(setupPage.locator("#recoveryCodeModal.show")).isVisible();
+        setupPage.locator("#btnRecoveryCodeContinue").click();
+        setupPage.waitForURL(java.util.regex.Pattern.compile(".*/login$"));
         setupPage.close();
     }
 
@@ -73,9 +85,9 @@ class CryptoPrimitivesTest {
 
     @Test
     void login_unwrapsAndCachesPrivateAndWorkspaceKeys_survivingNavigation() {
-        // cryptotest-admin (created in @BeforeAll) founded the default workspace via /setup's
-        // wiring, so it has both a personal keypair and a HUB_WS_KEY wrap of its own making -
-        // logging in should unwrap and cache both (e2eEncryption design doc §3).
+        // cryptotest-admin (created in @BeforeAll) founded a workspace via /register, so it has
+        // both a personal keypair and a HUB_WS_KEY wrap of its own making - logging in should
+        // unwrap and cache both (e2eEncryption design doc §3).
         var page = browser.newPage();
         page.navigate(server.baseUrl() + "/login");
         page.locator("input[name=userId]").fill("cryptotest-admin");

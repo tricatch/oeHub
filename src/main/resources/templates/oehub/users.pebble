@@ -683,17 +683,25 @@
     var row = document.querySelector('tr[data-user-no="' + userNo + '"]');
     var btn = row.querySelector('.btn-approve-pending');
 
-    // The approving ws_adm must have their own workspace key cached from login (e2eEncryption
-    // design doc §3/§5) - if not (e.g. this account predates the crypto wiring, or the cache was
-    // never populated), approval can't proceed: there would be nothing correct to wrap.
-    var wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
-    if (!wsKey || !publicKeyB64) {
-      btn.disabled = false;
-      showToast(MSG['toast.user.approve.failed']);
-      return;
+    var wrappedWsKey;
+    if (!window.OE_WORKSPACE_MODE) {
+      // standalone never had a real workspace key to wrap in the first place (dummy identity
+      // crypto - e2eEncryption design doc §1), and neither the approver nor the pending member
+      // has one cached.
+      wrappedWsKey = 'standalone';
+    } else {
+      // The approving ws_adm must have their own workspace key cached from login (e2eEncryption
+      // design doc §3/§5) - if not (e.g. this account predates the crypto wiring, or the cache
+      // was never populated), approval can't proceed: there would be nothing correct to wrap.
+      var wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+      if (!wsKey || !publicKeyB64) {
+        btn.disabled = false;
+        showToast(MSG['toast.user.approve.failed']);
+        return;
+      }
+      var publicKey = await OE_CRYPTO.importPublicKey(publicKeyB64);
+      wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, publicKey);
     }
-    var publicKey = await OE_CRYPTO.importPublicKey(publicKeyB64);
-    var wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, publicKey);
 
     var r = await fetch('/api/admin/users/' + userNo + '/approve', {
       method: 'POST',

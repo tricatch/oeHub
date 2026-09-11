@@ -223,8 +223,6 @@ class WorkspaceAdminConsoleTest {
             page.locator("form[action='/setup'] input[name=password]").fill("StandalonePass123!");
             page.locator("form[action='/setup'] input[name=confirm]").fill("StandalonePass123!");
             page.locator("form[action='/setup'] button[type=submit]").click();
-            assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
-            page.locator("#btnRecoveryCodeContinue").click();
 
             // Unlike workspace mode, standalone setup isn't complete until the CA step is also done
             // (design doc §2.6 - oeProxy, and therefore its CA, only exists in standalone) - until

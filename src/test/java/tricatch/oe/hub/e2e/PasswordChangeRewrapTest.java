@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
+import java.util.List;
 import java.util.regex.Pattern;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
@@ -21,7 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Proves that changing your own password re-wraps wrapped_private_key for the new password in
  * the same request (e2eEncryption design doc §3) - if it didn't, the old wrap would become
  * permanently unusable the moment the password changed, since PBKDF2-deriving the KEK from the
- * new password would no longer match what wrapped it.
+ * new password would no longer match what wrapped it. This only has real key material to prove
+ * anything with in workspace mode - standalone's identity crypto is a dummy placeholder (nothing
+ * ever decrypts it, e2eEncryption design doc §1), so the founder account here (not the instance
+ * admin bootstrapped via /setup) is the one under test.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -29,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PasswordChangeRewrapTest {
 
     private static final int PORT = 39918;
-    private static final String USER_ID = "pwRewrapAdmin";
+    private static final String USER_ID = "pwRewrapFounder";
     private static final String OLD_PW = "OldPassword123!";
     private static final String NEW_PW = "NewPassword456!";
 
@@ -40,7 +44,7 @@ class PasswordChangeRewrapTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        server = new E2eServer(PORT);
+        server = new E2eServer(PORT, List.of("-Doe.mode=workspace"));
         server.start();
         playwright = Playwright.create();
         browser = playwright.chromium().launch();
@@ -57,22 +61,25 @@ class PasswordChangeRewrapTest {
 
     @Test
     @Order(1)
-    void bootstrapsAdminAndLogsIn() {
+    void bootstrapsWorkspaceAndLogsInAsFounder() {
         page.navigate(server.baseUrl() + "/setup");
-        page.locator("form[action='/setup'] input[name=userId]").fill(USER_ID);
-        page.locator("form[action='/setup'] input[name=password]").fill(OLD_PW);
-        page.locator("form[action='/setup'] input[name=confirm]").fill(OLD_PW);
+        page.locator("form[action='/setup'] input[name=userId]").fill("pwRewrapInstanceAdmin");
+        page.locator("form[action='/setup'] input[name=password]").fill("InstAdminPass123!");
+        page.locator("form[action='/setup'] input[name=confirm]").fill("InstAdminPass123!");
         page.locator("form[action='/setup'] button[type=submit]").click();
         assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
         page.locator("#btnRecoveryCodeContinue").click();
-        page.waitForURL(Pattern.compile(".*/setup"));
 
-        page.locator("input[name=caName]").fill("Pw Rewrap Test CA");
-        page.locator("form[action='/setup/ca/generate'] button[type=submit]").click();
-        page.waitForURL(Pattern.compile(".*/setup"));
+        page.navigate(server.baseUrl() + "/register");
+        page.locator("input[name=wsName]").fill("Pw Rewrap Co");
+        page.locator("input[name=userId]").fill(USER_ID);
+        page.locator("input[name=password]").fill(OLD_PW);
+        page.locator("input[name=confirmPassword]").fill(OLD_PW);
+        page.locator("form[action='/register'] button[type=submit]").click();
+        assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
+        page.locator("#btnRecoveryCodeContinue").click();
+        page.waitForURL(Pattern.compile(".*/login$"));
 
-        page.locator("#btnGotoLogin").click();
-        page.waitForURL(Pattern.compile(".*/login"));
         page.locator("input[name=userId]").fill(USER_ID);
         page.locator("input[name=password]").fill(OLD_PW);
         page.locator("#btnLoginSubmit").click();

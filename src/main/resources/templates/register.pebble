@@ -95,6 +95,7 @@
 {% include "templates/_recovery-code-modal.pebble" %}
 
 <script>window.MSG = {{ msgJson | raw }};</script>
+<script>window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/js/crypto.js"></script>
 <script src="/js/util.js"></script>
@@ -135,6 +136,21 @@
   async function generateIdentityAndSubmit(password) {
     var keyPair = await OE_CRYPTO.generateKeyPair();
     var publicKeyB64 = await OE_CRYPTO.exportPublicKey(keyPair.publicKey);
+    document.getElementById('fldPublicKey').value = publicKeyB64;
+
+    // standalone never encrypts content (e2eEncryption design doc §1), so nothing ever unwraps
+    // this account's private key or recovery code for real work - only the public key above is
+    // genuinely needed (approving a pending standalone member still wraps the workspace key for
+    // it, users.pebble). Skip the PBKDF2/recovery-code generation and the "save your recovery
+    // code" modal, which would have nothing meaningful to protect, and submit immediately.
+    if (!window.OE_WORKSPACE_MODE) {
+      document.getElementById('fldWrappedPrivateKey').value = 'standalone';
+      document.getElementById('fldWrappedPrivateKeyRecovery').value = 'standalone';
+      document.getElementById('fldRecoveryVerifier').value = 'standalone';
+      submitBtn.textContent = MSG['auth.creating.account'];
+      form.submit();
+      return;
+    }
 
     var salt = OE_CRYPTO.randomBytes(16);
     var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(password, salt);
@@ -150,7 +166,6 @@
     var recoveryVerifier = await OE_CRYPTO.deriveRecoveryVerifier(recoveryBytes);
     pendingRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(recoveryBytes);
 
-    document.getElementById('fldPublicKey').value = publicKeyB64;
     document.getElementById('fldWrappedPrivateKey').value = JSON.stringify(wrappedPrivateKeyRecord);
     document.getElementById('fldWrappedPrivateKeyRecovery').value = JSON.stringify(wrappedPrivateKeyRecoveryRecord);
     document.getElementById('fldRecoveryVerifier').value = recoveryVerifier;

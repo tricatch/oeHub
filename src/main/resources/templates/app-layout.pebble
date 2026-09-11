@@ -58,7 +58,9 @@
           <div class="dropdown-menu dropdown-menu-end oe-user-dropdown">
             <a href="/oehub/my/info" class="dropdown-item">{{ msg['nav.my.info'] }}</a>
             <a href="#" class="dropdown-item" id="navBtnChangePassword">{{ msg['nav.change.password'] }}</a>
+            {% if workspaceMode %}
             <a href="#" class="dropdown-item" id="navBtnReissueRecovery">{{ msg['nav.reissue.recovery'] }}</a>
+            {% endif %}
             {% if user.role == 'adm' %}
             <a href="/oehub/settings" class="dropdown-item">{{ msg['nav.settings'] }}</a>
             <a href="/oehub/admin/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
@@ -278,15 +280,22 @@
     // already-unwrapped private key comes from this session's own cache (from login), not by
     // re-deriving from currentPassword - simpler, and works the same way regardless of how the
     // key got into the cache.
-    var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
-    if (!privateKey) {
-      showChangePasswordError(MSG['change.password.error.no.cached.key']);
-      return;
+    var newWrappedPrivateKey;
+    if (!window.OE_WORKSPACE_MODE) {
+      // standalone never had a real wrap to begin with (dummy identity crypto - e2eEncryption
+      // design doc §1), so there is nothing to re-wrap and no session-cached key to require.
+      newWrappedPrivateKey = 'standalone';
+    } else {
+      var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
+      if (!privateKey) {
+        showChangePasswordError(MSG['change.password.error.no.cached.key']);
+        return;
+      }
+      var salt = OE_CRYPTO.randomBytes(16);
+      var kek = await OE_CRYPTO.deriveKeyFromPassword(next, salt);
+      var wrap = await OE_CRYPTO.wrapPrivateKey(privateKey, kek);
+      newWrappedPrivateKey = JSON.stringify({ salt: OE_CRYPTO.bufToBase64(salt), iv: wrap.iv, wrapped: wrap.wrapped });
     }
-    var salt = OE_CRYPTO.randomBytes(16);
-    var kek = await OE_CRYPTO.deriveKeyFromPassword(next, salt);
-    var wrap = await OE_CRYPTO.wrapPrivateKey(privateKey, kek);
-    var newWrappedPrivateKey = JSON.stringify({ salt: OE_CRYPTO.bufToBase64(salt), iv: wrap.iv, wrapped: wrap.wrapped });
 
     var res = await fetch('/api/user/change-password', {
       method: 'POST', headers: {'Content-Type': 'application/json'},

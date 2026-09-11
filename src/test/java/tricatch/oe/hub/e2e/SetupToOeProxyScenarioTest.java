@@ -75,13 +75,10 @@ class SetupToOeProxyScenarioTest {
         page.locator("form[action='/setup'] input[name=confirm]").fill(ADMIN_PW);
         page.locator("form[action='/setup'] button[type=submit]").click();
 
-        // setup.pebble intercepts submit to generate the bootstrap admin's keypair + the new
-        // workspace's key client-side (e2eEncryption design doc §3/§4) before actually posting -
-        // the recovery-code modal is the confirmation step here.
-        assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
-        assertThat(page.locator("#recoveryCodeValue")).not().hasValue("");
-        page.locator("#btnRecoveryCodeContinue").click();
-
+        // setup.pebble intercepts submit to generate the bootstrap admin's keypair client-side
+        // (e2eEncryption design doc §3) before actually posting - standalone skips the
+        // recovery-code modal entirely (dummy identity crypto, nothing ever decrypts it) and
+        // submits immediately.
         // processSetup logs the new admin in immediately and redirects back to /setup with the
         // admin step now showing a "configured" badge - that badge is our success signal.
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/setup"));
@@ -118,13 +115,10 @@ class SetupToOeProxyScenarioTest {
         page.locator("input[name=confirmPassword]").fill(USER_PW);
         page.locator("form[action='/register'] button[type=submit]").click();
 
-        // register.pebble intercepts submit to generate a keypair + recovery code client-side
-        // (e2eEncryption design doc §3) before actually posting the form - the recovery-code
-        // modal is the real user's confirmation step here.
-        assertThat(page.locator("#recoveryCodeModal.show")).isVisible();
-        assertThat(page.locator("#recoveryCodeValue")).not().hasValue("");
-        page.locator("#btnRecoveryCodeContinue").click();
-
+        // register.pebble intercepts submit to generate a keypair client-side (e2eEncryption
+        // design doc §3) before actually posting the form - standalone skips the recovery-code
+        // modal entirely (dummy identity crypto, nothing ever decrypts it) and submits
+        // immediately.
         // Self-registration now starts as 'pending' (cloudGroupService design doc §2.3) and can't
         // log in until a workspace admin approves it - see order(6) below.
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/login\\?registered=pending"));
