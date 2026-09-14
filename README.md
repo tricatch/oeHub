@@ -76,16 +76,34 @@ JDK 21이 필요합니다.
 java -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 ```
 
-애플리케이션은 기본적으로 `36912` 포트에서 실행되며(`-Dport=`로 재정의 가능), `port + 1`에서 H2 웹 콘솔을 시작합니다.
+최초 실행 시 관리자 계정을 만들고 oeProxy가 사용할 루트 인증서를 구성하는 설치 마법사(`/setup`)로 리다이렉션됩니다.
 
-최초 실행 시 관리자 계정을 만들고 oeProxy가 사용할 루트 인증서를 구성하는 설치 마법사(`/setup`)로 리다이렉션됩니다. 애플리케이션 데이터(H2 데이터베이스)는 기본적으로 `~/oeHub` 아래에 저장됩니다(`~`는 OS 사용자의 홈 디렉터리입니다).
+### 실행 옵션
+
+모든 옵션은 `-D<이름>=<값>` 형태의 JVM 시스템 프로퍼티이며, `java -D... -jar oeHub-<version>.jar`처럼 조합해서 사용합니다.
+
+| 옵션 | 기본값 | 설명 |
+|---|---|---|
+| `-Dport` | `36912` | 애플리케이션 포트. H2 웹 콘솔은 자동으로 `port + 1`에서 시작됩니다. |
+| `-Dhome` | `~/oeHub` (`~`는 OS 사용자 홈) | 애플리케이션 데이터(H2 데이터베이스 등) 디렉터리. oeHub 디렉터리 자체를 가리키며, 그 상위 디렉터리가 아닙니다(`/oeHub`가 추가로 붙지 않습니다). |
+| `-Doe.mode` | `standalone` | 배포 모드 — `standalone` 또는 `workspace`. 아래 [배포 모드](#배포-모드) 참고. |
+| `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선 사용. 위 실행 예시처럼 항상 켜서 실행하기를 권장합니다. |
+| `-Dlogback.configurationFile` | jar에 번들된 `logback.xml` | 재빌드 없이 로깅 설정을 재정의합니다. 자세한 내용은 아래 [로깅](#로깅) 참고. |
 
 > [!IMPORTANT]
-> Linux에서 oeProxy가 `443` 포트에 바인딩하려면 JVM을 `root`로 실행해야 하는데, 이 경우 `~`가 일반 사용자의 홈이 아니라 `/root`로 해석됩니다. 애플리케이션 데이터를 원하는 디렉터리에 고정하려면 대신 `-Dhome=/path/to/oeHub`를 전달하세요. 예:
+> Linux에서 oeProxy가 `443` 포트에 바인딩하려면 JVM을 `root`로 실행해야 하는데, 이 경우 `~`가 일반 사용자의 홈이 아니라 `/root`로 해석됩니다. 애플리케이션 데이터를 원하는 디렉터리에 고정하려면 `-Dhome=/path/to/oeHub`를 전달하세요. 예:
 > ```bash
 > sudo java -Dhome=/home/youruser/oeHub -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 > ```
-> `-Dhome`은 oeHub 디렉터리 자체를 가리키며, 그 상위 디렉터리가 아닙니다(`/oeHub`가 추가로 붙지 않습니다).
+
+### 배포 모드
+
+`-Doe.mode`로 선택하는 두 가지 모드 중 하나로 실행됩니다(기본값 `standalone`). 둘은 같은 코드베이스와 스키마를 공유하며, 서버 시작 시 한 번 정해져 프로세스 수명 동안 정적으로 유지됩니다.
+
+- **`standalone`** — 한 팀을 위한 단일 셀프 호스팅 인스턴스. oeHosts와 oeProxy가 모두 사용 가능하며, 워크스페이스가 정확히 하나 존재합니다.
+- **`workspace`** — 하나의 실행 중인 인스턴스 뒤에서 여러 독립적인 워크스페이스(회사 또는 팀)를 호스팅하는 멀티테넌트 클라우드 서비스. oeHosts만 사용 가능하며 oeProxy는 아예 비활성화되고, 워크스페이스 콘텐츠에는 종단간 암호화가 적용됩니다.
+
+역할(`adm`/`ws_adm`/`usr` 등), 가입·승인 흐름, 모드별로 달라지는 동작에 대한 자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
 
 ### 로깅
 
