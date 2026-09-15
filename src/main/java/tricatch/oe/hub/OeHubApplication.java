@@ -291,6 +291,7 @@ public class OeHubApplication {
             config.routes.get("/oehub/settings",              settings::showSettings);
             config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
             config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
+            config.routes.post("/api/admin/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
             config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
             config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
             config.routes.post("/oehub/settings/ca/import",   settings::importCa);
