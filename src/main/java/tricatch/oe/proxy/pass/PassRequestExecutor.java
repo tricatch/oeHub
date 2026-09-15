@@ -578,7 +578,7 @@ public class PassRequestExecutor implements Stopable {
                             , vhost
                     );
                 }
-                return SocketUtils.createHttps(vhost, target.getHost(), port, this.connectTimeout, this.readTimeout);
+                return SocketUtils.createHttps(vhost, target.getHost(), port, this.connectTimeout, this.readTimeout, ReverseProxyServer.isTrustInternalCertEnabled());
             } else {
                 int port = target.getPort() <= 0 ? 80 : target.getPort();
                 if( logger.isDebugEnabled() ) logger.debug("{}, {}, Create HTTP {}:{} / {}"
