@@ -1,86 +1,86 @@
-# Changelog
+# 변경 이력 (Changelog)
 
-All notable changes to this project are documented in this file.
+프로젝트의 모든 주요 변경 사항은 이 파일에 기록됩니다.
 
 ## [0.9.4.a] - 2026-09-16
 
-### Added
-- oeProxy: added a "Trust certificates for internal-network backends" setting (Settings > oeProxy - Upstream Certificate), on by default. When a virtual host's https backend resolves to a loopback, private, link-local or IPv6 ULA address, the reverse proxy skips upstream certificate validation for that connection — internal dev backends typically use ad-hoc self-signed certificates with no common CA to import, and a validation failure only ever reaches the browser as a generic gateway error with no indication that the certificate was the cause. Backends resolving to a public address are never affected: hostname-pinned validation still runs there exactly as before, so the setting cannot be used to bypass validation against a public host.
+### 추가됨
+- oeProxy: "내부망 백엔드 인증서 신뢰" 설정 추가 (설정 > oeProxy - 업스트림 인증서), 기본값 켜짐. 가상 호스트의 https 백엔드가 루프백, 사설망, 링크-로컬 또는 IPv6 ULA 주소로 확인되면, 리버스 프록시는 해당 연결에 대해 업스트림 인증서 검증을 건너뜁니다 — 내부 개발용 백엔드는 대개 가져올 공통 CA가 없는 임시 자체 서명 인증서를 사용하며, 검증 실패는 브라우저에 원인 표시 없이 일반적인 게이트웨이 오류로만 도달했습니다. 공인 주소로 확인되는 백엔드는 전혀 영향받지 않습니다: 호스트명 고정(pinned) 검증이 기존과 동일하게 그대로 수행되므로, 이 설정으로 공인 호스트에 대한 검증을 우회할 수는 없습니다.
 
 ## [0.9.4] - 2026-09-05
 
-### Added
-- oeProxy: added a "Use This IP" action next to the OID/IP badge that explicitly claims the current browsing IP as an owner-identification fallback for 8 hours. The badge shows which account (if any) already holds the current IP, in red, before you claim it.
-- oeProxy forward proxy: a self-loop request — one that routes back into this server's own reverse proxy, via a `${PROXY_SVR}` oeHosts entry or a literal loopback address hardcoded directly in one — is now automatically attributed to the authenticated forward-proxy account, without needing an `X-OeHub-Oid` header.
+### 추가됨
+- oeProxy: OID/IP 배지 옆에 "이 IP 사용" 동작을 추가하여, 현재 브라우징 중인 IP를 8시간 동안 소유자 식별 대체 수단으로 명시적으로 지정(claim)할 수 있습니다. 배지는 IP를 지정하기 전에 (있다면) 이미 해당 IP를 보유한 계정을 빨간색으로 표시합니다.
+- oeProxy 포워드 프록시: 셀프 루프 요청 — `${PROXY_SVR}` oeHosts 항목이나 항목에 직접 하드코딩된 루프백 주소를 통해 이 서버 자신의 리버스 프록시로 다시 라우팅되는 요청 — 은 이제 `X-OeHub-Oid` 헤더 없이도 인증된 포워드 프록시 계정으로 자동 귀속됩니다.
 
-### Changed
-- oeProxy: the `X-OeHub-Oid` header value is now HMAC-signed.
-- oeProxy: the IP-based owner-identification fallback is now an explicit, time-bounded (8 hour) claim made via "Use This IP" instead of being registered implicitly whenever vhost config is applied or lazily reloaded from a cache miss; claiming a new IP for an account releases that account's previous claim.
-- oeProxy: live traffic monitoring no longer copies request/response bodies and headers into an event when no monitor tab is currently watching that account, removing that per-request overhead from all proxied traffic when the monitor isn't open.
+### 변경됨
+- oeProxy: `X-OeHub-Oid` 헤더 값이 이제 HMAC 서명됩니다.
+- oeProxy: IP 기반 소유자 식별 대체 수단은 이제 vhost 설정이 적용되거나 캐시 미스 시 지연 재로드될 때마다 암묵적으로 등록되는 대신, "이 IP 사용"을 통한 명시적이고 시간 제한(8시간)이 있는 지정(claim) 방식으로 바뀌었습니다. 계정이 새 IP를 지정하면 해당 계정의 이전 지정은 해제됩니다.
+- oeProxy: 실시간 트래픽 모니터는 해당 계정을 지켜보는 모니터 탭이 현재 없을 때 요청/응답 본문과 헤더를 이벤트로 복사하지 않게 되어, 모니터가 열려 있지 않을 때 모든 프록시 트래픽에서 발생하던 요청당 오버헤드를 제거했습니다.
 
-### Removed
-- oeProxy: the "single account + loopback client" automatic owner-identification shortcut has been removed — it broke as soon as a second account existed and gave no indication that identification was implicit rather than explicit. Use the new "Use This IP" action or the oeOID Chrome extension instead.
+### 제거됨
+- oeProxy: "단일 계정 + 루프백 클라이언트" 자동 소유자 식별 단축 로직이 제거되었습니다 — 두 번째 계정이 생기는 순간 깨졌고, 식별이 암묵적으로 이루어지고 있다는 표시도 전혀 없었습니다. 새로운 "이 IP 사용" 동작이나 oeOID Chrome 확장 프로그램을 사용하세요.
 
-### Fixed
-- oeProxy forward proxy: a destination that maps to this server's own loopback address is no longer silently redirected to the same generic "not whitelisted" 403 page — it now shows the actual reason (loopback target, unresolved host, or not whitelisted) with matching guidance.
-- oeProxy forward proxy: a client connecting from 127.0.0.1 is exempt from the loopback-destination SSRF guard, since it already has direct access to every loopback-bound port on the machine — fixes legitimate local-testing oeHosts entries (e.g. `${PROXY_SVR}`-less `127.0.0.1 mydomain`) being blocked.
-- oeProxy forward proxy: self-loop owner attribution now also requires the accepted reverse-proxy connection's actual peer IP to match the IP the forward proxy's own outbound connection used, closing a window where a different host on the same network could otherwise be attributed to another account's self-loop request by reusing its ephemeral source port.
-- oeProxy: fixed the live traffic monitor occasionally showing a response event with no matching request row — the "is a monitor tab watching this account" check is now decided once per request and reused for both the request and response sides (and the response body relay), instead of being independently re-checked at each point.
+### 수정됨
+- oeProxy 포워드 프록시: 이 서버 자신의 루프백 주소로 매핑되는 목적지가 더 이상 동일한 일반적인 "화이트리스트에 없음" 403 페이지로 조용히 리다이렉트되지 않고, 실제 원인(루프백 대상, 확인되지 않은 호스트, 화이트리스트 없음)을 해당 안내와 함께 보여줍니다.
+- oeProxy 포워드 프록시: 127.0.0.1에서 연결하는 클라이언트는 루프백 대상 SSRF 가드에서 제외됩니다. 이미 머신의 모든 루프백 바인딩 포트에 직접 접근할 수 있기 때문입니다 — 정상적인 로컬 테스트용 oeHosts 항목(예: `${PROXY_SVR}` 없는 `127.0.0.1 mydomain`)이 차단되던 문제를 수정했습니다.
+- oeProxy 포워드 프록시: 셀프 루프 소유자 귀속은 이제 수락된 리버스 프록시 연결의 실제 피어(peer) IP가 포워드 프록시 자신의 아웃바운드 연결이 사용한 IP와 일치하는지도 요구합니다. 이를 통해 동일 네트워크의 다른 호스트가 임시 소스 포트를 재사용하여 다른 계정의 셀프 루프 요청으로 귀속될 수 있었던 허점을 막았습니다.
+- oeProxy: 실시간 트래픽 모니터가 간헐적으로 대응하는 요청 행이 없는 응답 이벤트를 표시하던 문제를 수정했습니다 — "이 계정을 지켜보는 모니터 탭이 있는가" 검사가 이제 요청당 한 번만 결정되어 요청 쪽과 응답 쪽(및 응답 본문 릴레이) 모두에서 재사용되며, 각 지점에서 독립적으로 다시 검사되지 않습니다.
 
 ## [0.9.3] - 2026-09-02
 
-### Added
-- oeProxy: added a forward (upstream) proxy on a fixed port (36980), authenticated with oeHub account credentials. Once authenticated, requests for hosts in that user's currently-selected oeHosts profiles are routed to the recorded IP from an in-memory per-user map instead of a per-request DB lookup; editing or toggling a selected profile refreshes the cache live. Always running, not admin-toggleable.
-- oeHosts: added a `--proxy-server` Chrome launch option pointing at the new forward proxy, placed directly below `--host-resolver-rules`. Enabling either `--proxy-server` or `--host-resolver-rules` automatically disables the other, since Chrome ignores `--host-resolver-rules` for requests sent through a fixed proxy.
-- oeProxy forward proxy: added an admin-configurable relay whitelist (Settings > oeProxy - Forward Proxy). One domain per line, with `*.` wildcard prefix matching the domain and its subdomains; when non-empty, only whitelisted destinations may be relayed and all others get a 403 rendered as a branded oeProxy error page (matching the reverse proxy's existing 404/502/503 pages). Empty (default) keeps prior unrestricted behavior. For blocked HTTPS destinations, the CONNECT tunnel is redirected to a new loopback-only internal server (port 36981) that completes the TLS handshake with a CA-issued certificate for the requested host and serves the same 403 page, so blocked HTTPS requests render identically to blocked HTTP ones instead of just failing the tunnel.
-- Admin: user management now has a "Reset Password" action that generates a random password for the selected account and displays it once for the admin to relay.
-- Accounts: added a self-service "Change Password" menu (current / new / confirm password) available to all users, from the account dropdown.
+### 추가됨
+- oeProxy: 고정 포트(36980)에서 동작하며 oeHub 계정 자격 증명으로 인증되는 포워드(업스트림) 프록시를 추가했습니다. 인증되면 해당 사용자가 현재 선택한 oeHosts 프로필에 속한 호스트로의 요청은, 요청마다 DB를 조회하는 대신 사용자별 인메모리 맵에 기록된 IP로 라우팅됩니다. 선택된 프로필을 편집하거나 토글하면 캐시가 즉시 갱신됩니다. 항상 실행되며 관리자가 켜고 끌 수 없습니다.
+- oeHosts: 새 포워드 프록시를 가리키는 `--proxy-server` Chrome 실행 옵션을 `--host-resolver-rules` 바로 아래에 추가했습니다. `--proxy-server` 또는 `--host-resolver-rules` 중 하나를 활성화하면 다른 하나는 자동으로 비활성화됩니다. Chrome은 고정 프록시를 통해 전송되는 요청에 대해 `--host-resolver-rules`를 무시하기 때문입니다.
+- oeProxy 포워드 프록시: 관리자가 설정 가능한 릴레이 화이트리스트를 추가했습니다 (설정 > oeProxy - 포워드 프록시). 한 줄에 도메인 하나씩, `*.` 와일드카드 접두사는 해당 도메인과 그 하위 도메인에 매칭됩니다. 비어있지 않으면 화이트리스트에 있는 목적지만 릴레이되며 나머지는 모두 브랜드 적용된 oeProxy 오류 페이지로 렌더링된 403을 받습니다(기존 리버스 프록시의 404/502/503 페이지와 동일한 방식). 비어있으면(기본값) 이전의 무제한 동작을 유지합니다. 차단된 HTTPS 목적지의 경우, CONNECT 터널은 새로운 루프백 전용 내부 서버(포트 36981)로 리다이렉트되며, 이 서버는 요청된 호스트에 대한 CA 발급 인증서로 TLS 핸드셰이크를 완료하고 동일한 403 페이지를 제공합니다. 따라서 차단된 HTTPS 요청도 단순히 터널이 실패하는 대신 차단된 HTTP 요청과 동일하게 렌더링됩니다.
+- 관리자: 사용자 관리에 이제 선택한 계정에 대해 임의의 비밀번호를 생성하고 관리자가 전달할 수 있도록 한 번 표시하는 "비밀번호 재설정" 동작이 있습니다.
+- 계정: 계정 드롭다운에서 모든 사용자가 사용할 수 있는 셀프 서비스 "비밀번호 변경" 메뉴(현재/새/확인 비밀번호)를 추가했습니다.
 
-### Fixed
-- oeProxy forward proxy: the `${PROXY_SVR}` placeholder in oeHosts profile content is now resolved to the accepting connection's local address; previously it was left unresolved and silently fell back to normal DNS resolution.
+### 수정됨
+- oeProxy 포워드 프록시: oeHosts 프로필 내용의 `${PROXY_SVR}` 플레이스홀더가 이제 수락된 연결의 로컬 주소로 확인(resolve)됩니다. 이전에는 확인되지 않은 채로 남아 조용히 일반 DNS 확인으로 대체되었습니다.
 
-### Security
-- Updated `jackson-databind`/`jackson-datatype-jsr310`/`jackson-dataformat-yaml` 2.21.3 → 2.22.2, fixing a HIGH-severity `PolymorphicTypeValidator` bypass (CVE-2026-54512) allowing arbitrary class instantiation, plus several moderate `@JsonView`/`@JsonIgnore` mass-assignment bypasses.
-- Updated `bcprov-jdk18on`/`bcpkix-jdk18on`/`bcutil-jdk18on` 1.79 → 1.85, fixing a CRITICAL GOST 28147 CTR keystream-reuse bug (CVE-2025-14813) plus a moderate LDAP injection and a moderate risky-cipher issue.
-- Updated `assertj-core` (test-only) 3.27.3 → 3.27.7, fixing a HIGH-severity XXE in `isXmlEqualTo` (CVE-2026-24400).
+### 보안
+- HIGH 등급의 `PolymorphicTypeValidator` 우회 취약점(CVE-2026-54512, 임의 클래스 인스턴스화 허용)과 여러 중간(moderate) 등급의 `@JsonView`/`@JsonIgnore` 대량 할당(mass-assignment) 우회 문제를 수정하기 위해 `jackson-databind`/`jackson-datatype-jsr310`/`jackson-dataformat-yaml`을 2.21.3 → 2.22.2로 업데이트했습니다.
+- CRITICAL 등급의 GOST 28147 CTR 키스트림 재사용 버그(CVE-2025-14813)와 중간 등급의 LDAP 인젝션 및 위험한 암호(risky-cipher) 문제를 수정하기 위해 `bcprov-jdk18on`/`bcpkix-jdk18on`/`bcutil-jdk18on`을 1.79 → 1.85로 업데이트했습니다.
+- HIGH 등급의 `isXmlEqualTo` XXE 취약점(CVE-2026-24400)을 수정하기 위해 `assertj-core`(테스트 전용)를 3.27.3 → 3.27.7로 업데이트했습니다.
 
 ## [0.9.2] - 2026-08-05
 
-### Added
-- Windows: `oelink.exe` is now code-signed as part of the build process, avoiding the "unknown publisher" SmartScreen warning on launch.
+### 추가됨
+- Windows: 빌드 과정의 일부로 `oelink.exe`가 이제 코드 서명되어, 실행 시 나타나던 "알 수 없는 게시자" SmartScreen 경고를 피할 수 있습니다.
 
-### Fixed
-- oeProxy: fixed a virtual-thread starvation bug where `HttpStreamReader`/`HttpStreamWriter` inherited `synchronized` buffered I/O from `BufferedInputStream`/`BufferedOutputStream`; a virtual thread blocked on a read pinned its carrier thread instead of yielding it, so a handful of concurrent connections could stall unrelated requests (e.g. static assets stuck pending) for up to the read-timeout.
-- oeProxy: an upstream connection timeout or failure now returns a proper 502/504 error response instead of leaving the client's request pending indefinitely.
-- oelink (macOS): the "Chrome already running" relaunch dialog now follows the OS display language instead of always showing Korean.
+### 수정됨
+- oeProxy: `HttpStreamReader`/`HttpStreamWriter`가 `BufferedInputStream`/`BufferedOutputStream`으로부터 `synchronized` 버퍼드 I/O를 상속받아 발생하던 가상 스레드 기아(starvation) 버그를 수정했습니다. 읽기 작업에서 블로킹된 가상 스레드가 캐리어 스레드를 양보하는 대신 고정(pin)시켜서, 소수의 동시 연결만으로도 관련 없는 요청(예: 정적 자산이 대기 상태로 멈추는 등)이 읽기 타임아웃 시간만큼 지연될 수 있었습니다.
+- oeProxy: 업스트림 연결 타임아웃 또는 실패 시 이제 클라이언트의 요청을 무기한 대기 상태로 두는 대신 적절한 502/504 오류 응답을 반환합니다.
+- oelink (macOS): "Chrome이 이미 실행 중" 재실행 대화상자가 이제 항상 한국어로 표시되는 대신 OS 표시 언어를 따릅니다.
 
 ## [0.9.1] - 2026-07-15
 
-### Added
-- oeHosts: the merge preview panel (shown when 2+ profiles are selected) now has a Save button that creates a new profile from the merged hosts entries, keeping `${PROXY_SVR}` unresolved so the saved profile stays portable.
-- oeProxy: the Routes panel now has a Save button that creates a new virtual host from the merged routes, keeping `${LOCAL_SVR}` unresolved so the saved vhost stays portable.
-- `OidUtil.decode(oid)` reverses `OidUtil.encode(userNo)`, recovering the original `user_no` from an OID string (or `null` for a malformed one).
+### 추가됨
+- oeHosts: 병합 미리보기 패널(2개 이상의 프로필이 선택되었을 때 표시)에 병합된 hosts 항목으로부터 새 프로필을 만드는 저장 버튼이 추가되었습니다. 저장된 프로필이 이식 가능하도록 `${PROXY_SVR}`는 확인(resolve)되지 않은 채로 유지됩니다.
+- oeProxy: Routes 패널에 병합된 라우트로부터 새 가상 호스트를 만드는 저장 버튼이 추가되었습니다. 저장된 vhost가 이식 가능하도록 `${LOCAL_SVR}`는 확인되지 않은 채로 유지됩니다.
+- `OidUtil.decode(oid)`가 `OidUtil.encode(userNo)`를 역으로 수행하여, OID 문자열로부터 원래의 `user_no`를 복원합니다(형식이 잘못된 경우 `null`).
 
-### Fixed
-- The `X-OeHub-Oid` request header is now decoded and validated before use; a malformed or spoofed header is rejected immediately instead of silently failing the virtual host lookup.
-- oeProxy virtual host routing no longer breaks for the first request after a server restart: if a user's routes aren't yet in the in-memory cache, they're now lazily rebuilt from that user's persisted, currently-selected vhosts instead of requiring a re-login or re-save.
+### 수정됨
+- `X-OeHub-Oid` 요청 헤더가 이제 사용 전에 디코딩되고 검증됩니다. 형식이 잘못되었거나 위조된 헤더는 가상 호스트 조회를 조용히 실패시키는 대신 즉시 거부됩니다.
+- oeProxy 가상 호스트 라우팅이 서버 재시작 후 첫 요청에서 더 이상 깨지지 않습니다: 사용자의 라우트가 아직 인메모리 캐시에 없으면, 재로그인이나 재저장을 요구하는 대신 해당 사용자가 영구 저장한 현재 선택된 vhost들로부터 지연 재구성(lazily rebuilt)됩니다.
 
 ## [0.9.0] - 2026-07-11
 
-Initial public release. oeHub bundles two browser-facing dev tools behind a single login.
+최초 공개 릴리스. oeHub는 단일 로그인 뒤에 두 개의 브라우저 대상 개발 도구를 번들로 제공합니다.
 
 ### oeHosts
-- Manage and switch between multiple Chrome host-resolver profiles.
-- Merge multiple profiles and preview rules before launching.
-- Share profiles with your team via a link.
-- Launch Chrome directly with a profile's rules and custom flags (`--user-agent`, `--user-data-dir`, incognito, extra args) via the `oelink://` protocol handler (Windows & macOS).
-- Quick-fill URL/User-Agent from admin or personal presets.
+- 여러 Chrome host-resolver 프로필을 관리하고 전환합니다.
+- 여러 프로필을 병합하고 실행 전에 규칙을 미리 봅니다.
+- 링크를 통해 팀과 프로필을 공유합니다.
+- `oelink://` 프로토콜 핸들러(Windows 및 macOS)를 통해 프로필의 규칙과 사용자 지정 플래그(`--user-agent`, `--user-data-dir`, 시크릿 모드, 추가 인자)로 Chrome을 직접 실행합니다.
+- 관리자 또는 개인 프리셋에서 URL/User-Agent를 빠르게 채워 넣습니다.
 
 ### oeProxy
-- HTTPS reverse proxy for local virtual hosts, backed by an auto-generated (or imported) self-signed root CA.
-- Real-time HTTP request monitor.
-- oeOID Chrome extension tags proxied requests with an `X-OeHub-Oid` header for per-user request tracing.
+- 자동 생성(또는 가져온) 자체 서명 루트 CA를 기반으로 하는 로컬 가상 호스트용 HTTPS 리버스 프록시.
+- 실시간 HTTP 요청 모니터.
+- 프록시된 요청에 사용자별 요청 추적을 위한 `X-OeHub-Oid` 헤더를 붙이는 oeOID Chrome 확장 프로그램.
 
-### Accounts
-- Multi-user with admin/user roles, first-run setup wizard.
-- Per-user backup/restore of hosts profiles, hosts settings, and proxy vhosts (JSON).
+### 계정
+- 관리자/사용자 역할을 가진 다중 사용자, 최초 실행 설정 마법사.
+- hosts 프로필, hosts 설정, 프록시 vhost의 사용자별 백업/복원(JSON).
