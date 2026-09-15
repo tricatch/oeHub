@@ -33,31 +33,22 @@ public class AppHome {
         return isWorkspaceMode() ? "oeHub-h2-ws" : "oeHub-h2";
     }
 
-    // -Doe.db.file, when set, IS the H2 database file path (no .mv.db extension, same convention
-    // as H2's own file-name argument), used as-is instead of <home>/data/<dbFileName()>. Lets an
-    // operator point at a specific database file - e.g. a restored backup, or a location on a
-    // different volume - independent of -Doe.home, which relocates the rest of the app's data
-    // (config, CA) too. Without it, defaults to dbDataDir().resolve(dbFileName()).
-    public static Path dbFilePath() {
-        var override = System.getProperty("oe.db.file");
+    // -Doe.data.dir, when set, IS the directory holding the H2 database file, its generated
+    // password file, and scheduled backups - used as-is instead of <home>/data. This only
+    // relocates that containing folder (e.g. onto a different volume); the database *filename*
+    // itself still follows dbFileName() below - not user-overridable, so the standalone/workspace
+    // naming rule can't be bypassed. Independent of -Doe.home, which relocates the rest of the
+    // app's data (config, CA) too.
+    public static Path dbDataDir() {
+        var override = System.getProperty("oe.data.dir");
         if (override != null && !override.isBlank()) {
             return Path.of(override);
         }
-        return dbDataDir().resolve(dbFileName());
+        return oeHubDir().resolve("data");
     }
 
-    // The directory holding the H2 database file, its generated password file, and scheduled
-    // backups - everything that must travel together with the database itself. Normally
-    // <home>/data, but when -Doe.db.file points elsewhere, that file's own parent directory is
-    // used instead so these companions stay next to the database they belong to rather than being
-    // split across -Doe.home and -Doe.db.file.
-    public static Path dbDataDir() {
-        var override = System.getProperty("oe.db.file");
-        if (override != null && !override.isBlank()) {
-            var parent = Path.of(override).toAbsolutePath().getParent();
-            return parent != null ? parent : Path.of(".");
-        }
-        return oeHubDir().resolve("data");
+    public static Path dbFilePath() {
+        return dbDataDir().resolve(dbFileName());
     }
 
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
