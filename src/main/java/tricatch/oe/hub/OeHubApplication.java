@@ -336,6 +336,7 @@ public class OeHubApplication {
                 // IP identifier / forward-proxy whitelist / CA are all oeProxy-only concerns -
                 // meaningless (and their backing servers non-existent) under workspace mode.
                 config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
+                config.routes.post("/api/admin/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
                 config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
                 config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
                 config.routes.post("/oehub/settings/ca/import",   settings::importCa);

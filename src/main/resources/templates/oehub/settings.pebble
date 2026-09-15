@@ -226,6 +226,30 @@
       </table>
     </div>
 
+    {# ── oeProxy Upstream Certificate ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.trustcert.title'] }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.trustcert.label'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="trustInternalCert" {% if trustInternalCertEnabled %}checked{% endif %}>
+                <label class="form-check-label" for="trustInternalCert">{{ msg['settings.trustcert.enable'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.trustcert.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     {# ── Forward Proxy (LittleProxy) ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
@@ -383,6 +407,16 @@
     });
     if (res.ok) showToast(MSG['settings.saved']);
     else e.target.checked = !ipEnabled;
+  });
+
+  document.getElementById('trustInternalCert').addEventListener('change', async e => {
+    const enabled = e.target.checked;
+    const res = await fetch('/api/admin/settings/trust-internal-cert', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled})
+    });
+    if (res.ok) showToast(MSG['settings.saved']);
+    else e.target.checked = !enabled;
   });
 </script>
 {% endblock %}

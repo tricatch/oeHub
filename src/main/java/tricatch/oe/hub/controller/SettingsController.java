@@ -97,6 +97,15 @@ public class SettingsController {
         ctx.json(Map.of("ipEnabled", ipEnabled));
     }
 
+    // ── oeProxy upstream certificate trust ─────────────────────────────────────
+
+    public void apiSaveTrustInternalCert(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var enabled = Boolean.TRUE.equals(body.get("enabled"));
+        ReverseProxyServer.setTrustInternalCertEnabled(enabled, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("enabled", enabled));
+    }
+
     // ── forward proxy relay whitelist ─────────────────────────────────────────
 
     public void apiSaveFwdProxyWhitelist(Context ctx) throws IOException {
@@ -228,6 +237,7 @@ public class SettingsController {
         model.put("user", AuthController.currentUser(ctx));
         model.put("oidDomainDefault", getOidDomainDefault());
         model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
+        model.put("trustInternalCertEnabled", ReverseProxyServer.isTrustInternalCertEnabled());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("fwdproxyWhitelist", ForwardProxyServer.getWhitelist());
         model.put("backupIntervalHours", BackupService.getIntervalHours());

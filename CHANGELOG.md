@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.4.a] - 2026-09-16
+
+### Added
+- oeProxy: added a "Trust certificates for internal-network backends" setting (Settings > oeProxy - Upstream Certificate), on by default. When a virtual host's https backend resolves to a loopback, private, link-local or IPv6 ULA address, the reverse proxy skips upstream certificate validation for that connection — internal dev backends typically use ad-hoc self-signed certificates with no common CA to import, and a validation failure only ever reaches the browser as a generic gateway error with no indication that the certificate was the cause. Backends resolving to a public address are never affected: hostname-pinned validation still runs there exactly as before, so the setting cannot be used to bypass validation against a public host.
+
 ## [0.9.4] - 2026-09-05
 
 ### Added

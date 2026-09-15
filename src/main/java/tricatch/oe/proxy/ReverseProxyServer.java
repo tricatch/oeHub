@@ -57,6 +57,14 @@ public class ReverseProxyServer {
     private static final String KEY_IP_IDENTIFIER_ENABLED = "identifier.ip.enabled";
     private static volatile boolean ipIdentifierEnabled = true;
 
+    // When an https backend's certificate fails validation, the client has no way to tell that's
+    // the cause - PassRequestExecutor only ever surfaces a generic BadGatewayException. Internal
+    // dev backends commonly use ad-hoc self-signed certs with no common CA to import, so this is
+    // on by default; SocketUtils.isPrivateNetworkAddress still confines the bypass to
+    // private/loopback/link-local backends even while enabled.
+    private static final String KEY_TRUST_INTERNAL_CERT_ENABLED = "cert.trust.internal.enabled";
+    private static volatile boolean trustInternalCertEnabled = true;
+
     // Server-only secret behind X-OeHub-Oid — see OidUtil. Generated once and persisted the same
     // way JwtService persists its signing key, so it survives restarts but never leaves this server.
     private static final String KEY_OID_SECRET = "oid.secret";
@@ -65,6 +73,8 @@ public class ReverseProxyServer {
         sqlSessionFactory = factory;
         var stored = new ProxyConfService(factory).get(KEY_IP_IDENTIFIER_ENABLED, null);
         ipIdentifierEnabled = !"false".equals(stored);
+        var storedTrustInternal = new ProxyConfService(factory).get(KEY_TRUST_INTERNAL_CERT_ENABLED, null);
+        trustInternalCertEnabled = !"false".equals(storedTrustInternal);
         OidUtil.init(loadOrCreateOidSecret(factory));
     }
 
@@ -101,6 +111,15 @@ public class ReverseProxyServer {
     public static void setIpIdentifierEnabled(boolean enabled, Long actorUserNo) {
         ipIdentifierEnabled = enabled;
         new ProxyConfService(sqlSessionFactory).set(KEY_IP_IDENTIFIER_ENABLED, null, String.valueOf(enabled), actorUserNo);
+    }
+
+    public static boolean isTrustInternalCertEnabled() {
+        return trustInternalCertEnabled;
+    }
+
+    public static void setTrustInternalCertEnabled(boolean enabled, Long actorUserNo) {
+        trustInternalCertEnabled = enabled;
+        new ProxyConfService(sqlSessionFactory).set(KEY_TRUST_INTERNAL_CERT_ENABLED, null, String.valueOf(enabled), actorUserNo);
     }
 
     // Exposed so ForwardProxyServer can recognize a ${PROXY_SVR} self-loop connection (its own
