@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The SSL reverse proxy's HTTPS listener ({@code ReverseProxyServer}) binds a fixed,
  * non-configurable port 443 (unlike the app port, which {@link E2eServer} isolates per test via
- * {@code -Dport}) and routes by client IP (falling back from the X-OeHub-Oid header - see
+ * {@code -Doe.port}) and routes by client IP (falling back from the X-OeHub-Oid header - see
  * {@code ReverseProxyServer.resolveOid()}). So this test always binds 443 on the machine it runs
  * on, and every request here - setup, vhost API calls, and the raw TLS relay checks - must go
  * through 127.0.0.1 explicitly (not "localhost", which can resolve to ::1) so they're all seen
@@ -455,7 +455,7 @@ class ProxyRelayTest {
         // Mirrors the primary real-world use case in example/vhost_example_en.yaml: pointing a
         // friendly HTTPS domain straight at oeHub's own app port, so the reverse proxy's
         // auto-generated SSL cert fronts the web UI itself instead of a raw http://ip:port URL.
-        // Uses this test's own isolated app port (APP_PORT, via E2eServer's -Dport) rather than
+        // Uses this test's own isolated app port (APP_PORT, via E2eServer's -Doe.port) rather than
         // the literal default 36912 - that number is just APP_PORT's default value, nothing the
         // proxy treats specially.
         var yaml = "virtual:\n"

@@ -27,7 +27,7 @@ public class HtmlUtil {
         var builder = new PebbleEngine.Builder()
             .autoEscaping(true)
             .defaultEscapingStrategy("html");
-        if ("true".equals(System.getProperty("dev"))) {
+        if ("true".equals(System.getProperty("oe.dev"))) {
             var prefix = java.nio.file.Path.of("src/main/resources").toAbsolutePath() + "/";
             builder.loader(new io.pebbletemplates.pebble.loader.FileLoader(prefix)).cacheActive(false);
         }

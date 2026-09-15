@@ -127,7 +127,7 @@ public class BackupService {
     }
 
     static void performBackup() throws Exception {
-        var dataDir = AppHome.oeHubDir().resolve("data");
+        var dataDir = AppHome.dbDataDir();
         var backupDir = dataDir.resolve("backups");
         Files.createDirectories(backupDir);
 

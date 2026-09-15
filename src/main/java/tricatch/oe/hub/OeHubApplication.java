@@ -66,7 +66,7 @@ public class OeHubApplication {
     }
 
     private static int resolvePort() {
-        String prop = System.getProperty("port");
+        String prop = System.getProperty("oe.port");
         if (prop != null && !prop.isBlank()) {
             try { return Integer.parseInt(prop.trim()); }
             catch (NumberFormatException ignored) {}
@@ -75,7 +75,7 @@ public class OeHubApplication {
     }
 
     private static String resolveVersion() {
-        String sysProp = System.getProperty("app.version");
+        String sysProp = System.getProperty("oe.app.version");
         if (sysProp != null && !sysProp.isBlank()) return sysProp;
         String manifest = OeHubApplication.class.getPackage().getImplementationVersion();
         return manifest != null ? manifest : "unknown";
@@ -83,7 +83,7 @@ public class OeHubApplication {
 
     public static Javalin createApp(SqlSessionFactory sqlSessionFactory) {
 
-        boolean dev = "true".equals(System.getProperty("dev"));
+        boolean dev = "true".equals(System.getProperty("oe.dev"));
 
         var messagesMap = java.util.Map.of("en", new Messages("en"), "ko", new Messages("ko"));
 
@@ -552,8 +552,7 @@ public class OeHubApplication {
     }
 
     static String h2JdbcUrl() {
-        var dbPath = AppHome.oeHubDir().resolve("data").resolve(AppHome.dbFileName())
-                         .toAbsolutePath().toString().replace("\\", "/");
+        var dbPath = AppHome.dbFilePath().toAbsolutePath().toString().replace("\\", "/");
         return "jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE";
     }
 

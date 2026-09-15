@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Boots the real oeHub server as a separate OS process, the same way a user would run it
  * ({@code gradlew run}), so Playwright drives an actually-running instance instead of an
- * in-JVM fake. Each instance gets its own {@code -Dhome} data directory (under {@code build/})
+ * in-JVM fake. Each instance gets its own {@code -Doe.home} data directory (under {@code build/})
  * so it never touches the real {@code ~/oeHub} data.
  */
 public class E2eServer implements AutoCloseable {
@@ -44,7 +44,7 @@ public class E2eServer implements AutoCloseable {
         return "http://localhost:" + port;
     }
 
-    /** The isolated -Dhome data directory this instance runs with (root-ca/, data/, etc.). */
+    /** The isolated -Doe.home data directory this instance runs with (root-ca/, data/, etc.). */
     public Path homeDir() {
         return homeDir;
     }
@@ -61,9 +61,9 @@ public class E2eServer implements AutoCloseable {
 
         var command = new ArrayList<String>();
         command.add(javaBin);
-        command.add("-Ddev=true");
-        command.add("-Dport=" + port);
-        command.add("-Dhome=" + homeDir);
+        command.add("-Doe.dev=true");
+        command.add("-Doe.port=" + port);
+        command.add("-Doe.home=" + homeDir);
         command.add("-Djava.net.preferIPv4Stack=true");
         command.addAll(extraJvmArgs);
         command.add("-cp");

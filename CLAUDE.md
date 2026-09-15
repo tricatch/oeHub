@@ -40,6 +40,13 @@
 - The calling service is responsible for setting the timestamp via `LocalDateTime.now()` on the model or as an explicit `@Param` before invoking the mapper method.
 - This keeps the Java object and the database value in sync without requiring a post-insert re-fetch.
 
+## Launch Options — JVM System Properties
+
+- Every oeHub-specific launch option is a JVM system property named `-Doe.<name>` (e.g. `-Doe.port`, `-Doe.home`, `-Doe.mode`, `-Doe.db.file`, `-Doe.dev`, `-Doe.app.version`). Read it with `System.getProperty("oe.<name>")`.
+- The only exceptions are JVM/library-standard properties that are not oeHub's own, e.g. `-Djava.net.preferIPv4Stack`, `-Dlogback.configurationFile`.
+- When adding a new launch option, follow the same `-Doe.<name>` naming and document it in the options table in `README.md`.
+- This is distinct from Gradle project properties passed to `./gradlew run` via `-P<name>` (e.g. `-Pport`, read with `project.findProperty("port")` in `build.gradle.kts`), which configure the `run` task itself rather than the launched application; the task then forwards the value into the app as the corresponding `-Doe.<name>` JVM property.
+
 ## Page Layout — Width Toggle System
 
 - Full-page tool pages (settings, licenses, users, etc.) must wrap their content in a `.settings-app` container (`<div class="settings-app" id="...App">`).

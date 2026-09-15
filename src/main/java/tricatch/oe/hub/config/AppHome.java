@@ -7,11 +7,11 @@ import java.util.Set;
 
 public class AppHome {
 
-    // -Dhome, when set, IS the oeHub data directory (used as-is, no "oeHub" appended) —
-    // e.g. `sudo java -jar oeHub.jar -Dhome=/home/alice/oeHub` to keep using that exact
+    // -Doe.home, when set, IS the oeHub data directory (used as-is, no "oeHub" appended) —
+    // e.g. `sudo java -jar oeHub.jar -Doe.home=/home/alice/oeHub` to keep using that exact
     // path instead of /root/oeHub. Without it, defaults to <user.home>/oeHub.
     public static Path oeHubDir() {
-        var override = System.getProperty("home");
+        var override = System.getProperty("oe.home");
         if (override != null && !override.isBlank()) {
             return Path.of(override);
         }
@@ -31,6 +31,33 @@ public class AppHome {
     // are visually distinguishable on disk later.
     public static String dbFileName() {
         return isWorkspaceMode() ? "oeHub-h2-ws" : "oeHub-h2";
+    }
+
+    // -Doe.db.file, when set, IS the H2 database file path (no .mv.db extension, same convention
+    // as H2's own file-name argument), used as-is instead of <home>/data/<dbFileName()>. Lets an
+    // operator point at a specific database file - e.g. a restored backup, or a location on a
+    // different volume - independent of -Doe.home, which relocates the rest of the app's data
+    // (config, CA) too. Without it, defaults to dbDataDir().resolve(dbFileName()).
+    public static Path dbFilePath() {
+        var override = System.getProperty("oe.db.file");
+        if (override != null && !override.isBlank()) {
+            return Path.of(override);
+        }
+        return dbDataDir().resolve(dbFileName());
+    }
+
+    // The directory holding the H2 database file, its generated password file, and scheduled
+    // backups - everything that must travel together with the database itself. Normally
+    // <home>/data, but when -Doe.db.file points elsewhere, that file's own parent directory is
+    // used instead so these companions stay next to the database they belong to rather than being
+    // split across -Doe.home and -Doe.db.file.
+    public static Path dbDataDir() {
+        var override = System.getProperty("oe.db.file");
+        if (override != null && !override.isBlank()) {
+            var parent = Path.of(override).toAbsolutePath().getParent();
+            return parent != null ? parent : Path.of(".");
+        }
+        return oeHubDir().resolve("data");
     }
 
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");

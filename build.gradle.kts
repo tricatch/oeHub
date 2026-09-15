@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "tricatch.oe.hub"
-version = "0.9.4.a"
+version = "0.9.5"
 
 java {
     toolchain {
@@ -44,7 +44,7 @@ tasks.register<JavaExec>("run") {
     classpath = files("src/main/resources") + sourceSets.main.get().runtimeClasspath
     mainClass = "tricatch.oe.hub.OeHubApplication"
     val port = project.findProperty("port")?.toString() ?: "36912"
-    jvmArgs("-Ddev=true", "-Dapp.version=${project.version}", "-Dport=${port}", "-Djava.net.preferIPv4Stack=true")
+    jvmArgs("-Doe.dev=true", "-Doe.app.version=${project.version}", "-Doe.port=${port}", "-Djava.net.preferIPv4Stack=true")
 }
 
 repositories {

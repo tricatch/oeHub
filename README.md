@@ -82,18 +82,21 @@ java -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 
 모든 옵션은 `-D<이름>=<값>` 형태의 JVM 시스템 프로퍼티이며, `java -D... -jar oeHub-<version>.jar`처럼 조합해서 사용합니다.
 
+oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습니다(`-Doe.mode`, `-Doe.home` 등). `-Djava.net.preferIPv4Stack`, `-Dlogback.configurationFile`처럼 JVM/라이브러리 표준 프로퍼티만 예외입니다.
+
 | 옵션 | 기본값 | 설명 |
 |---|---|---|
-| `-Dport` | `36912` | 애플리케이션 포트. H2 웹 콘솔은 자동으로 `port + 1`에서 시작됩니다. |
-| `-Dhome` | `~/oeHub` (`~`는 OS 사용자 홈) | 애플리케이션 데이터(H2 데이터베이스 등) 디렉터리. oeHub 디렉터리 자체를 가리키며, 그 상위 디렉터리가 아닙니다(`/oeHub`가 추가로 붙지 않습니다). |
+| `-Doe.port` | `36912` | 애플리케이션 포트. H2 웹 콘솔은 자동으로 `port + 1`에서 시작됩니다. |
+| `-Doe.home` | `~/oeHub` (`~`는 OS 사용자 홈) | 애플리케이션 데이터(H2 데이터베이스, CA 인증서 등) 디렉터리. oeHub 디렉터리 자체를 가리키며, 그 상위 디렉터리가 아닙니다(`/oeHub`가 추가로 붙지 않습니다). |
+| `-Doe.db.file` | `<oe.home>/data/oeHub-h2` (`workspace` 모드는 `oeHub-h2-ws`) | H2 데이터베이스 파일 경로(`.mv.db` 확장자 제외, H2 자체 파일명 인자와 동일한 규칙). 지정하면 이 경로를 그대로 사용하며, 생성되는 비밀번호 파일(`.h2-password`)과 예약 백업(`backups/`)도 `-Doe.home`이 아니라 이 파일이 있는 디렉터리에 함께 저장됩니다. 복원한 백업 파일을 가리키거나, DB만 별도 볼륨에 두고 싶을 때 사용하세요. |
 | `-Doe.mode` | `standalone` | 배포 모드 — `standalone` 또는 `workspace`. 아래 [배포 모드](#배포-모드) 참고. |
 | `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선 사용. 위 실행 예시처럼 항상 켜서 실행하기를 권장합니다. |
 | `-Dlogback.configurationFile` | jar에 번들된 `logback.xml` | 재빌드 없이 로깅 설정을 재정의합니다. 자세한 내용은 아래 [로깅](#로깅) 참고. |
 
 > [!IMPORTANT]
-> Linux에서 oeProxy가 `443` 포트에 바인딩하려면 JVM을 `root`로 실행해야 하는데, 이 경우 `~`가 일반 사용자의 홈이 아니라 `/root`로 해석됩니다. 애플리케이션 데이터를 원하는 디렉터리에 고정하려면 `-Dhome=/path/to/oeHub`를 전달하세요. 예:
+> Linux에서 oeProxy가 `443` 포트에 바인딩하려면 JVM을 `root`로 실행해야 하는데, 이 경우 `~`가 일반 사용자의 홈이 아니라 `/root`로 해석됩니다. 애플리케이션 데이터를 원하는 디렉터리에 고정하려면 `-Doe.home=/path/to/oeHub`를 전달하세요. 예:
 > ```bash
-> sudo java -Dhome=/home/youruser/oeHub -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
+> sudo java -Doe.home=/home/youruser/oeHub -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 > ```
 
 ### 배포 모드

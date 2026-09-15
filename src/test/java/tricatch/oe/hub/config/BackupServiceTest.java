@@ -19,7 +19,7 @@ import tricatch.oe.hub.model.HubConf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Exercises BackupService against a real, isolated {@code -Dhome} directory so
+ * Exercises BackupService against a real, isolated {@code -Doe.home} directory so
  * DatabaseConfig.buildSqlSessionFactory() runs its normal schema init and creates a real
  * .h2-password file, the same way a live install would.
  */
@@ -29,21 +29,21 @@ class BackupServiceTest {
 
     @BeforeEach
     void saveHomeProperty() {
-        originalHome = System.getProperty("home");
+        originalHome = System.getProperty("oe.home");
     }
 
     @AfterEach
     void restoreHomeProperty() {
         if (originalHome != null) {
-            System.setProperty("home", originalHome);
+            System.setProperty("oe.home", originalHome);
         } else {
-            System.clearProperty("home");
+            System.clearProperty("oe.home");
         }
     }
 
     @Test
     void performBackup_writesZipAndPasswordCopy_andRecordsLastBackupTimestamp(@TempDir Path homeDir) throws Exception {
-        System.setProperty("home", homeDir.toString());
+        System.setProperty("oe.home", homeDir.toString());
         var factory = DatabaseConfig.buildSqlSessionFactory();
         BackupService.init(factory);
 
@@ -83,7 +83,7 @@ class BackupServiceTest {
 
     @Test
     void getIntervalHours_outOfRangeStoredValue_fallsBackToDefault(@TempDir Path homeDir) {
-        System.setProperty("home", homeDir.toString());
+        System.setProperty("oe.home", homeDir.toString());
         var factory = DatabaseConfig.buildSqlSessionFactory();
         BackupService.init(factory);
 
@@ -96,7 +96,7 @@ class BackupServiceTest {
 
     @Test
     void getIntervalHours_validStoredValue_isHonored(@TempDir Path homeDir) {
-        System.setProperty("home", homeDir.toString());
+        System.setProperty("oe.home", homeDir.toString());
         var factory = DatabaseConfig.buildSqlSessionFactory();
         BackupService.init(factory);
 
@@ -106,7 +106,7 @@ class BackupServiceTest {
 
     @Test
     void reschedule_clampsOutOfRangeValues_withoutThrowing(@TempDir Path homeDir) {
-        System.setProperty("home", homeDir.toString());
+        System.setProperty("oe.home", homeDir.toString());
         var factory = DatabaseConfig.buildSqlSessionFactory();
         BackupService.init(factory);
 
