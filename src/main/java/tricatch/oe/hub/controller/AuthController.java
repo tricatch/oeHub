@@ -146,7 +146,6 @@ public class AuthController {
             if (jwt != null) {
                 ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
             }
-            resolveUserFromApiToken(ctx);
             return;
         }
 
@@ -159,7 +158,6 @@ public class AuthController {
                 // token_version mismatch: this token was issued before a password change/reset
                 // and must no longer be honored, even though its signature/expiry are still valid.
                 ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
-                resolveUserFromApiToken(ctx);
             }
         }
     }
@@ -169,6 +167,13 @@ public class AuthController {
     // tried once no valid cookie session was found above, so a browser session always wins if a
     // request somehow carries both. A token authenticates as its owning user_no with that
     // account's full permissions - same as a browser session, no separate scope model.
+    //
+    // Disabled for now (2026-09-16, unclear real-world use case yet) - resolveUser above no
+    // longer calls this, so a Bearer header never authenticates anything even if a token row
+    // still exists in HUB_API_TOKEN. Left in place, along with UserController's create/list/
+    // delete endpoints (unrouted - see OeHubApplication), so re-enabling later is just restoring
+    // the two call sites and three routes.
+    @SuppressWarnings("unused")
     private void resolveUserFromApiToken(Context ctx) {
         var header = ctx.header("Authorization");
         if (header == null || !header.startsWith("Bearer ")) return;

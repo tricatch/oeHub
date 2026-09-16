@@ -6,6 +6,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
@@ -28,7 +29,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * create/reveal/list/revoke flow is plain DOM+fetch with no client-side crypto involved, unlike
  * account setup), then proves the issued token authenticates a completely cookie-less HTTP request
  * (AuthController.resolveUserFromApiToken) and that revoking it takes effect immediately.
+ *
+ * Disabled (2026-09-16): the feature itself is disabled (unrouted in OeHubApplication, UI removed
+ * from my-info.pebble) pending a clearer real-world use case. Re-enable this test alongside the
+ * feature.
  */
+@Disabled("API token feature is disabled - see class javadoc")
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

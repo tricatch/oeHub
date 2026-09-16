@@ -145,15 +145,6 @@ public class OeHubApplication {
             config.routes.before(ctx -> {
                 var method = ctx.req().getMethod();
                 if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method)) {
-                    // A personal API token (Authorization: Bearer ..., see AuthController.
-                    // resolveUserFromApiToken) is never attached to a request by the browser
-                    // automatically the way a cookie is - the caller had to set the header
-                    // deliberately - so the ambient-credential threat CSRF defends against does
-                    // not apply here, regardless of whether the token turns out to be valid.
-                    var authHeader = ctx.header("Authorization");
-                    if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                        return;
-                    }
                     String cookieToken = ctx.cookie(CSRF_COOKIE_NAME);
                     String suppliedToken = ctx.header("X-CSRF-Token");
                     if (suppliedToken == null) suppliedToken = ctx.formParam("_csrf");
@@ -458,9 +449,13 @@ public class OeHubApplication {
             config.routes.post("/api/user/change-password", userCtrl::apiChangePassword);
             config.routes.get("/api/user/crypto-keys", userCtrl::apiMyCryptoKeys);
             config.routes.post("/api/user/recovery-key", userCtrl::apiReissueRecoveryKey);
-            config.routes.get("/api/user/api-tokens",                userCtrl::apiListApiTokens);
-            config.routes.post("/api/user/api-tokens",               userCtrl::apiCreateApiToken);
-            config.routes.delete("/api/user/api-tokens/{tokenId}",   userCtrl::apiDeleteApiToken);
+            // Personal API tokens: disabled for now (2026-09-16) - unclear real-world use case
+            // yet. UserController.apiListApiTokens/apiCreateApiToken/apiDeleteApiToken and
+            // AuthController.resolveUserFromApiToken are left in place, just unrouted/uncalled,
+            // so this is cheap to turn back on later.
+            // config.routes.get("/api/user/api-tokens",                userCtrl::apiListApiTokens);
+            // config.routes.post("/api/user/api-tokens",               userCtrl::apiCreateApiToken);
+            // config.routes.delete("/api/user/api-tokens/{tokenId}",   userCtrl::apiDeleteApiToken);
 
             // Admin: user management
             config.routes.get("/oehub/admin/users",               adminUser::showUsers);
