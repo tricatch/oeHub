@@ -7,6 +7,7 @@ import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.ApiTokenUtil;
+import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
@@ -291,6 +292,8 @@ public class UserController {
 
         try (var session = sqlSessionFactory.openSession(true)) {
             session.getMapper(HubApiTokenMapper.class).insert(row);
+            AuditLogger.record(session, hubUser.getWsNo(), "api_token.create", "api_token", row.getTokenId(),
+                AuditLogger.detail("tokenName", row.getTokenName()), hubUser.getUserNo());
         }
 
         var result = new LinkedHashMap<String, Object>();
@@ -307,6 +310,8 @@ public class UserController {
         try (var session = sqlSessionFactory.openSession(true)) {
             int deleted = session.getMapper(HubApiTokenMapper.class).deleteByIdAndUserNo(tokenId, hubUser.getUserNo());
             if (deleted == 0) { ctx.status(404); return; }
+            AuditLogger.record(session, hubUser.getWsNo(), "api_token.revoke", "api_token", tokenId,
+                null, hubUser.getUserNo());
         }
         ctx.status(204);
     }

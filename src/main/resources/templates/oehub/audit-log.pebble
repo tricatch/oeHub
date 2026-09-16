@@ -1,0 +1,113 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['audit.log.title'] }} — oeHub{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="auditLogApp">
+<script>
+  (function() {
+    if (localStorage.getItem('oeWidthExpanded') === 'true') {
+      document.getElementById('auditLogApp').classList.add('expanded');
+      document.body.classList.add('oe-expanded');
+    }
+  })();
+</script>
+
+  <div class="info-page-main">
+    <h5>{{ msg['audit.log.title'] }}</h5>
+
+    <div class="oe-info-section">
+      <table class="oe-info-table mb-0">
+        <colgroup>
+          <col style="width:140px;">
+          <col style="width:120px;">
+          <col style="width:180px;">
+          <col style="width:160px;">
+          <col>
+        </colgroup>
+        <thead>
+          <tr>
+            <th>{{ msg['audit.log.col.time'] }}</th>
+            <th>{{ msg['audit.log.col.actor'] }}</th>
+            <th>{{ msg['audit.log.col.action'] }}</th>
+            <th>{{ msg['audit.log.col.target'] }}</th>
+            <th>{{ msg['audit.log.col.detail'] }}</th>
+          </tr>
+        </thead>
+        <tbody id="auditLogTbody">
+          <tr><td colspan="5" class="text-muted text-center py-3">{{ msg['audit.log.empty'] }}</td></tr>
+        </tbody>
+      </table>
+      <div class="d-flex align-items-center justify-content-end gap-2 mt-2">
+        <button type="button" class="btn btn-sm btn-oe-secondary" id="btnAuditLogPrev">{{ msg['btn.prev'] }}</button>
+        <span class="small text-muted" id="auditLogPageLabel"></span>
+        <button type="button" class="btn btn-sm btn-oe-secondary" id="btnAuditLogNext">{{ msg['btn.next'] }}</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>initWidthToggle(document.getElementById('auditLogApp'), document.getElementById('btnToggleWidth'));</script>
+<script>
+  var auditLogPage = 0;
+
+  function loadAuditLog() {
+    fetch('/api/admin/audit-log?page=' + auditLogPage)
+      .then(function (r) { return r.json(); })
+      .then(renderAuditLog)
+      .catch(function () {});
+  }
+
+  function renderAuditLogDetail(raw) {
+    if (!raw) return '';
+    try {
+      var parsed = JSON.parse(raw);
+      return Object.keys(parsed).map(function (k) {
+        return escHtml(k) + '=' + escHtml(String(parsed[k]));
+      }).join(', ');
+    } catch (e) {
+      return escHtml(raw);
+    }
+  }
+
+  function renderAuditLog(data) {
+    var tbody = document.getElementById('auditLogTbody');
+    var rows = data.rows || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">' + escHtml(MSG['audit.log.empty']) + '</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(function (r) {
+        var actionLabel = MSG['audit.action.' + r.action] || r.action;
+        var target = r.targetType ? (escHtml(r.targetType) + (r.targetId ? ' #' + escHtml(r.targetId) : '')) : '';
+        return '<tr>' +
+          '<td class="small text-muted">' + escHtml(r.createAt) + '</td>' +
+          '<td class="small">' + escHtml(r.actor) + '</td>' +
+          '<td class="small">' + escHtml(actionLabel) + '</td>' +
+          '<td class="small text-muted">' + target + '</td>' +
+          '<td class="small text-muted setup-mono">' + renderAuditLogDetail(r.detail) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    var totalPages = Math.max(1, Math.ceil(data.total / data.pageSize));
+    document.getElementById('auditLogPageLabel').textContent =
+      MSG['audit.log.page.label'] + ' ' + (data.page + 1) + ' / ' + totalPages;
+    document.getElementById('btnAuditLogPrev').disabled = data.page <= 0;
+    document.getElementById('btnAuditLogNext').disabled = (data.page + 1) >= totalPages;
+  }
+
+  document.getElementById('btnAuditLogPrev').addEventListener('click', function () {
+    if (auditLogPage > 0) { auditLogPage--; loadAuditLog(); }
+  });
+  document.getElementById('btnAuditLogNext').addEventListener('click', function () {
+    auditLogPage++; loadAuditLog();
+  });
+
+  loadAuditLog();
+</script>
+{% endblock %}

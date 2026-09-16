@@ -6,6 +6,7 @@ import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.mapper.HostsUaMapper;
 import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.hosts.service.HostsProfService;
+import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.TeamMapper;
@@ -143,6 +144,9 @@ public class AdminUserController {
             wsKey.setUpdatedAt(now);
             session.getMapper(tricatch.oe.hub.mapper.WsKeyMapper.class).insert(wsKey);
 
+            AuditLogger.record(session, target.getWsNo(), "user.approve", "user", String.valueOf(target.getUserNo()),
+                AuditLogger.detail("userId", target.getUserId()), currentUser.getUserNo());
+
             session.commit();
             ctx.status(200).result("OK");
         }
@@ -163,6 +167,8 @@ public class AdminUserController {
                 ctx.status(404).result("User not found");
                 return;
             }
+            AuditLogger.record(session, target.getWsNo(), "user.reject", "user", String.valueOf(target.getUserNo()),
+                AuditLogger.detail("userId", target.getUserId()), currentUser.getUserNo());
             mapper.deleteByUserNo(userNo);
             session.commit();
             ctx.status(200).result("OK");
@@ -232,6 +238,8 @@ public class AdminUserController {
                     }
                 }
             }
+            AuditLogger.record(session, currentUser.getWsNo(), "workspace.key_rotate", "workspace",
+                String.valueOf(currentUser.getWsNo()), null, currentUser.getUserNo());
             session.commit();
         }
         ctx.status(200).result("OK");
@@ -246,6 +254,8 @@ public class AdminUserController {
             ctx.status(400).result("Cannot delete your own account");
             return;
         }
+        String targetUserId;
+        Long targetWsNo;
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HubUserMapper.class);
             var target = mapper.findByUserNo(userNo);
@@ -262,6 +272,8 @@ public class AdminUserController {
                 ctx.status(400).json(Map.of("error", "last_ws_admin"));
                 return;
             }
+            targetUserId = target.getUserId();
+            targetWsNo = target.getWsNo();
         }
         hostsProfService.deleteAll(userNo);
         proxyVhostService.deleteAll(userNo);
@@ -276,6 +288,8 @@ public class AdminUserController {
             // fail the constraint outright rather than leaving an orphaned row.
             session.getMapper(tricatch.oe.hub.mapper.WsKeyMapper.class).deleteByUserNo(userNo);
             session.getMapper(HubUserMapper.class).deleteByUserNo(userNo);
+            AuditLogger.record(session, targetWsNo, "user.delete", "user", String.valueOf(userNo),
+                AuditLogger.detail("userId", targetUserId), currentUser.getUserNo());
             session.commit();
         }
         ctx.status(200).result("OK");
@@ -323,10 +337,13 @@ public class AdminUserController {
                 ctx.status(400).result("Cannot remove your own admin role");
                 return;
             }
+            var oldRole = target.getRole();
             target.setRole(newRole);
             target.setUpdatedBy(currentUser.getUserNo());
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updateRole(target);
+            AuditLogger.record(session, target.getWsNo(), "user.role_change", "user", String.valueOf(userNo),
+                AuditLogger.detail("userId", target.getUserId(), "from", oldRole, "to", newRole), currentUser.getUserNo());
             session.commit();
             ctx.status(200).result("OK");
         }
@@ -349,6 +366,10 @@ public class AdminUserController {
             target.setUpdatedBy(currentUser != null ? currentUser.getUserNo() : null);
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updatePassword(target);
+            // Never put the generated password itself in detail - the log entry is that a reset
+            // happened, not what the new credential is.
+            AuditLogger.record(session, target.getWsNo(), "user.password_reset", "user", String.valueOf(userNo),
+                AuditLogger.detail("userId", target.getUserId()), currentUser.getUserNo());
             session.commit();
             ctx.json(Map.of("password", newPassword));
         }

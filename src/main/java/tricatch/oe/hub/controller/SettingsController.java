@@ -9,6 +9,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
+import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.BackupService;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
@@ -163,6 +164,7 @@ public class SettingsController {
             writeCaFiles(caName);
             logger.info("CA certificate generated: {}", caName);
             startProxyServer();
+            logAuditEvent(ctx, "settings.ca.generate", AuditLogger.detail("caName", caName));
             renderSettings(ctx, "", "settings.ca.success.generated", "generate");
         } catch (Exception e) {
             logger.error("Failed to generate CA certificate", e);
@@ -191,6 +193,7 @@ public class SettingsController {
             AppHome.restrictToOwner(caKeyPath());
             logger.info("CA certificate imported.");
             startProxyServer();
+            logAuditEvent(ctx, "settings.ca.import", null);
             renderSettings(ctx, "", "settings.ca.success.imported", "generate");
         } catch (Exception e) {
             logger.error("Failed to import CA certificate", e);
@@ -212,6 +215,16 @@ public class SettingsController {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
+
+    // CA generate/import are filesystem operations, not DB transactions, so there's no existing
+    // session to piggyback the audit row on (unlike AdminUserController's Tier-1 actions) - this
+    // just records success right after it happens, in its own short session.
+    private void logAuditEvent(Context ctx, String action, String detail) {
+        var currentUser = AuthController.currentUser(ctx);
+        try (var session = sqlSessionFactory.openSession(true)) {
+            AuditLogger.record(session, currentUser.getWsNo(), action, "settings", null, detail, currentUser.getUserNo());
+        }
+    }
 
     private void startProxyServer() {
         try {

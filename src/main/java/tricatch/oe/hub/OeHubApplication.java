@@ -20,6 +20,7 @@ import tricatch.oe.hub.controller.AdminHostsUaController;
 import tricatch.oe.hub.controller.AdminHostsUrlController;
 import tricatch.oe.hub.controller.OidExtensionController;
 import tricatch.oe.hub.controller.AdminUserController;
+import tricatch.oe.hub.controller.AuditLogController;
 import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
@@ -104,6 +105,7 @@ public class OeHubApplication {
         var proxy       = workspaceMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
         var adminUser   = new AdminUserController(sqlSessionFactory);
+        var auditLogCtrl = new AuditLogController(sqlSessionFactory);
         var adminUa     = new AdminHostsUaController(sqlSessionFactory, objectMapper);
         var adminUrl    = new AdminHostsUrlController(sqlSessionFactory, objectMapper);
         var oidExtension = new OidExtensionController(settings);
@@ -473,6 +475,12 @@ public class OeHubApplication {
             config.routes.get("/api/admin/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
             config.routes.post("/api/admin/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
             config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
+
+            // Admin: Tier-1 audit log - reachable by whoever "/oehub/admin/*" already lets in
+            // (ws_adm, or standalone's 'adm' - see AuthController.isWorkspaceAdmin), no separate
+            // gating needed since AuditLogController itself always scopes to the caller's own ws_no.
+            config.routes.get("/oehub/admin/audit-log",           auditLogCtrl::showAuditLog);
+            config.routes.get("/api/admin/audit-log",             auditLogCtrl::apiListAuditLog);
 
             // Admin: instance-wide workspace console (cloudGroupService design doc §2.5/§3 item 2)
             // - workspace mode only, meaningless in standalone which has exactly one workspace

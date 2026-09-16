@@ -2,6 +2,7 @@ package tricatch.oe.hub.controller;
 
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
+import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.WorkspaceMapper;
 
@@ -83,6 +84,12 @@ public class WorkspaceController {
             if ("suspended".equals(status)) {
                 session.getMapper(HubUserMapper.class).bumpTokenVersionByWsNo(wsNo);
             }
+            // Logged under the TARGET workspace's ws_no, not the instance admin's own - so that
+            // workspace's own ws_adm can see "who suspended us and when" in their own audit view,
+            // even though the instance admin has no audit view of their own into this table
+            // (isolation principle, design doc §2.5).
+            AuditLogger.record(session, wsNo, "workspace.status_change", "workspace", String.valueOf(wsNo),
+                AuditLogger.detail("status", status), currentUser.getUserNo());
             session.commit();
         }
         ctx.status(200).result("OK");
