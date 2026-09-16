@@ -270,6 +270,7 @@ public class AdminUserController {
             session.getMapper(ProxyConfMapper.class).deleteAllByUserNo(userNo);
             session.getMapper(HostsUaMapper.class).deleteAllByUserNo(userNo);
             session.getMapper(HostsUrlMapper.class).deleteAllByUserNo(userNo);
+            session.getMapper(tricatch.oe.hub.mapper.HubApiTokenMapper.class).deleteAllByUserNo(userNo);
             // Must run before HUB_USR's own delete just below - HUB_WS_KEY has a real (not soft)
             // FK on user_no (e2eEncryption design doc §3/§9), so deleting the user first would
             // fail the constraint outright rather than leaving an orphaned row.

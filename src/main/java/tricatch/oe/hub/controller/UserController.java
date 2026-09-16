@@ -6,15 +6,20 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
+import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.WsKeyMapper;
+import tricatch.oe.hub.model.HubApiToken;
 import tricatch.oe.proxy.model.ProxyVhost;
 import tricatch.oe.proxy.service.ProxyVhostService;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class UserController {
 
@@ -223,6 +228,85 @@ public class UserController {
             target.setUpdatedAt(LocalDateTime.now());
             mapper.updateWrappedPrivateKeyRecovery(target);
             session.commit();
+        }
+        ctx.status(204);
+    }
+
+    // Personal API tokens (HUB_API_TOKEN) - see AuthController.resolveUserFromApiToken for the
+    // matching auth-side lookup. A token authenticates as its owner with that account's full
+    // permissions, so this list/create/delete surface is intentionally self-service only - there
+    // is no admin view or revoke-other-users'-tokens endpoint.
+    private static final java.time.format.DateTimeFormatter API_TOKEN_FMT =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+    public void apiListApiTokens(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        try (var session = sqlSessionFactory.openSession()) {
+            var tokens = session.getMapper(HubApiTokenMapper.class).findByUserNo(hubUser.getUserNo());
+            var result = tokens.stream().map(t -> {
+                var m = new LinkedHashMap<String, Object>();
+                m.put("tokenId", t.getTokenId());
+                m.put("tokenName", t.getTokenName());
+                m.put("createAt", t.getCreateAt() != null ? t.getCreateAt().format(API_TOKEN_FMT) : "");
+                m.put("lastUsedAt", t.getLastUsedAt() != null ? t.getLastUsedAt().format(API_TOKEN_FMT) : null);
+                m.put("expiresAt", t.getExpiresAt() != null ? t.getExpiresAt().format(API_TOKEN_FMT) : null);
+                return m;
+            }).toList();
+            ctx.json(result);
+        }
+    }
+
+    // The generated token is returned exactly once here - only its hash is persisted (see
+    // ApiTokenUtil), so this response is the caller's only chance to see/copy it.
+    @SuppressWarnings("unchecked")
+    public void apiCreateApiToken(Context ctx) throws Exception {
+        var hubUser = AuthController.currentUser(ctx);
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var tokenName = (String) body.get("tokenName");
+        if (tokenName == null || tokenName.isBlank()) {
+            ctx.status(400).json(Map.of("error", "token_name_required"));
+            return;
+        }
+        // Absent/null means "never expires" (the agreed default) - only reject a present-but-
+        // non-positive value.
+        Integer expiresInDays = body.get("expiresInDays") != null
+            ? ((Number) body.get("expiresInDays")).intValue() : null;
+        if (expiresInDays != null && expiresInDays <= 0) {
+            ctx.status(400).json(Map.of("error", "invalid_expiry"));
+            return;
+        }
+
+        var generated = ApiTokenUtil.generate();
+        var now = LocalDateTime.now();
+        var row = new HubApiToken();
+        row.setTokenId(UUID.randomUUID().toString().replace("-", ""));
+        row.setUserNo(hubUser.getUserNo());
+        row.setTokenName(tokenName.trim());
+        row.setTokenHash(generated.tokenHash());
+        row.setCreatedBy(hubUser.getUserNo());
+        row.setUpdatedBy(hubUser.getUserNo());
+        row.setCreateAt(now);
+        row.setUpdatedAt(now);
+        row.setExpiresAt(expiresInDays != null ? now.plusDays(expiresInDays) : null);
+
+        try (var session = sqlSessionFactory.openSession(true)) {
+            session.getMapper(HubApiTokenMapper.class).insert(row);
+        }
+
+        var result = new LinkedHashMap<String, Object>();
+        result.put("tokenId", row.getTokenId());
+        result.put("tokenName", row.getTokenName());
+        result.put("token", generated.token());
+        result.put("expiresAt", row.getExpiresAt() != null ? row.getExpiresAt().format(API_TOKEN_FMT) : null);
+        ctx.json(result);
+    }
+
+    public void apiDeleteApiToken(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        var tokenId = ctx.pathParam("tokenId");
+        try (var session = sqlSessionFactory.openSession(true)) {
+            int deleted = session.getMapper(HubApiTokenMapper.class).deleteByIdAndUserNo(tokenId, hubUser.getUserNo());
+            if (deleted == 0) { ctx.status(404); return; }
         }
         ctx.status(204);
     }

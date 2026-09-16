@@ -4,9 +4,11 @@ import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.WorkspaceMapper;
 import tricatch.oe.hub.mapper.WsInviteMapper;
@@ -144,6 +146,7 @@ public class AuthController {
             if (jwt != null) {
                 ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
             }
+            resolveUserFromApiToken(ctx);
             return;
         }
 
@@ -156,7 +159,33 @@ public class AuthController {
                 // token_version mismatch: this token was issued before a password change/reset
                 // and must no longer be honored, even though its signature/expiry are still valid.
                 ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, "", 0L));
+                resolveUserFromApiToken(ctx);
             }
+        }
+    }
+
+    // Personal API tokens (HUB_API_TOKEN, created via UserController.apiCreateApiToken): a
+    // fallback for callers with no browser session cookie, e.g. cron jobs or CLI scripts. Only
+    // tried once no valid cookie session was found above, so a browser session always wins if a
+    // request somehow carries both. A token authenticates as its owning user_no with that
+    // account's full permissions - same as a browser session, no separate scope model.
+    private void resolveUserFromApiToken(Context ctx) {
+        var header = ctx.header("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) return;
+        var token = header.substring("Bearer ".length()).trim();
+        if (token.isEmpty()) return;
+
+        var tokenHash = ApiTokenUtil.hash(token);
+        var now = LocalDateTime.now();
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var tokenMapper = session.getMapper(HubApiTokenMapper.class);
+            var tokenRow = tokenMapper.findValidByHash(tokenHash, now);
+            if (tokenRow == null) return;
+            var user = session.getMapper(HubUserMapper.class).findByUserNo(tokenRow.getUserNo());
+            if (user == null) return;
+            user.setPassword(null);
+            ctx.attribute(ATTR_USER, user);
+            tokenMapper.touchLastUsed(tokenRow.getTokenId(), now);
         }
     }
 

@@ -7,6 +7,7 @@ import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
+import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.TeamMapper;
@@ -60,6 +61,7 @@ public class DatabaseConfig {
         config.addMapper(WsInviteMapper.class);
         config.addMapper(WsKeyMapper.class);
         config.addMapper(HubConfMapper.class);
+        config.addMapper(HubApiTokenMapper.class);
         config.addMapper(HostsProfMapper.class);
         config.addMapper(HostsConfMapper.class);
         config.addMapper(HostsUaMapper.class);
@@ -197,6 +199,26 @@ public class DatabaseConfig {
                     updated_at TIMESTAMP    NOT NULL
                 )
                 """);
+            // Personal API tokens (a token authenticates as its owning user_no, same permissions
+            // as a browser session - see AuthController.resolveUserFromApiToken). No FK on user_no,
+            // same soft-reference convention as HOSTS_PFILE.user_no - AdminUserController.
+            // apiDeleteUser deletes this workspace member's tokens explicitly instead.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_API_TOKEN (
+                    token_id     VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no      BIGINT       NOT NULL,
+                    token_name   VARCHAR(128) NOT NULL,
+                    token_hash   VARCHAR(128) NOT NULL UNIQUE,
+                    created_by   BIGINT       NOT NULL,
+                    updated_by   BIGINT       NULL,
+                    create_at    TIMESTAMP    NOT NULL,
+                    updated_at   TIMESTAMP    NOT NULL,
+                    last_used_at TIMESTAMP    NULL,
+                    expires_at   TIMESTAMP    NULL
+                )
+                """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hub_api_token_user ON HUB_API_TOKEN(user_no)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_PFILE (
                     hosts_id          VARCHAR(32)    NOT NULL PRIMARY KEY,
