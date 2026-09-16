@@ -1,5 +1,8 @@
 .auth-col { max-width: 860px; }
 .auth-col-narrow { max-width: 430px; }
+.auth-col .form-control::placeholder { color: #adb5bd; }
+.auth-col .form-label { font-size: 0.82rem; font-weight: 600; color: #444; margin-bottom: 0.3rem; }
+.auth-col .form-text { font-size: 0.78rem; }
 
 .auth-wrap { align-items: flex-start; padding-top: 5rem; padding-bottom: 2rem; }
 
