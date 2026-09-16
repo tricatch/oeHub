@@ -1,6 +1,6 @@
 # 데이터베이스 스키마
 
-이 문서는 oeHub가 사용하는 12개 테이블을 다룬다. 스키마는 `DatabaseConfig.initSchema()`(H2, `CREATE TABLE IF NOT EXISTS`)에 코드로 정의되어 있으며, 이 문서는 그 코드를 그대로 옮긴 것이 아니라 각 테이블의 존재 이유와 컬럼 설계 의도를 설명한다. 아래 컬럼 표는 이름과 역할만 간단히 보여줄 뿐이며, 정확한 타입/제약조건은 소스가 원본이다.
+이 문서는 oeHub가 사용하는 14개 테이블을 다룬다. 스키마는 `DatabaseConfig.initSchema()`(H2, `CREATE TABLE IF NOT EXISTS`)에 코드로 정의되어 있으며, 이 문서는 그 코드를 그대로 옮긴 것이 아니라 각 테이블의 존재 이유와 컬럼 설계 의도를 설명한다. 아래 컬럼 표는 이름과 역할만 간단히 보여줄 뿐이며, 정확한 타입/제약조건은 소스가 원본이다.
 
 개발 단계에서는 `ALTER TABLE`을 쓰지 않는다 — 스키마를 바꾸려면 `CREATE TABLE` 문 자체를 고치고, 기존 데이터베이스 파일(`standalone` 모드는 `~/oeHub/data/oeHub-h2.*`, `workspace` 모드는 `~/oeHub/data/oeHub-h2-ws.*`)을 지운 뒤 재시작한다. `CREATE TABLE IF NOT EXISTS`는 테이블이 이미 있으면 아무 일도 하지 않으므로, 이 파일을 지우지 않고 새 컬럼이 추가된 코드로 재시작하면 기존 테이블에 그 컬럼이 없는 상태로 남아 조회 시 SQL 오류가 난다.
 
@@ -23,6 +23,8 @@ erDiagram
     HUB_USR ||--o{ HOSTS_CONF : 소유
     HUB_USR ||--o{ PROXY_VHOST : 소유
     HUB_USR ||--o{ PROXY_CONF : 소유
+    HUB_USR ||--o{ HUB_API_TOKEN : 소유
+    HUB_WS ||--o{ HUB_AUDIT_LOG : "스코프"
     HOSTS_PFILE ||--o{ HOSTS_PFILE : "collabo 참조(parent_id)"
     PROXY_VHOST ||--o{ PROXY_VHOST : "collabo 참조(parent_id)"
 ```
@@ -126,6 +128,52 @@ erDiagram
 | `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스) |
 | `create_at` | 생성 일시 |
 | `updated_at` | 마지막 수정 일시 |
+
+## `HUB_API_TOKEN` — 개인 API 토큰 (현재 비활성)
+
+로그인 세션 쿠키 없이 `Authorization: Bearer` 헤더로 인증하기 위한 개인 토큰으로 설계되었다.
+발급한 계정과 동일한 전체 권한으로 동작하며 별도 scope 제한은 없는 구조였다. `token_hash`는
+원문 토큰(256비트 랜덤값)의 SHA-256 해시만 저장한다. `user_no`는 `HOSTS_PFILE.user_no`와 같은
+이유로 FK를 걸지 않는다(소유자 계정 삭제를 막지 않기 위해).
+
+스키마와 백엔드 코드는 남아 있지만, 실사용 시나리오가 아직 불명확해 발급/조회/폐기 라우트와
+인증 처리 쪽을 모두 비활성화해 두었다(2026-09-16) — 이 테이블은 생성만 되고 실제로는 항상
+비어 있다.
+
+| 컬럼 | 설명 |
+|---|---|
+| `token_id` | 기본키 |
+| `user_no` | 소유자 (소프트 레퍼런스) |
+| `token_name` | 사용자가 붙인 이름 |
+| `token_hash` | 원문 토큰의 SHA-256 해시 (유일) |
+| `created_by` | 생성자 `user_no` (소프트 레퍼런스, 항상 `user_no`와 동일) |
+| `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스) |
+| `create_at` | 생성 일시 |
+| `updated_at` | 마지막 수정 일시 |
+| `last_used_at` | 마지막으로 이 토큰을 사용해 인증에 성공한 일시 (nullable) |
+| `expires_at` | 만료 일시 (nullable — `NULL`이면 무제한) |
+
+## `HUB_AUDIT_LOG` — 감사 로그
+
+보안/접근권한에 관련된 액션(Tier-1)만 남기는 append-only 이력. 무기한 보관하며 별도 자동 삭제가
+없다. `ws_no`는 `NOT NULL`이다 — `standalone`은 워크스페이스가 하나뿐이라 항상 그 값이고,
+인스턴스 admin이 다른 워크스페이스에 하는 액션(워크스페이스 상태 변경 등)은 **행위자가 아니라
+대상 워크스페이스**의 `ws_no`로 기록되어, 그 워크스페이스의 `ws_adm`이 자기 로그에서 볼 수 있다.
+조회는 항상 호출자 자신의 `ws_no`로만 스코프되며, 어떤 액션이 기록되는지는
+[08-api-reference.md](08-api-reference.md)의 감사 로그 섹션을 참고.
+
+| 컬럼 | 설명 |
+|---|---|
+| `audit_id` | 기본키 |
+| `ws_no` | 스코프 워크스페이스 (FK 없음 — 위 설명 참고) |
+| `action` | 액션 코드 (예: `user.role_change`, `settings.ca.generate`) |
+| `target_type` | 대상 종류 (예: `user`, `workspace`), nullable |
+| `target_id` | 대상 식별자 (문자열로 저장), nullable |
+| `detail` | 작은 평면 JSON (예: `{"from":"usr","to":"ws_adm"}`), nullable |
+| `created_by` | 행위자 `user_no` (소프트 레퍼런스) |
+| `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스, 항상 `created_by`와 동일 — 행을 수정하지 않으므로) |
+| `create_at` | 생성 일시 |
+| `updated_at` | 마지막 수정 일시 (항상 `create_at`과 동일) |
 
 ## `HOSTS_PFILE` — oeHosts 프로필
 
