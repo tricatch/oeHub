@@ -380,8 +380,11 @@ const FWDPROXY_PORT = 36980;
   // on every save without re-unwrapping each time.
   const linkDekByHostId = {};
 
+  // Returns true if this row's key (private or workspace, whichever it needed) had expired out
+  // of OE_SESSION_KEYS's idle cache - decryptAllProfiles uses this to show one toast for the
+  // whole page load rather than one per row.
   async function decryptProfileInPlace(p) {
-    if (!window.OE_WORKSPACE_MODE || !p.wrappedContentKey) return;
+    if (!window.OE_WORKSPACE_MODE || !p.wrappedContentKey) return false;
     try {
       // dekByHostId also needs the DEK itself (for re-encrypting on save), which the shared
       // OE_CONTENT_CRYPTO.decrypt() helper (also used by hosts-share.pebble) doesn't expose -
@@ -389,25 +392,31 @@ const FWDPROXY_PORT = 36980;
       let dek;
       if (p.visibility === 'private') {
         const privateKey = await OE_SESSION_KEYS.loadPrivateKey();
-        if (!privateKey) return;
+        if (!privateKey) { p.hostsContent = ''; return true; }
         dek = await OE_CRYPTO.unwrapContentKeyWithPersonalKey(p.wrappedContentKey, privateKey);
       } else {
         const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
-        if (!wsKey) return;
+        if (!wsKey) { p.hostsContent = ''; return true; }
         dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedContentKey, wsKey);
       }
       const record = JSON.parse(p.hostsContent);
       p.hostsContent = await OE_CRYPTO.decryptContent(record, dek);
       dekByHostId[p.hostsId] = dek;
+      return false;
     } catch (err) {
       console.error('Failed to decrypt profile ' + p.hostsId + ':', err);
       p.hostsContent = ''; // never display ciphertext/garbage as if it were real content
+      return false;
     }
   }
 
   async function decryptAllProfiles(list) {
     if (!window.OE_WORKSPACE_MODE) return;
-    await Promise.all(list.map(decryptProfileInPlace));
+    const results = await Promise.all(list.map(decryptProfileInPlace));
+    // The idle-expired encryption key (session-keys.js) is a separate concept from the auth
+    // cookie itself - the user is still logged in, just needs to re-enter their password once to
+    // re-derive it, exactly like after a password change (see change.password.error.no.cached.key).
+    if (results.some(Boolean)) showToast(MSG['change.password.error.no.cached.key']);
   }
 
   // Returns the payload to actually send to the server for this content: encrypted (workspace mode,

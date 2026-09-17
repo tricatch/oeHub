@@ -131,7 +131,7 @@ public class AuthController {
      *  creation, see the /setup/* auth-gating note in OeHubApplication). */
     public void loginAs(Context ctx, HubUser hubUser, boolean rememberMe) {
         String jwt = jwtService.issue(hubUser.getUserNo(), hubUser.getTokenVersion(), rememberMe);
-        ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, jwt, rememberMe ? 365L * 24 * 3600 : null));
+        ctx.res().addHeader("Set-Cookie", authCookieHeader(ctx, jwt, rememberMe ? JwtService.REMEMBER_ME_SECONDS : null));
     }
 
     public void resolveUser(Context ctx) {
@@ -139,7 +139,7 @@ public class AuthController {
         String jwt = ctx.cookie(COOKIE_NAME);
         var verified = jwtService.verify(jwt);
         // Never log the JWT itself: it's a bearer credential — anyone who reads the log could
-        // replay it as that user until it expires (up to 365 days with rememberMe).
+        // replay it as that user until it expires (up to JwtService.REMEMBER_ME_SECONDS with rememberMe).
         if( logger.isDebugEnabled() ) logger.debug("auth, userNo={}, uri={}", verified != null ? verified.userNo() : null, ctx.path());
 
         if (verified == null) {

@@ -22,6 +22,15 @@ public class JwtService {
     private static final String KEY_PRIVATE = "auth.privateKey";
     private static final String KEY_PUBLIC  = "auth.publicKey";
 
+    // How long a "remember me" session (JWT expiry and the matching auth cookie's Max-Age, see
+    // AuthController.loginAs) stays valid without a fresh login. Was 365 days; a stolen cookie
+    // (XSS, malware, a shared machine) stays a usable bearer credential for exactly this long,
+    // regardless of what else compromised the client - shortening it bounds that exposure window
+    // without removing "remember me" itself. Session-only logins (rememberMe unchecked) are
+    // unaffected, see SESSION_ONLY_SECONDS below.
+    public static final long REMEMBER_ME_SECONDS = 30L * 24 * 3600;
+    private static final long SESSION_ONLY_SECONDS = 24L * 3600;
+
     private final PrivateKey privateKey;
     private final PublicKey  publicKey;
 
@@ -64,8 +73,8 @@ public class JwtService {
     public String issue(Long userNo, int tokenVersion, boolean rememberMe) {
         var now    = new Date();
         var expiry = rememberMe
-            ? new Date(now.getTime() + 365L * 24 * 3600 * 1000)
-            : new Date(now.getTime() + 24L  * 3600 * 1000);
+            ? new Date(now.getTime() + REMEMBER_ME_SECONDS * 1000)
+            : new Date(now.getTime() + SESSION_ONLY_SECONDS * 1000);
 
         return Jwts.builder()
             .subject(String.valueOf(userNo))

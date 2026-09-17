@@ -6,6 +6,12 @@
 // object directly (structured-clone) - the raw key bytes are never exported to a serializable
 // form, so a non-extractable private key stays non-extractable even at rest here. Cleared on
 // logout (see OE_SESSION_KEYS.clearAll(), wired into the logout link).
+//
+// Idle expiry (below): these are exactly what a client-side compromise (XSS, malware, a shared
+// machine left unlocked) would go after, since they're the one place the workspace's real
+// encryption keys sit ready-to-use with no further secret needed. Bounding how long an unwrapped
+// key survives without any actual use of the app narrows that window - it's defense in depth,
+// not a substitute for not getting compromised in the first place (see docs/06-security-model.md).
 
 const OE_SESSION_KEYS = (function () {
   'use strict';
@@ -15,6 +21,9 @@ const OE_SESSION_KEYS = (function () {
   const STORE_NAME = 'keys';
   const PRIVATE_KEY_ID = 'privateKey';
   const WORKSPACE_KEY_ID = 'workspaceKey';
+  // Each successful load() pushes this back out (expire-after-access, not expire-after-write) -
+  // an actively-used session never hits this, only one left sitting idle does.
+  const IDLE_TTL_MS = 4 * 60 * 60 * 1000;
 
   function openDb() {
     return new Promise((resolve, reject) => {
@@ -31,7 +40,7 @@ const OE_SESSION_KEYS = (function () {
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(value, id);
+      tx.objectStore(STORE_NAME).put({ value: value, savedAt: Date.now() }, id);
       tx.oncomplete = () => { db.close(); resolve(); };
       tx.onerror = () => { db.close(); reject(tx.error); };
     });
@@ -39,11 +48,31 @@ const OE_SESSION_KEYS = (function () {
 
   async function get(id) {
     const db = await openDb();
-    return new Promise((resolve, reject) => {
+    const entry = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const req = tx.objectStore(STORE_NAME).get(id);
       req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
       req.onerror = () => { db.close(); reject(req.error); };
+    });
+    if (!entry) return null;
+    if (Date.now() - entry.savedAt > IDLE_TTL_MS) {
+      await remove(id);
+      return null;
+    }
+    // Touch it: a load this recent counts as activity, so an idle-but-in-use session keeps
+    // renewing instead of expiring mid-workday. Fire-and-forget - a lost race against a
+    // concurrent expiry check just means the next load re-evaluates freshly, never a crash.
+    put(id, entry.value).catch(() => {});
+    return entry.value;
+  }
+
+  async function remove(id) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
     });
   }
 

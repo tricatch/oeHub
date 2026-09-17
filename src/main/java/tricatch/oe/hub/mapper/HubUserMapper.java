@@ -98,8 +98,8 @@ public interface HubUserMapper {
 
     // Bumping token_version on every password change/reset invalidates any JWT issued before
     // this point (JwtService embeds the version at issue time and AuthController.resolveUser
-    // rejects a mismatch) - otherwise a previously stolen "remember me" cookie (valid up to 365
-    // days) would keep working even after the password is changed.
+    // rejects a mismatch) - otherwise a previously stolen "remember me" cookie (valid up to
+    // JwtService.REMEMBER_ME_SECONDS) would keep working even after the password is changed.
     @Update("UPDATE HUB_USR SET password = #{password}, token_version = token_version + 1, updated_by = #{updatedBy}, updated_at = #{updatedAt} WHERE user_no = #{userNo}")
     void updatePassword(HubUser hubUser);
 
