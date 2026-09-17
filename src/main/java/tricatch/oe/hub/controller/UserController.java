@@ -28,20 +28,43 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class UserController {
 
-    // Recovery-code reissue's password re-confirmation (see apiReissueRecoveryKey) guards against
-    // a hijacked session cookie minting itself a lasting recovery code without knowing the real
-    // password - but without a limit, that same attacker could just brute-force the password
-    // through this endpoint instead. Keyed by userNo (this action always requires an already-
-    // authenticated session, so there's no anonymous-caller case to rate-limit by IP for). In-
-    // memory only, same trust boundary as AuthController's per-IP login throttle.
+    // Both apiChangePassword and apiReissueRecoveryKey re-confirm identity via the account's
+    // CURRENT password before a sensitive, session-scoped mutation - neither actually needs it
+    // for the crypto itself (both re-wrap this session's already-cached private key), so without
+    // a limit either one is just an online brute-force target for a hijacked session cookie that
+    // never knew the real password. Sharing one counter/budget across both endpoints (rather than
+    // 5 tries each = 10 total) keeps the actual guarantee "5 wrong guesses at this account's
+    // password, from any angle, kills the session" - not per-endpoint. Keyed by userNo (both
+    // actions always require an already-authenticated session, so there's no anonymous-caller
+    // case to rate-limit by IP for instead). In-memory only, same trust boundary as
+    // AuthController's per-IP login throttle.
     //
     // expireAfterAccess (not expireAfterWrite): each new failed attempt pushes the 30-minute idle
     // clock back out, so the count only resets after a real lull, not on some fixed schedule from
     // the first failure - a slow, patient guesser is still caught the same as a fast one.
-    private static final int MAX_REISSUE_PASSWORD_ATTEMPTS = 5;
-    private final Cache<Long, AtomicInteger> reissueFailuresByUserNo = Caffeine.newBuilder()
+    private static final int MAX_PASSWORD_CONFIRM_ATTEMPTS = 5;
+    private final Cache<Long, AtomicInteger> passwordConfirmFailuresByUserNo = Caffeine.newBuilder()
         .expireAfterAccess(Duration.ofMinutes(30))
         .build();
+
+    /** Call when a current-password re-confirmation didn't match; writes the response itself
+     *  (either a 400 with a remaining-attempts count, or - past the limit - a 429 after killing
+     *  every session for this account) and the caller should return immediately afterward. */
+    private void rejectWrongPasswordConfirm(Context ctx, HubUserMapper mapper,
+                                             org.apache.ibatis.session.SqlSession session, Long userNo) {
+        var attempts = passwordConfirmFailuresByUserNo.get(userNo, k -> new AtomicInteger());
+        int count = attempts.incrementAndGet();
+        if (count >= MAX_PASSWORD_CONFIRM_ATTEMPTS) {
+            mapper.bumpTokenVersionByUserNo(userNo);
+            session.commit();
+            passwordConfirmFailuresByUserNo.invalidate(userNo);
+            ctx.status(429).json(Map.of("error", "too_many_attempts"));
+            return;
+        }
+        ctx.status(400).json(Map.of(
+            "error", "current_password_invalid",
+            "remainingAttempts", MAX_PASSWORD_CONFIRM_ATTEMPTS - count));
+    }
 
     private final SqlSessionFactory sqlSessionFactory;
     private final HostsProfService hostsProfService;
@@ -209,9 +232,10 @@ public class UserController {
             var target = mapper.findByUserNo(hubUser.getUserNo());
             if (target == null) { ctx.status(404); return; }
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
-                ctx.status(400).json(Map.of("error", "current_password_invalid"));
+                rejectWrongPasswordConfirm(ctx, mapper, session, hubUser.getUserNo());
                 return;
             }
+            passwordConfirmFailuresByUserNo.invalidate(hubUser.getUserNo());
             target.setPassword(PasswordUtil.hash(newPassword));
             target.setWrappedPrivateKey(newWrappedPrivateKey);
             target.setUpdatedBy(hubUser.getUserNo());
@@ -246,26 +270,13 @@ public class UserController {
             // Re-wrapping itself needs no password (it uses this session's already-unwrapped
             // private key, same as change-password) - this check exists purely so a hijacked
             // session cookie can't silently mint a lasting recovery code without ever knowing the
-            // account's actual password. Same convention as apiChangePassword below.
+            // account's actual password. Same convention (and shared attempt budget) as
+            // apiChangePassword above.
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
-                var attempts = reissueFailuresByUserNo.get(hubUser.getUserNo(), k -> new AtomicInteger());
-                int count = attempts.incrementAndGet();
-                if (count >= MAX_REISSUE_PASSWORD_ATTEMPTS) {
-                    // Repeated wrong guesses on an already-authenticated session smell like a
-                    // hijacked cookie, not a fumbling legitimate owner - kill every session for
-                    // this account outright rather than just soft-locking this one endpoint.
-                    mapper.bumpTokenVersionByUserNo(hubUser.getUserNo());
-                    session.commit();
-                    reissueFailuresByUserNo.invalidate(hubUser.getUserNo());
-                    ctx.status(429).json(Map.of("error", "too_many_attempts"));
-                    return;
-                }
-                ctx.status(400).json(Map.of(
-                    "error", "current_password_invalid",
-                    "remainingAttempts", MAX_REISSUE_PASSWORD_ATTEMPTS - count));
+                rejectWrongPasswordConfirm(ctx, mapper, session, hubUser.getUserNo());
                 return;
             }
-            reissueFailuresByUserNo.invalidate(hubUser.getUserNo());
+            passwordConfirmFailuresByUserNo.invalidate(hubUser.getUserNo());
             target.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
             target.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
             target.setUpdatedBy(hubUser.getUserNo());

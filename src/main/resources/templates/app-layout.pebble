@@ -338,9 +338,23 @@
       showToast(MSG['toast.password.changed']);
     } else {
       var data = await res.json().catch(function() { return {}; });
-      var key = data.error === 'current_password_invalid' ? 'change.password.error.current.invalid'
-              : data.error === 'password_too_short'        ? 'change.password.error.too.short'
-              : data.error === 'password_mismatch'          ? 'change.password.error.mismatch'
+      if (data.error === 'too_many_attempts') {
+        // Same shared attempt budget as recovery-code reissue below - the server already killed
+        // every session for this account (token_version bump).
+        alert(MSG['password.confirm.too.many.attempts']);
+        location.href = '/logout';
+        return;
+      }
+      if (data.error === 'current_password_invalid') {
+        var cpMsg = MSG['change.password.error.current.invalid'];
+        if (typeof data.remainingAttempts === 'number') {
+          cpMsg += ' ' + MSG['password.confirm.attempts.remaining'].replace('{0}', data.remainingAttempts);
+        }
+        showChangePasswordError(cpMsg);
+        return;
+      }
+      var key = data.error === 'password_too_short' ? 'change.password.error.too.short'
+              : data.error === 'password_mismatch'   ? 'change.password.error.mismatch'
               : 'change.password.error.failed';
       showChangePasswordError(MSG[key]);
     }
@@ -392,17 +406,17 @@
     if (!res.ok) {
       var data = await res.json().catch(function() { return {}; });
       if (data.error === 'too_many_attempts') {
-        // The server already killed every session for this account (token_version bump) - an
-        // alert (rather than the usual inline error) makes sure this registers before the
-        // redirect yanks the page away.
-        alert(MSG['recovery.reissue.too.many.attempts']);
+        // Same shared attempt budget as change-password above - the server already killed every
+        // session for this account (token_version bump). An alert (rather than the usual inline
+        // error) makes sure this registers before the redirect yanks the page away.
+        alert(MSG['password.confirm.too.many.attempts']);
         location.href = '/logout';
         return;
       }
       if (data.error === 'current_password_invalid') {
         var msg = MSG['change.password.error.current.invalid'];
         if (typeof data.remainingAttempts === 'number') {
-          msg += ' ' + MSG['recovery.reissue.attempts.remaining'].replace('{0}', data.remainingAttempts);
+          msg += ' ' + MSG['password.confirm.attempts.remaining'].replace('{0}', data.remainingAttempts);
         }
         showReissueConfirmError(msg);
         return;
