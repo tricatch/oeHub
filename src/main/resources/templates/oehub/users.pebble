@@ -42,7 +42,9 @@
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h5 class="mb-0">{{ msg['users.title'] }}</h5>
     {% if workspaceMode %}
-    <button type="button" class="btn btn-sm btn-oe-secondary" id="btnRotateWsKey" title="{{ msg['tooltip.rotate.ws.key'] }}">{{ msg['users.rotate.ws.key'] }}</button>
+    <!-- Hidden for now (placement felt off, not an urgent feature) - rotation itself stays live via
+         member-deletion auto-rotation; this manual trigger just isn't exposed in the UI. -->
+    <button type="button" class="btn btn-sm btn-oe-secondary" id="btnRotateWsKey" title="{{ msg['tooltip.rotate.ws.key'] }}" style="display: none;">{{ msg['users.rotate.ws.key'] }}</button>
     {% endif %}
   </div>
 

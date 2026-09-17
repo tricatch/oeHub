@@ -251,7 +251,10 @@ class WorkspaceKeyRotationTest {
             route.resume();
         });
 
-        founderPage.locator("#btnRotateWsKey").click();
+        // The button is hidden in the UI for now (display:none - placement/urgency, not a removed
+        // feature), so dispatch the click directly rather than through Playwright's actionable
+        // click, which requires visibility. The underlying rotation code path is unchanged.
+        founderPage.locator("#btnRotateWsKey").dispatchEvent("click");
         assertThat(founderPage.locator("#rotationProgressModal")).isVisible();
         assertThat(founderPage.locator("#toast")).containsText("Workspace key rotated.",
             new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
