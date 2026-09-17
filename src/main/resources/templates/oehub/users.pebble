@@ -139,7 +139,7 @@
       <colgroup>
         <col>
         <col style="width:90px;">
-        {% if workspaceMode %}<col style="width:170px;">{% endif %}
+        {% if workspaceMode %}<col style="width:140px;">{% endif %}
         <col style="width:150px;">
         <col style="width:150px;">
         <col style="width:155px;">
@@ -150,10 +150,17 @@
           <th colspan="{{ workspaceMode ? 7 : 6 }}">
             <div class="d-flex align-items-center justify-content-between">
               <span>{{ msg['users.card.header'] }}</span>
-              <div class="users-search-wrap mb-0">
-                <span class="oe-icon oe-icon-search"></span>
-                <input type="search" id="userSearch" class="form-control form-control-sm"
-                       placeholder="{{ msg['users.search.placeholder'] }}">
+              <div class="d-flex align-items-center gap-2">
+                {% if workspaceMode %}
+                <select id="teamFilterSelect" class="form-select form-select-sm w-auto">
+                  <option value="">{{ msg['teams.filter.all'] }}</option>
+                </select>
+                {% endif %}
+                <div class="users-search-wrap mb-0">
+                  <span class="oe-icon oe-icon-search"></span>
+                  <input type="search" id="userSearch" class="form-control form-control-sm"
+                         placeholder="{{ msg['users.search.placeholder'] }}">
+                </div>
               </div>
             </div>
           </th>
@@ -161,16 +168,7 @@
         <tr class="oe-subhead">
           <th>{{ msg['users.col.userid'] }}</th>
           <th class="text-center" data-sort="role">{{ msg['users.col.role'] }}<span class="sort-icon">↕</span></th>
-          {% if workspaceMode %}
-          <th>
-            <div class="d-flex align-items-center gap-1">
-              <span>{{ msg['users.col.team'] }}</span>
-              <select id="teamFilterSelect" class="form-select form-select-sm w-auto py-0" style="font-weight:normal;">
-                <option value="">{{ msg['teams.filter.all'] }}</option>
-              </select>
-            </div>
-          </th>
-          {% endif %}
+          {% if workspaceMode %}<th>{{ msg['users.col.team'] }}</th>{% endif %}
           <th>{{ msg['users.col.created'] }}</th>
           <th>{{ msg['users.col.updated'] }}</th>
           <th class="text-center" data-sort="lastLoginAt">{{ msg['users.col.last.login'] }}<span class="sort-icon">↕</span></th>
@@ -264,9 +262,6 @@
 
   var teamFilterSelect = document.getElementById('teamFilterSelect');
   if (teamFilterSelect) {
-    // The header cell isn't itself a sortable th, but stopping propagation guards against a
-    // future sort handler ever getting attached to it and swallowing this click.
-    teamFilterSelect.addEventListener('click', function (e) { e.stopPropagation(); });
     teamFilterSelect.addEventListener('change', function () {
       teamFilter = this.value;
       renderUsers(filteredUsers());
