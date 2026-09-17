@@ -23,7 +23,7 @@ const OE_SESSION_KEYS = (function () {
   const WORKSPACE_KEY_ID = 'workspaceKey';
   // Each successful load() pushes this back out (expire-after-access, not expire-after-write) -
   // an actively-used session never hits this, only one left sitting idle does.
-  const IDLE_TTL_MS = 4 * 60 * 60 * 1000;
+  const IDLE_TTL_MS = 8 * 60 * 60 * 1000;
 
   function openDb() {
     return new Promise((resolve, reject) => {
