@@ -109,6 +109,9 @@ class RecoveryKeyReissueTest {
         page.locator("#rrCurrentPassword").fill("WrongPassword999!");
         page.locator("#btnReissueConfirm").click();
         assertThat(page.locator("#rrError")).not().hasClass(Pattern.compile(".*\\bd-none\\b.*"));
+        // The remaining-attempts hint must actually count down, not just repeat a static string -
+        // this is the first wrong attempt of MAX_REISSUE_PASSWORD_ATTEMPTS(5), so 4 remain.
+        assertThat(page.locator("#rrError")).containsText("4");
         assertThat(page.locator("#reissueConfirmModal.show")).isVisible();
 
         var unchangedWrappedRecovery = (String) page.evaluate(

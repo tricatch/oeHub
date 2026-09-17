@@ -399,9 +399,15 @@
         location.href = '/logout';
         return;
       }
-      var key = data.error === 'current_password_invalid' ? 'change.password.error.current.invalid'
-              : 'toast.recovery.reissue.failed';
-      showReissueConfirmError(MSG[key]);
+      if (data.error === 'current_password_invalid') {
+        var msg = MSG['change.password.error.current.invalid'];
+        if (typeof data.remainingAttempts === 'number') {
+          msg += ' ' + MSG['recovery.reissue.attempts.remaining'].replace('{0}', data.remainingAttempts);
+        }
+        showReissueConfirmError(msg);
+        return;
+      }
+      showReissueConfirmError(MSG['toast.recovery.reissue.failed']);
       return;
     }
 

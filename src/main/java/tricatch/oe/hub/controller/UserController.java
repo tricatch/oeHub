@@ -1,6 +1,8 @@
 package tricatch.oe.hub.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.model.HostsProf;
@@ -16,11 +18,13 @@ import tricatch.oe.hub.model.HubApiToken;
 import tricatch.oe.proxy.model.ProxyVhost;
 import tricatch.oe.proxy.service.ProxyVhostService;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class UserController {
 
@@ -30,9 +34,14 @@ public class UserController {
     // through this endpoint instead. Keyed by userNo (this action always requires an already-
     // authenticated session, so there's no anonymous-caller case to rate-limit by IP for). In-
     // memory only, same trust boundary as AuthController's per-IP login throttle.
+    //
+    // expireAfterAccess (not expireAfterWrite): each new failed attempt pushes the 30-minute idle
+    // clock back out, so the count only resets after a real lull, not on some fixed schedule from
+    // the first failure - a slow, patient guesser is still caught the same as a fast one.
     private static final int MAX_REISSUE_PASSWORD_ATTEMPTS = 5;
-    private final java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.atomic.AtomicInteger>
-        reissueFailuresByUserNo = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Cache<Long, AtomicInteger> reissueFailuresByUserNo = Caffeine.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(30))
+        .build();
 
     private final SqlSessionFactory sqlSessionFactory;
     private final HostsProfService hostsProfService;
@@ -239,22 +248,24 @@ public class UserController {
             // session cookie can't silently mint a lasting recovery code without ever knowing the
             // account's actual password. Same convention as apiChangePassword below.
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
-                var attempts = reissueFailuresByUserNo.computeIfAbsent(
-                    hubUser.getUserNo(), k -> new java.util.concurrent.atomic.AtomicInteger());
-                if (attempts.incrementAndGet() >= MAX_REISSUE_PASSWORD_ATTEMPTS) {
+                var attempts = reissueFailuresByUserNo.get(hubUser.getUserNo(), k -> new AtomicInteger());
+                int count = attempts.incrementAndGet();
+                if (count >= MAX_REISSUE_PASSWORD_ATTEMPTS) {
                     // Repeated wrong guesses on an already-authenticated session smell like a
                     // hijacked cookie, not a fumbling legitimate owner - kill every session for
                     // this account outright rather than just soft-locking this one endpoint.
                     mapper.bumpTokenVersionByUserNo(hubUser.getUserNo());
                     session.commit();
-                    reissueFailuresByUserNo.remove(hubUser.getUserNo());
+                    reissueFailuresByUserNo.invalidate(hubUser.getUserNo());
                     ctx.status(429).json(Map.of("error", "too_many_attempts"));
                     return;
                 }
-                ctx.status(400).json(Map.of("error", "current_password_invalid"));
+                ctx.status(400).json(Map.of(
+                    "error", "current_password_invalid",
+                    "remainingAttempts", MAX_REISSUE_PASSWORD_ATTEMPTS - count));
                 return;
             }
-            reissueFailuresByUserNo.remove(hubUser.getUserNo());
+            reissueFailuresByUserNo.invalidate(hubUser.getUserNo());
             target.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
             target.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
             target.setUpdatedBy(hubUser.getUserNo());
