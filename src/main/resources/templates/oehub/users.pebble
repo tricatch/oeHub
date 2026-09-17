@@ -179,7 +179,8 @@
 
 </div><!-- /settings-app -->
 
-<!-- Password reset result modal -->
+{% if not workspaceMode %}
+<!-- Password reset result modal - standalone only, see actionHtml()'s resetPasswordHtml -->
 <div class="modal fade" id="pwResetModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content oe-modal">
@@ -202,6 +203,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <!-- Workspace-key rotation progress modal - non-dismissable, both the delete-member and manual
      rotation entry points share it (e2eEncryption design doc §7.1). Deliberately not "fade": a
@@ -341,12 +343,17 @@
     var roleTitle    = isAdmin ? MSG['users.btn.revoke.admin'] : MSG['users.btn.grant.admin'];
     var roleDisabled = (isAdmin && isSelf) ? ' disabled' : '';
     var delDisabled  = isSelf ? ' disabled' : '';
+    // Admin password reset can't re-wrap wrapped_private_key without the old password, so under
+    // workspace mode it would silently strand the target member unable to decrypt their own
+    // workspace content - the button/route only exist in standalone (see OeHubApplication).
+    var resetPasswordHtml = window.OE_WORKSPACE_MODE ? '' :
+      ' <button class="oe-tbl-btn oe-tbl-btn-action btn-reset-password ms-1"' +
+      ' title="' + escHtml(MSG['users.btn.reset.password']) + '">' +
+      '<span class="oe-icon oe-icon-reset-password" style="width:15px;height:15px"></span></button>';
     return '<button class="oe-tbl-btn oe-tbl-btn-action btn-toggle-role"' + roleDisabled +
       ' title="' + escHtml(roleTitle) + '">' +
       '<span class="oe-icon ' + roleIcon + '" style="width:15px;height:15px"></span></button>' +
-      ' <button class="oe-tbl-btn oe-tbl-btn-action btn-reset-password ms-1"' +
-      ' title="' + escHtml(MSG['users.btn.reset.password']) + '">' +
-      '<span class="oe-icon oe-icon-reset-password" style="width:15px;height:15px"></span></button>' +
+      resetPasswordHtml +
       ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-delete-user ms-1"' + delDisabled +
       ' title="' + escHtml(MSG['tooltip.delete.user']) + '">' +
       '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>';
@@ -465,11 +472,15 @@
       });
   }
 
-  document.getElementById('btnCopyResetPw').addEventListener('click', function () {
-    copyToClipboard(document.getElementById('pwResetValue').value).then(function () {
-      showToast(MSG['toast.password.copied']);
+  // pwResetModal (and this button) only exist in standalone - see actionHtml()'s resetPasswordHtml.
+  var btnCopyResetPw = document.getElementById('btnCopyResetPw');
+  if (btnCopyResetPw) {
+    btnCopyResetPw.addEventListener('click', function () {
+      copyToClipboard(document.getElementById('pwResetValue').value).then(function () {
+        showToast(MSG['toast.password.copied']);
+      });
     });
-  });
+  }
 
   // Workspace-key rotation, on member departure or manually (e2eEncryption design doc §7/§7.1):
   // the DEK behind every 'public'/'collabo' row never changes, only which key wraps it, so

@@ -466,7 +466,16 @@ public class OeHubApplication {
             config.routes.get("/api/admin/invites",               adminUser::apiListInvites);
             config.routes.post("/api/admin/invites",              adminUser::apiCreateInvite);
             config.routes.patch("/api/admin/users/{userNo}/role",  adminUser::apiSetRole);
-            config.routes.post("/api/admin/users/{userNo}/reset-password", adminUser::apiResetPassword);
+            // Admin-initiated password reset only ever changes the server-side password hash - it
+            // cannot re-wrap wrapped_private_key (that requires the OLD password, which the admin
+            // never has), so under workspace mode it would silently strand the target member unable
+            // to decrypt their own workspace content (e2eEncryption design doc §3/§9). Standalone's
+            // identity crypto is a dummy placeholder (design doc §1), so the same action is harmless
+            // there and stays available. The self-service /recover flow (which DOES re-wrap, via the
+            // recovery code) remains the only supported recovery path in workspace mode.
+            if (!workspaceMode) {
+                config.routes.post("/api/admin/users/{userNo}/reset-password", adminUser::apiResetPassword);
+            }
             config.routes.get("/api/admin/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
             config.routes.post("/api/admin/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
             config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);

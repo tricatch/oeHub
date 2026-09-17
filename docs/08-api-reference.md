@@ -89,7 +89,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/admin/users/pending` | 승인 대기 목록 |
 | POST | `/api/admin/users/{userNo}/approve`\|`/reject` | 가입 승인/거부 |
 | PATCH | `/api/admin/users/{userNo}/role` | 역할 변경 (감사 로그 대상) |
-| POST | `/api/admin/users/{userNo}/reset-password` | 비밀번호 강제 재설정 (감사 로그 대상, 새 비밀번호는 응답에 1회만 노출) |
+| POST | `/api/admin/users/{userNo}/reset-password` | 비밀번호 강제 재설정 (감사 로그 대상, 새 비밀번호는 응답에 1회만 노출) — **`standalone` 전용**. `workspace` 모드에서는 등록되지 않음(404): 대상자의 개인키를 재래핑할 수 없어 잠긴 계정을 되찾는 유일한 방법은 본인의 `/recover` 셀프서비스 플로우 |
 | DELETE | `/api/admin/users/{userNo}` | 계정 삭제 (감사 로그 대상) |
 | PATCH | `/api/admin/users/{userNo}/team` | 팀 재배정 (`workspace` 전용) |
 | GET | `/api/admin/workspace/rotation-rows` | 워크스페이스키 회전용 행 목록 |
