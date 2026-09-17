@@ -30,7 +30,9 @@
           {% if workspaceMode %}
           <tr><td class="oe-info-label">{{ msg['my.info.workspace'] }}</td><td>{{ wsName }}</td></tr>
           {% endif %}
+          {% if not workspaceMode %}
           <tr><td class="oe-info-label">OID</td><td>{{ user.oid }} <span class="text-muted">({{ msg['my.info.oid.desc'] }})</span></td></tr>
+          {% endif %}
           <tr><td class="oe-info-label">{{ msg['users.col.created'] }}</td><td>{{ createAt }}</td></tr>
           <tr><td class="oe-info-label">{{ msg['users.col.last.login'] }}</td><td>{{ lastLoginAt }}</td></tr>
         </tbody>
