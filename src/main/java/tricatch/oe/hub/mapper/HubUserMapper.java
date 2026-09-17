@@ -64,6 +64,12 @@ public interface HubUserMapper {
     @Update("UPDATE HUB_USR SET token_version = token_version + 1 WHERE ws_no = #{wsNo}")
     void bumpTokenVersionByWsNo(Long wsNo);
 
+    // Same token_version mechanism, single account - used to force-log-out one user right now
+    // (e.g. UserController.apiReissueRecoveryKey's too-many-wrong-passwords guard) without
+    // touching anyone else in the workspace.
+    @Update("UPDATE HUB_USR SET token_version = token_version + 1 WHERE user_no = #{userNo}")
+    void bumpTokenVersionByUserNo(Long userNo);
+
     // public_key/wrapped_private_key/wrapped_private_key_recovery/recovery_verifier are all
     // nullable and NULL by default here - set on the HubUser object before calling insert() once
     // the signup flow generates a keypair client-side (e2eEncryption design doc §3). team_no is

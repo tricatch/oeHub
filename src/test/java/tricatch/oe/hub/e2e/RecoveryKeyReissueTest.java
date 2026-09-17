@@ -1,6 +1,7 @@
 package tricatch.oe.hub.e2e;
 
 import com.microsoft.playwright.Browser;
+import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import org.junit.jupiter.api.AfterAll;
@@ -155,5 +156,38 @@ class RecoveryKeyReissueTest {
             }
             """, displayedCode);
         assertThat(unwrappedAlgo).isEqualTo("AES-KW");
+    }
+
+    @Test
+    @Order(4)
+    void fiveWrongPasswordAttempts_forceLogsOutTheAccount() {
+        // The successful reissue in Order(3) already reset the failure counter server-side, so
+        // this starts fresh - exactly 5 wrong attempts in a row (not 4, not 6) must be what trips it.
+        page.locator("[data-bs-toggle=dropdown]").first().click();
+        page.locator("#navBtnReissueRecovery").click();
+        assertThat(page.locator("#reissueConfirmModal.show")).isVisible(
+            new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
+
+        for (int i = 0; i < 4; i++) {
+            page.locator("#rrCurrentPassword").fill("StillWrong" + i + "!");
+            page.locator("#btnReissueConfirm").click();
+            assertThat(page.locator("#rrError")).not().hasClass(Pattern.compile(".*\\bd-none\\b.*"));
+            assertThat(page.locator("#reissueConfirmModal.show")).isVisible();
+        }
+
+        // The 5th wrong attempt: the server kills every session for this account and the client
+        // raises a blocking alert() before redirecting - accept it like a real user dismissing it.
+        var alertText = new java.util.concurrent.atomic.AtomicReference<String>();
+        page.onDialog(dialog -> { alertText.set(dialog.message()); dialog.accept(); });
+        page.locator("#rrCurrentPassword").fill("StillWrongFinal!");
+        page.locator("#btnReissueConfirm").click();
+        page.waitForURL(Pattern.compile(".*/login.*"), new Page.WaitForURLOptions().setTimeout(5000));
+        assertThat(alertText.get()).isNotBlank();
+
+        // The forced logout must be a real server-side session kill (token_version bump), not
+        // just a client-side redirect - the old JWT/cookie must be rejected outright.
+        var protectedStatus = (Integer) page.evaluate(
+            "async () => (await fetch('/api/user/crypto-keys')).status");
+        assertThat(protectedStatus).isEqualTo(401);
     }
 }

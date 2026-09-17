@@ -391,6 +391,14 @@
     });
     if (!res.ok) {
       var data = await res.json().catch(function() { return {}; });
+      if (data.error === 'too_many_attempts') {
+        // The server already killed every session for this account (token_version bump) - an
+        // alert (rather than the usual inline error) makes sure this registers before the
+        // redirect yanks the page away.
+        alert(MSG['recovery.reissue.too.many.attempts']);
+        location.href = '/logout';
+        return;
+      }
       var key = data.error === 'current_password_invalid' ? 'change.password.error.current.invalid'
               : 'toast.recovery.reissue.failed';
       showReissueConfirmError(MSG[key]);

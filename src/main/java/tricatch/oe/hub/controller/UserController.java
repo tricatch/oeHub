@@ -24,6 +24,16 @@ import java.util.UUID;
 
 public class UserController {
 
+    // Recovery-code reissue's password re-confirmation (see apiReissueRecoveryKey) guards against
+    // a hijacked session cookie minting itself a lasting recovery code without knowing the real
+    // password - but without a limit, that same attacker could just brute-force the password
+    // through this endpoint instead. Keyed by userNo (this action always requires an already-
+    // authenticated session, so there's no anonymous-caller case to rate-limit by IP for). In-
+    // memory only, same trust boundary as AuthController's per-IP login throttle.
+    private static final int MAX_REISSUE_PASSWORD_ATTEMPTS = 5;
+    private final java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.atomic.AtomicInteger>
+        reissueFailuresByUserNo = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final SqlSessionFactory sqlSessionFactory;
     private final HostsProfService hostsProfService;
     private final HostConfService hostConfService;
@@ -229,9 +239,22 @@ public class UserController {
             // session cookie can't silently mint a lasting recovery code without ever knowing the
             // account's actual password. Same convention as apiChangePassword below.
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
+                var attempts = reissueFailuresByUserNo.computeIfAbsent(
+                    hubUser.getUserNo(), k -> new java.util.concurrent.atomic.AtomicInteger());
+                if (attempts.incrementAndGet() >= MAX_REISSUE_PASSWORD_ATTEMPTS) {
+                    // Repeated wrong guesses on an already-authenticated session smell like a
+                    // hijacked cookie, not a fumbling legitimate owner - kill every session for
+                    // this account outright rather than just soft-locking this one endpoint.
+                    mapper.bumpTokenVersionByUserNo(hubUser.getUserNo());
+                    session.commit();
+                    reissueFailuresByUserNo.remove(hubUser.getUserNo());
+                    ctx.status(429).json(Map.of("error", "too_many_attempts"));
+                    return;
+                }
                 ctx.status(400).json(Map.of("error", "current_password_invalid"));
                 return;
             }
+            reissueFailuresByUserNo.remove(hubUser.getUserNo());
             target.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
             target.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
             target.setUpdatedBy(hubUser.getUserNo());
