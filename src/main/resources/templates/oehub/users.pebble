@@ -139,7 +139,7 @@
       <colgroup>
         <col>
         <col style="width:90px;">
-        {% if workspaceMode %}<col style="width:140px;">{% endif %}
+        {% if workspaceMode %}<col style="width:170px;">{% endif %}
         <col style="width:150px;">
         <col style="width:150px;">
         <col style="width:155px;">
@@ -161,7 +161,16 @@
         <tr class="oe-subhead">
           <th>{{ msg['users.col.userid'] }}</th>
           <th class="text-center" data-sort="role">{{ msg['users.col.role'] }}<span class="sort-icon">↕</span></th>
-          {% if workspaceMode %}<th>{{ msg['users.col.team'] }}</th>{% endif %}
+          {% if workspaceMode %}
+          <th>
+            <div class="d-flex align-items-center gap-1">
+              <span>{{ msg['users.col.team'] }}</span>
+              <select id="teamFilterSelect" class="form-select form-select-sm w-auto py-0" style="font-weight:normal;">
+                <option value="">{{ msg['teams.filter.all'] }}</option>
+              </select>
+            </div>
+          </th>
+          {% endif %}
           <th>{{ msg['users.col.created'] }}</th>
           <th>{{ msg['users.col.updated'] }}</th>
           <th class="text-center" data-sort="lastLoginAt">{{ msg['users.col.last.login'] }}<span class="sort-icon">↕</span></th>
@@ -239,6 +248,9 @@
   var currentTeams = [];
   var sortCol = null;
   var sortDir = 1;
+  // '' = no filter (all), 'none' = only members with no team, otherwise a teamNo (as a string,
+  // since <select> option values are always strings but HubUser.teamNo comes back as a number).
+  var teamFilter = '';
 
   document.querySelectorAll('th[data-sort]').forEach(function(th) {
     th.addEventListener('click', function() { sortAndRender(this.dataset.sort); });
@@ -250,6 +262,23 @@
     searchTimer = setTimeout(function () { loadUsers(q); }, 300);
   });
 
+  var teamFilterSelect = document.getElementById('teamFilterSelect');
+  if (teamFilterSelect) {
+    // The header cell isn't itself a sortable th, but stopping propagation guards against a
+    // future sort handler ever getting attached to it and swallowing this click.
+    teamFilterSelect.addEventListener('click', function (e) { e.stopPropagation(); });
+    teamFilterSelect.addEventListener('change', function () {
+      teamFilter = this.value;
+      renderUsers(filteredUsers());
+    });
+  }
+
+  function filteredUsers() {
+    if (!teamFilter) return currentUsers;
+    if (teamFilter === 'none') return currentUsers.filter(function (u) { return !u.teamNo; });
+    return currentUsers.filter(function (u) { return String(u.teamNo) === teamFilter; });
+  }
+
   function loadUsers(q) {
     var url = '/api/admin/users' + (q.trim() ? '?q=' + encodeURIComponent(q.trim()) : '');
     fetch(url)
@@ -257,7 +286,7 @@
       .then(function (users) {
         currentUsers = users;
         if (sortCol) sortCurrentUsers();
-        renderUsers(currentUsers);
+        renderUsers(filteredUsers());
       })
       .catch(function () { showToast(MSG['toast.role.update.failed']); });
   }
@@ -267,7 +296,7 @@
     sortCol = col;
     sortCurrentUsers();
     updateSortHeaders();
-    renderUsers(currentUsers);
+    renderUsers(filteredUsers());
   }
 
   function sortCurrentUsers() {
@@ -817,9 +846,24 @@
         currentTeams = teams;
         renderTeams(teams);
         renderInviteTeamOptions(teams);
-        renderUsers(currentUsers);
+        renderTeamFilterOptions(teams);
+        renderUsers(filteredUsers());
       })
       .catch(function () {});
+  }
+
+  function renderTeamFilterOptions(teams) {
+    var select = document.getElementById('teamFilterSelect');
+    if (!select) return;
+    // A team the current filter pointed at may have just been deleted/renamed out from under it -
+    // fall back to "all" rather than silently keeping a selection that no longer resolves to anything.
+    if (teamFilter && teamFilter !== 'none' && !teams.some(function (t) { return String(t.teamNo) === teamFilter; })) {
+      teamFilter = '';
+    }
+    select.innerHTML = '<option value="">' + escHtml(MSG['teams.filter.all']) + '</option>' +
+      '<option value="none">' + escHtml(MSG['teams.select.none']) + '</option>' +
+      teams.map(function (t) { return '<option value="' + t.teamNo + '">' + escHtml(t.teamName) + '</option>'; }).join('');
+    select.value = teamFilter;
   }
 
   function renderInviteTeamOptions(teams) {
@@ -890,7 +934,8 @@
           if (t) t.teamName = newName;
           span.textContent = newName;
           renderInviteTeamOptions(currentTeams);
-          renderUsers(currentUsers);
+          renderTeamFilterOptions(currentTeams);
+          renderUsers(filteredUsers());
         } else if (r.status === 409) {
           showToast(MSG['toast.team.name.exists']);
           span.textContent = original;
@@ -926,6 +971,8 @@
           currentTeams = currentTeams.filter(function (t) { return String(t.teamNo) !== String(teamNo); });
           renderTeams(currentTeams);
           renderInviteTeamOptions(currentTeams);
+          renderTeamFilterOptions(currentTeams);
+          renderUsers(filteredUsers());
         } else if (r.status === 409) {
           btn.disabled = false;
           showToast(MSG['toast.team.delete.in.use']);
