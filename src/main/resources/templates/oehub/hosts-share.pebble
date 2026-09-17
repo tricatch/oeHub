@@ -181,7 +181,7 @@
 <script src="/js/crypto.js"></script>
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
-<script>
+<script nonce="{{ cspNonce }}">
 window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
 (async function() {
   let content;

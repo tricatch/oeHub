@@ -16,7 +16,7 @@
 
 {% block content %}
 <div class="settings-app" id="workspacesApp">
-<script>(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('workspacesApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
+<script nonce="{{ cspNonce }}">(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('workspacesApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
 
 <div class="settings-main">
 
@@ -57,7 +57,7 @@
 
 </div><!-- /settings-app -->
 
-<script>
+<script nonce="{{ cspNonce }}">
 (function () {
 
   function loadWorkspaces() {
@@ -135,5 +135,5 @@
   loadWorkspaces();
 })();
 </script>
-<script>initWidthToggle(document.getElementById('workspacesApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('workspacesApp'), document.getElementById('btnToggleWidth'));</script>
 {% endblock %}

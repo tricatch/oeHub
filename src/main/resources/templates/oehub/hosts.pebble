@@ -5,13 +5,13 @@
 {% block styles %}
 <link rel="stylesheet" href="/css/oe-panel.css">
 <link rel="stylesheet" href="/css/hosts.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js" integrity="sha384-e7M5uM+69Pk0fBAnkRuFwRvZG2nFlXu572zM5jIUo36Pumtw+No4zRokAbDcqSuA" crossorigin="anonymous"></script>
 <script src="/js/ace-init.js"></script>
 {% endblock %}
 
 {% block content %}
 <div class="hosts-app" id="hostsApp">
-<script>if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('hostsApp').classList.add('expanded');</script>
+<script nonce="{{ cspNonce }}">if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('hostsApp').classList.add('expanded');</script>
 
   <!-- Sidebar -->
   <div class="hosts-sidebar">
@@ -352,7 +352,7 @@
 
 <input type="file" id="importFileHidden" accept=".json" style="display:none">
 
-<script>
+<script nonce="{{ cspNonce }}">
 const PROXY_SVR = '{{ proxyIp }}';
 const FWDPROXY_PORT = 36980;
 

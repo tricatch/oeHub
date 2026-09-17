@@ -35,7 +35,7 @@
 
 {% block content %}
 <div class="settings-app" id="usersApp">
-<script>(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('usersApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
+<script nonce="{{ cspNonce }}">(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('usersApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
 
 <div class="settings-main">
 
@@ -234,7 +234,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ cspNonce }}">
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
   // The "admin" role this screen grants/revokes: 'ws_adm' in workspace mode (this screen is
@@ -1018,5 +1018,5 @@
   loadTeams();
 })();
 </script>
-<script>initWidthToggle(document.getElementById('usersApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('usersApp'), document.getElementById('btnToggleWidth'));</script>
 {% endblock %}

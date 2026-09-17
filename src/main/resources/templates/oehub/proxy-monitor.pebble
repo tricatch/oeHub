@@ -27,7 +27,7 @@
 
 {% block content %}
 <div class="monitor-app" id="monitorApp">
-<script>if(localStorage.getItem('oeWidthExpanded')==='true') document.getElementById('monitorApp').classList.add('expanded');</script>
+<script nonce="{{ cspNonce }}">if(localStorage.getItem('oeWidthExpanded')==='true') document.getElementById('monitorApp').classList.add('expanded');</script>
 
   <div class="monitor-log-pane" id="monitor-log-list">
     <table class="monitor-table">
@@ -89,7 +89,7 @@
 </div>
 {% endif %}
 
-<script>
+<script nonce="{{ cspNonce }}">
 (function() {
   var logList   = document.getElementById('monitor-log-list');
   var logTbody  = document.getElementById('monitor-log-tbody');

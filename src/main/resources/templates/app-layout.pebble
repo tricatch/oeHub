@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}oeHub{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/icon/oe_logo_favicon.svg">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link rel="stylesheet" href="/css/brand.css">
   <link rel="stylesheet" href="/css/app.css">
   <link rel="stylesheet" href="/css/icon.css">
   {% block styles %}{% endblock %}
 </head>
 <body>
-<script>if (localStorage.getItem('oeWidthExpanded') === 'true') document.body.classList.add('oe-expanded');</script>
+<script nonce="{{ cspNonce }}">if (localStorage.getItem('oeWidthExpanded') === 'true') document.body.classList.add('oe-expanded');</script>
 
 <nav class="navbar navbar-expand oe-navbar" data-bs-theme="light">
   <div class="container-fluid px-1">
@@ -28,7 +28,7 @@
         <a class="oe-nav-item" href="/oehub/proxy" id="navItem-proxy">oeProxy</a>
         {% endif %}
       </div>
-      <script>
+      <script nonce="{{ cspNonce }}">
         (function() {
           var path = location.pathname;
           var activeId = path.startsWith('/oehub/hosts') ? 'navItem-hosts'
@@ -108,15 +108,15 @@
   </div>
 </nav>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>window.MSG = {{ msgJson | raw }};</script>
-<script>window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<script nonce="{{ cspNonce }}">window.MSG = {{ msgJson | raw }};</script>
+<script nonce="{{ cspNonce }}">window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
 <script src="/js/util.js"></script>
 <script src="/js/crypto.js"></script>
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
 <script src="/js/recovery-code-modal.js"></script>
-<script>
+<script nonce="{{ cspNonce }}">
   // Cached private/workspace keys (e2eEncryption design doc §3) are only meaningful for the
   // session that unwrapped them - clear them on the way out so the next login starts clean.
   (function () {
@@ -235,7 +235,7 @@
     </div>
   </div>
 </div>
-<script>
+<script nonce="{{ cspNonce }}">
   document.getElementById('langSelect').addEventListener('change', function() {
     document.cookie = 'oe_lang=' + this.value + '; path=/; max-age=31536000';
     location.reload();

@@ -9,7 +9,7 @@
 
 {% block content %}
 <div class="settings-app" id="licensesApp">
-<script>
+<script nonce="{{ cspNonce }}">
   (function() {
     if (localStorage.getItem('oeWidthExpanded') === 'true') {
       document.getElementById('licensesApp').classList.add('expanded');
@@ -50,5 +50,5 @@
   </div>
 
 </div>
-<script>initWidthToggle(document.getElementById('licensesApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('licensesApp'), document.getElementById('btnToggleWidth'));</script>
 {% endblock %}

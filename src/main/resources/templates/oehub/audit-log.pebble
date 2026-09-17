@@ -9,7 +9,7 @@
 
 {% block content %}
 <div class="settings-app" id="auditLogApp">
-<script>
+<script nonce="{{ cspNonce }}">
   (function() {
     if (localStorage.getItem('oeWidthExpanded') === 'true') {
       document.getElementById('auditLogApp').classList.add('expanded');
@@ -52,8 +52,8 @@
   </div>
 
 </div>
-<script>initWidthToggle(document.getElementById('auditLogApp'), document.getElementById('btnToggleWidth'));</script>
-<script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('auditLogApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">
   var auditLogPage = 0;
 
   function loadAuditLog() {

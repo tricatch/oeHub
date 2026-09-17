@@ -60,6 +60,40 @@ public class OeHubApplication {
         return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    // A fresh value every single request (unlike the CSRF token, which is stable per browser) -
+    // reusing one across requests would let an attacker who ever saw it once (e.g. in a cached
+    // response) replay it to get their own injected <script> past the CSP below.
+    private static String generateCspNonce() {
+        var bytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    // script-src is the directive that actually matters here: 'self' covers our own /js/*.js
+    // files, 'nonce-<value>' covers every inline <script nonce="{{ cspNonce }}"> the templates
+    // render, and the two CDN hosts cover Bootstrap/Ace/js-yaml (all pinned with SRI integrity
+    // hashes in the templates themselves, on top of this). Without 'strict-dynamic', host sources
+    // and the nonce both stay in effect together, so Ace's own dynamic loading of its worker/mode
+    // files from the same cdnjs origin still works.
+    //
+    // style-src stays at 'unsafe-inline': the templates use inline style="..." attributes
+    // pervasively (icon sizing etc.), and CSS injection can't read IndexedDB or exfiltrate the
+    // workspace key the way injected JS can - script-src is where the real value is, so that's
+    // where the strictness goes.
+    private static String buildCsp(String nonce) {
+        return "default-src 'self'; "
+            + "script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            + "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            + "img-src 'self' data:; "
+            + "font-src 'self' data:; "
+            + "connect-src 'self'; "
+            + "worker-src 'self' https://cdnjs.cloudflare.com blob:; "
+            + "object-src 'none'; "
+            + "base-uri 'self'; "
+            + "form-action 'self'; "
+            + "frame-ancestors 'self'";
+    }
+
     private static boolean constantTimeEquals(String a, String b) {
         return java.security.MessageDigest.isEqual(
             a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
@@ -153,6 +187,15 @@ public class OeHubApplication {
                         ctx.skipRemainingHandlers();
                     }
                 }
+            });
+
+            // Content-Security-Policy, nonce-based on script-src (see buildCsp/generateCspNonce) -
+            // runs early, before any handler needs the nonce for rendering, same as the CSRF pair
+            // above.
+            config.routes.before(ctx -> {
+                String nonce = generateCspNonce();
+                ctx.attribute("cspNonce", nonce);
+                ctx.res().addHeader("Content-Security-Policy", buildCsp(nonce));
             });
 
             // Set locale from cookie (fallback: Accept-Language header, then "en")
@@ -571,6 +614,9 @@ public class OeHubApplication {
             // (not ctx.cookie()) because a freshly-generated token isn't echoed back in the
             // request's own Cookie header until the browser's next request.
             enriched.put("csrfToken", ctx.attribute("csrfToken"));
+            // Set by the CSP before-filter on this same request - every inline <script> tag must
+            // carry this exact value (nonce="{{ cspNonce }}") or the browser refuses to run it.
+            enriched.put("cspNonce", ctx.attribute("cspNonce"));
             var writer = new java.io.StringWriter();
             try {
                 pebble.getTemplate(filePath).evaluate(writer, enriched);

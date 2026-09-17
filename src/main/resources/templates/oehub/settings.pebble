@@ -10,7 +10,7 @@
 
 {% block content %}
 <div class="settings-app" id="settingsApp">
-<script>
+<script nonce="{{ cspNonce }}">
   (function() {
     if (localStorage.getItem('oeWidthExpanded') === 'true') {
       document.getElementById('settingsApp').classList.add('expanded');
@@ -352,10 +352,10 @@
 
 
 </div>
-<script>initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
 
 <script src="/js/preset-table.js"></script>
-<script>
+<script nonce="{{ cspNonce }}">
   initUaPresetTable({
     apiBase: '/api/admin/hosts/ua',
     deleteTooltipKey: 'tooltip.ua.delete',
@@ -364,7 +364,7 @@
   });
 </script>
 
-<script>
+<script nonce="{{ cspNonce }}">
   initUrlPresetTable({
     apiBase: '/api/admin/hosts/url',
     deleteTooltipKey: 'tooltip.url.delete',
