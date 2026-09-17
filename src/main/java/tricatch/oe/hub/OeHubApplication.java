@@ -402,6 +402,12 @@ public class OeHubApplication {
                 model.put("user", user);
                 model.put("createAt", user.getCreateAt() != null ? user.getCreateAt().format(fmt) : "");
                 model.put("lastLoginAt", user.getLastLoginAt() != null ? user.getLastLoginAt().format(fmt) : "");
+                if (workspaceMode) {
+                    try (var session = sqlSessionFactory.openSession()) {
+                        var ws = session.getMapper(tricatch.oe.hub.mapper.WorkspaceMapper.class).findByWsNo(user.getWsNo());
+                        model.put("wsName", ws != null ? ws.getWsName() : "");
+                    }
+                }
                 ctx.render("templates/oehub/my-info.pebble", model);
             });
 
