@@ -662,7 +662,7 @@
         '<td class="small text-muted">' + escHtml(u.createAt) + '</td>' +
         '<td class="text-end">' +
         '<button class="oe-tbl-btn oe-tbl-btn-action btn-approve-pending" title="' + escHtml(MSG['users.btn.approve']) + '">' +
-        '<span class="oe-icon oe-icon-grant-admin" style="width:15px;height:15px"></span></button>' +
+        '<span class="oe-icon oe-icon-approve" style="width:15px;height:15px"></span></button>' +
         ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-reject-pending ms-1" title="' + escHtml(MSG['users.btn.reject']) + '">' +
         '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>' +
         '</td></tr>';
