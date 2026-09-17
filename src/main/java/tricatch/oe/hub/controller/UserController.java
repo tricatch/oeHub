@@ -212,6 +212,7 @@ public class UserController {
     public void apiReissueRecoveryKey(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
         var body = objectMapper.readValue(ctx.body(), Map.class);
+        var currentPassword = (String) body.get("currentPassword");
         var wrappedPrivateKeyRecovery = (String) body.get("wrappedPrivateKeyRecovery");
         var recoveryVerifier = (String) body.get("recoveryVerifier");
         if (wrappedPrivateKeyRecovery == null || wrappedPrivateKeyRecovery.isBlank()
@@ -223,6 +224,14 @@ public class UserController {
             var mapper = session.getMapper(HubUserMapper.class);
             var target = mapper.findByUserNo(hubUser.getUserNo());
             if (target == null) { ctx.status(404); return; }
+            // Re-wrapping itself needs no password (it uses this session's already-unwrapped
+            // private key, same as change-password) - this check exists purely so a hijacked
+            // session cookie can't silently mint a lasting recovery code without ever knowing the
+            // account's actual password. Same convention as apiChangePassword below.
+            if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
+                ctx.status(400).json(Map.of("error", "current_password_invalid"));
+                return;
+            }
             target.setWrappedPrivateKeyRecovery(wrappedPrivateKeyRecovery);
             target.setRecoveryVerifier(PasswordUtil.hash(recoveryVerifier));
             target.setUpdatedBy(hubUser.getUserNo());

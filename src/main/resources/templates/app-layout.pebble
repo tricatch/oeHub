@@ -186,6 +186,30 @@
   </div>
 </div>
 
+<!-- Reissue recovery code - password re-confirmation gate. The reissue itself re-wraps this
+     session's already-cached private key (no password needed for that crypto step), so without
+     this gate a hijacked session cookie alone could silently mint a persistent recovery code even
+     though the attacker never knew the password. -->
+<div class="modal fade" id="reissueConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header"><h5 class="modal-title">{{ msg['nav.reissue.recovery'] }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ msg['recovery.reissue.confirm.desc'] }}</p>
+        <div class="mb-1">
+          <label class="form-label small mb-1" for="rrCurrentPassword">{{ msg['change.password.current'] }}</label>
+          <input type="password" class="form-control form-control-sm" id="rrCurrentPassword" autocomplete="current-password">
+        </div>
+        <div class="small text-danger d-none" id="rrError"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+        <button type="button" class="oe-modal-btn" id="btnReissueConfirm">{{ msg['btn.confirm'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reissue recovery code modal (e2eEncryption design doc §3/§9 "재발급") -->
 <div class="modal fade" id="reissueRecoveryModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-dialog-centered">
@@ -326,11 +350,30 @@
   // unwrapped private key (from this session's cache, exactly like change-password above) under
   // a freshly-generated recovery code - old code silently stops working the moment the new one
   // is saved, since wrapped_private_key_recovery is a single column, not a list.
+  //
+  // The crypto itself needs no password (the private key is already unwrapped in this session's
+  // cache) - but that also means a hijacked session cookie alone, with no knowledge of the actual
+  // password, could otherwise mint itself a lasting recovery code. So this is gated behind a
+  // current-password re-confirmation, verified server-side, before the reissue call ever runs.
   var pendingReissuedRecoveryCode = '';
-  document.getElementById('navBtnReissueRecovery')?.addEventListener('click', async function(e) {
+  document.getElementById('navBtnReissueRecovery')?.addEventListener('click', function(e) {
     e.preventDefault();
+    document.getElementById('rrCurrentPassword').value = '';
+    document.getElementById('rrError').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('reissueConfirmModal')).show();
+  });
+
+  function showReissueConfirmError(text) {
+    var errEl = document.getElementById('rrError');
+    errEl.textContent = text;
+    errEl.classList.remove('d-none');
+  }
+
+  document.getElementById('btnReissueConfirm').addEventListener('click', async function() {
+    var currentPassword = document.getElementById('rrCurrentPassword').value;
+
     var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
-    if (!privateKey) { showToast(MSG['change.password.error.no.cached.key']); return; }
+    if (!privateKey) { showReissueConfirmError(MSG['change.password.error.no.cached.key']); return; }
 
     var recoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
     var recoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
@@ -341,10 +384,20 @@
 
     var res = await fetch('/api/user/recovery-key', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ wrappedPrivateKeyRecovery: wrappedPrivateKeyRecovery, recoveryVerifier: recoveryVerifier })
+      body: JSON.stringify({
+        currentPassword: currentPassword,
+        wrappedPrivateKeyRecovery: wrappedPrivateKeyRecovery, recoveryVerifier: recoveryVerifier
+      })
     });
-    if (!res.ok) { showToast(MSG['toast.recovery.reissue.failed']); return; }
+    if (!res.ok) {
+      var data = await res.json().catch(function() { return {}; });
+      var key = data.error === 'current_password_invalid' ? 'change.password.error.current.invalid'
+              : 'toast.recovery.reissue.failed';
+      showReissueConfirmError(MSG[key]);
+      return;
+    }
 
+    bootstrap.Modal.getInstance(document.getElementById('reissueConfirmModal')).hide();
     document.getElementById('reissueRecoveryCodeValue').value = pendingReissuedRecoveryCode;
     new bootstrap.Modal(document.getElementById('reissueRecoveryModal')).show();
   });

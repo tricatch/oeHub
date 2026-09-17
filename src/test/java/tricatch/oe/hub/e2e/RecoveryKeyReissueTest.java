@@ -23,7 +23,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * recovery code, persists that wrap server-side (via POST /api/user/recovery-key), and the
  * resulting code is genuinely usable - unwrapping it recovers a private key that correctly
  * unwraps this account's own wrapped workspace key, proving it's the real matching keypair and
- * not just a UI illusion.
+ * not just a UI illusion. Also proves the current-password re-confirmation gate in front of it:
+ * the re-wrap itself needs no password (it uses this session's already-cached private key), so
+ * without that gate a hijacked session cookie alone could mint a lasting recovery code without
+ * ever knowing the account's actual password - wrong password must be rejected and leave the
+ * old code untouched.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -88,7 +92,7 @@ class RecoveryKeyReissueTest {
 
     @Test
     @Order(2)
-    void reissuingProducesAWorkingRecoveryCode_persistedServerSide() {
+    void wrongCurrentPassword_isRejected_andLeavesTheOldCodeUntouched() {
         var oldWrappedRecovery = (String) page.evaluate(
             "async () => (await (await fetch('/api/user/crypto-keys')).json()).wrappedPrivateKeyRecovery");
         assertThat(oldWrappedRecovery).isNotBlank();
@@ -98,6 +102,34 @@ class RecoveryKeyReissueTest {
         page.navigate(server.baseUrl() + "/oehub/hosts");
         page.locator("[data-bs-toggle=dropdown]").first().click();
         page.locator("#navBtnReissueRecovery").click();
+        assertThat(page.locator("#reissueConfirmModal.show")).isVisible(
+            new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
+
+        page.locator("#rrCurrentPassword").fill("WrongPassword999!");
+        page.locator("#btnReissueConfirm").click();
+        assertThat(page.locator("#rrError")).not().hasClass(Pattern.compile(".*\\bd-none\\b.*"));
+        assertThat(page.locator("#reissueConfirmModal.show")).isVisible();
+
+        var unchangedWrappedRecovery = (String) page.evaluate(
+            "async () => (await (await fetch('/api/user/crypto-keys')).json()).wrappedPrivateKeyRecovery");
+        assertThat(unchangedWrappedRecovery).isEqualTo(oldWrappedRecovery);
+
+        page.locator("#reissueConfirmModal .btn-close").click();
+    }
+
+    @Test
+    @Order(3)
+    void reissuingProducesAWorkingRecoveryCode_persistedServerSide() {
+        var oldWrappedRecovery = (String) page.evaluate(
+            "async () => (await (await fetch('/api/user/crypto-keys')).json()).wrappedPrivateKeyRecovery");
+        assertThat(oldWrappedRecovery).isNotBlank();
+
+        page.locator("[data-bs-toggle=dropdown]").first().click();
+        page.locator("#navBtnReissueRecovery").click();
+        assertThat(page.locator("#reissueConfirmModal.show")).isVisible(
+            new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
+        page.locator("#rrCurrentPassword").fill(FOUNDER_PW);
+        page.locator("#btnReissueConfirm").click();
         assertThat(page.locator("#reissueRecoveryModal.show")).isVisible(
             new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
         var displayedCode = page.locator("#reissueRecoveryCodeValue").inputValue();
