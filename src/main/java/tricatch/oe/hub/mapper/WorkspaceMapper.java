@@ -21,8 +21,8 @@ public interface WorkspaceMapper {
     @Select("SELECT ws_no, ws_name, status, created_by, updated_by, create_at, updated_at FROM HUB_WS WHERE ws_name = #{wsName}")
     Workspace findByWsName(String wsName);
 
-    // oe.mode=standalone has exactly one workspace by construction (cloudGroupService design
-    // doc §2.7) - this is how standalone code looks it up without a workspace-mode workspace picker.
+    // oe.mode=self-hosted has exactly one workspace by construction (cloudGroupService design
+    // doc §2.7) - this is how self-hosted code looks it up without a workspace-mode workspace picker.
     @Select("SELECT ws_no, ws_name, status, created_by, updated_by, create_at, updated_at FROM HUB_WS ORDER BY ws_no LIMIT 1")
     Workspace findFirst();
 

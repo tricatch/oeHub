@@ -258,7 +258,7 @@ public class AuthController {
         // 정지 처리", §3 item 2) - a distinct, meaningful error rather than reusing the pending-
         // approval one, since this is a different situation for the user to understand (their
         // account itself is fine; the whole workspace was suspended by the instance operator).
-        // Only workspace mode has more than one workspace, so standalone never needs this check
+        // Only workspace mode has more than one workspace, so self-hosted never needs this check
         // (design doc §2.7).
         if (AppHome.isWorkspaceMode()) {
             try (var session = sqlSessionFactory.openSession()) {
@@ -336,7 +336,7 @@ public class AuthController {
         model.put("inviteWsName", "");
         model.put("inviteError", "");
 
-        // Only workspace mode has multiple workspaces to create/join - standalone always joins the
+        // Only workspace mode has multiple workspaces to create/join - self-hosted always joins the
         // single existing one, no picker needed (cloudGroupService design doc §2.7).
         if (AppHome.isWorkspaceMode()) {
             var inviteCode = ctx.queryParam("invite");
@@ -427,7 +427,7 @@ public class AuthController {
         // Single rule, no oe.mode branching on the ROLE OUTCOME (cloudGroupService design doc
         // §2.3/§2.7, e2eEncryption design doc §5): only the person founding a new workspace
         // becomes its ws_adm immediately, everyone else starts 'pending'. What DOES depend on
-        // mode is which of those two paths this form even offers - standalone has exactly one
+        // mode is which of those two paths this form even offers - self-hosted has exactly one
         // workspace by construction, so it never creates a new one or takes an invite code here.
         boolean workspaceMode = AppHome.isWorkspaceMode();
         var inviteCode = ctx.formParam("inviteCode");
@@ -504,7 +504,7 @@ public class AuthController {
 
                 // Non-login, workspace-owned system account for orphaned-resource ownership later
                 // (cloudGroupService design doc §2.2) - created alongside every new workspace, the
-                // same as SetupController.processSetup's standalone bootstrap, so a "no ws_system
+                // same as SetupController.processSetup's self-hosted bootstrap, so a "no ws_system
                 // yet" state never exists here either.
                 var wsSystemUser = new HubUser();
                 wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
@@ -522,7 +522,7 @@ public class AuthController {
                 return;
             }
 
-            // standalone: always joins the single existing workspace as 'pending'.
+            // self-hosted: always joins the single existing workspace as 'pending'.
             var workspace = wsMapper.findFirst();
             if (workspace == null) {
                 // Can't happen in practice - /setup always creates the workspace before
@@ -682,7 +682,7 @@ public class AuthController {
     }
 
     // A user can manage their own workspace's members if they hold 'ws_adm', or - only in
-    // standalone, which never assigns 'ws_adm' at all (cloudGroupService design doc §2.7's
+    // self-hosted, which never assigns 'ws_adm' at all (cloudGroupService design doc §2.7's
     // simplification) - the instance-wide 'adm'. In workspace mode 'adm' is deliberately excluded:
     // the instance operator must not manage workspace-internal user data (design doc §2.5).
     public static boolean isWorkspaceAdmin(HubUser user) {

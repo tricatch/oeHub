@@ -44,7 +44,7 @@ public interface HostsProfMapper {
         """)
     HostsProf findByHostsId(String hostsId);
 
-    // AND u.ws_no = :wsNo on both branches - a no-op filter in standalone (exactly one
+    // AND u.ws_no = :wsNo on both branches - a no-op filter in self-hosted (exactly one
     // workspace) but the actual search/discovery boundary in workspace mode (cloudGroupService
     // design doc §2.4). u already joins to the owning user either way, so this adds no new join.
     @Select("""
@@ -118,10 +118,10 @@ public interface HostsProfMapper {
     @Update("UPDATE HOSTS_PFILE SET sort_order = #{sortOrder} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateSortOrder(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("sortOrder") int sortOrder);
 
-    // wrappedContentKey is always sent (even in standalone/null) - the DEK itself never changes
+    // wrappedContentKey is always sent (even in self-hosted/null) - the DEK itself never changes
     // on a private<->public flip (e2eEncryption design doc §7), only which KEK wraps it, so the
     // client always recomputes the new wrap and this just stores whatever it sends (null is a
-    // no-op in standalone, where content/keys are never encrypted at all - design doc §1).
+    // no-op in self-hosted, where content/keys are never encrypted at all - design doc §1).
     @Update("UPDATE HOSTS_PFILE SET visibility = #{visibility}, wrapped_content_key = #{wrappedContentKey}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void updateVisibility(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("visibility") String visibility, @Param("wrappedContentKey") String wrappedContentKey, @Param("updatedAt") LocalDateTime updatedAt);
 

@@ -2,11 +2,11 @@
 
 이 문서는 oeHub가 사용하는 14개 테이블을 다룬다. 스키마는 `DatabaseConfig.initSchema()`(H2, `CREATE TABLE IF NOT EXISTS`)에 코드로 정의되어 있으며, 이 문서는 그 코드를 그대로 옮긴 것이 아니라 각 테이블의 존재 이유와 컬럼 설계 의도를 설명한다. 아래 컬럼 표는 이름과 역할만 간단히 보여줄 뿐이며, 정확한 타입/제약조건은 소스가 원본이다.
 
-개발 단계에서는 `ALTER TABLE`을 쓰지 않는다 — 스키마를 바꾸려면 `CREATE TABLE` 문 자체를 고치고, 기존 데이터베이스 파일(`standalone` 모드는 `~/oeHub/data/oeHub-h2.*`, `workspace` 모드는 `~/oeHub/data/oeHub-h2-ws.*`)을 지운 뒤 재시작한다. `CREATE TABLE IF NOT EXISTS`는 테이블이 이미 있으면 아무 일도 하지 않으므로, 이 파일을 지우지 않고 새 컬럼이 추가된 코드로 재시작하면 기존 테이블에 그 컬럼이 없는 상태로 남아 조회 시 SQL 오류가 난다.
+개발 단계에서는 `ALTER TABLE`을 쓰지 않는다. 스키마를 바꾸려면 `CREATE TABLE` 문 자체를 고치고, 기존 데이터베이스 파일(`self-hosted` 모드는 `~/oeHub/data/oeHub-h2.*`, `workspace` 모드는 `~/oeHub/data/oeHub-h2-ws.*`)을 지운 뒤 재시작한다. `CREATE TABLE IF NOT EXISTS`는 테이블이 이미 있으면 아무 일도 하지 않는다. 그래서 이 파일을 지우지 않은 채 새 컬럼이 추가된 코드로 재시작하면, 기존 테이블에 그 컬럼이 없는 상태로 남아 조회 시 SQL 오류가 난다.
 
 ## 공통 규칙
 
-특별히 언급하지 않는 한 모든 테이블은 다음 네 컬럼을 가진다: `created_by`/`updated_by`(행을 만들거나 마지막으로 수정한 `HUB_USR.user_no`)와 `create_at`/`updated_at`(타임스탬프). 이 둘은 **외래키 제약을 걸지 않는다** — 실제 FK를 걸면 그 사람이 예전에 한 번이라도 만들거나 건드린 행이 남아있는 한 계정 삭제 자체가 막히기 때문이다(소프트 레퍼런스). 행위자를 알 수 없는 시스템 동작(마이그레이션 등)은 `0`을 쓴다 — `HUB_USR.user_no`가 `1000000000`부터 시작하도록 설계되어 있어 `0`은 실제 회원 번호와 절대 겹치지 않는 예약값이다. 아래 각 테이블의 컬럼 표에도 이 네 컬럼이 매번 등장하지만, 설명은 이 문단을 벗어나지 않는다.
+특별히 언급하지 않는 한 모든 테이블은 다음 네 컬럼을 가진다: `created_by`/`updated_by`(행을 만들거나 마지막으로 수정한 `HUB_USR.user_no`)와 `create_at`/`updated_at`(타임스탬프). 이 둘은 **외래키 제약을 걸지 않는다**(소프트 레퍼런스). 실제 FK를 걸면, 그 사람이 예전에 한 번이라도 만들거나 건드린 행이 남아있는 한 계정 삭제 자체가 막히기 때문이다. 행위자를 알 수 없는 시스템 동작(마이그레이션 등)은 `0`을 쓴다. `HUB_USR.user_no`는 `1000000000`부터 시작하도록 설계되어 있어, `0`은 실제 회원 번호와 절대 겹치지 않는 예약값이다. 아래 각 테이블의 컬럼 표에도 이 네 컬럼이 매번 등장하지만, 설명은 이 문단으로 대신한다.
 
 ## 관계도
 
@@ -31,7 +31,7 @@ erDiagram
 
 ## `HUB_WS` — 워크스페이스
 
-테넌시의 최상위 단위. `standalone` 모드에서도 정확히 1행만 존재한다(§[04-deployment-modes.md](04-deployment-modes.md) "standalone이 특수한 경우가 아닌 이유" 참고) — "워크스페이스가 없는 모드"가 아니라 "워크스페이스가 1개로 고정된 모드"이기 때문이다.
+테넌시의 최상위 단위. `self-hosted` 모드에서도 정확히 1행만 존재한다(§[04-deployment-modes.md](04-deployment-modes.md) "self-hosted가 특수한 경우가 아닌 이유" 참고) — "워크스페이스가 없는 모드"가 아니라 "워크스페이스가 1개로 고정된 모드"이기 때문이다.
 
 | 컬럼 | 설명 |
 |---|---|
@@ -83,7 +83,7 @@ erDiagram
 - `role` — `adm`(인스턴스 관리자) / `ws_adm`(워크스페이스 관리자, 한 워크스페이스에 여러 명 가능) / `usr`(일반 구성원) / `ws_system`(로그인 불가능한 워크스페이스 소유 계정 — [소유자를 잃은 리소스](04-deployment-modes.md#계정-삭제와-소유자를-잃은-리소스)의 새 주인) / `pending`(승인 대기, 로그인 불가).
 - `team_no` — nullable. 팀 미배정도 정상 상태다.
 - `token_version` — 비밀번호 변경, 워크스페이스 정지 등으로 증가하며, 그 시점 이전에 발급된 JWT를 전부 무효화한다.
-- `public_key`/`wrapped_private_key`/`wrapped_private_key_recovery`/`recovery_verifier` — 종단간 암호화의 개인키/복구 자료([05-end-to-end-encryption.md](05-end-to-end-encryption.md) 참고). `standalone` 모드에서는 공개키만 실제 값이고 나머지 세 컬럼은 고정 더미 문자열이다 — 아무도 그 계정의 콘텐츠를 암호화하지 않으므로 실제 키 자료를 만들 필요가 없다.
+- `public_key`/`wrapped_private_key`/`wrapped_private_key_recovery`/`recovery_verifier` — 종단간 암호화의 개인키/복구 자료([05-end-to-end-encryption.md](05-end-to-end-encryption.md) 참고). `self-hosted` 모드에서는 공개키만 실제 값이고 나머지 세 컬럼은 고정 더미 문자열이다 — 아무도 그 계정의 콘텐츠를 암호화하지 않으므로 실제 키 자료를 만들 필요가 없다.
 - `last_login_at` — 휴면 계정을 찾아 정리하는 용도(별도 상태 플래그 없이, `ws_adm`이 직접 보고 삭제하는 방식).
 
 ## `HUB_WS_INVITE` — 초대 코드
@@ -156,7 +156,7 @@ erDiagram
 ## `HUB_AUDIT_LOG` — 감사 로그
 
 보안/접근권한에 관련된 액션(Tier-1)만 남기는 append-only 이력. 무기한 보관하며 별도 자동 삭제가
-없다. `ws_no`는 `NOT NULL`이다 — `standalone`은 워크스페이스가 하나뿐이라 항상 그 값이고,
+없다. `ws_no`는 `NOT NULL`이다 — `self-hosted`는 워크스페이스가 하나뿐이라 항상 그 값이고,
 인스턴스 admin이 다른 워크스페이스에 하는 액션(워크스페이스 상태 변경 등)은 **행위자가 아니라
 대상 워크스페이스**의 `ws_no`로 기록되어, 그 워크스페이스의 `ws_adm`이 자기 로그에서 볼 수 있다.
 조회는 항상 호출자 자신의 `ws_no`로만 스코프되며, 어떤 액션이 기록되는지는
@@ -197,7 +197,7 @@ erDiagram
 
 - `visibility` — `private`/`collabo`/`public`. `public`의 의미가 배포 모드에 따라 달라진다([04-deployment-modes.md](04-deployment-modes.md) "visibility의 재해석" 참고).
 - `parent_id` — `collabo` 공유의 참조 행. `HOSTS_PFILE` 자기 자신을 가리키는 자기참조 FK.
-- `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`public`은 워크스페이스키로 감싼다. `workspace`가 아닌 `standalone`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
+- `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`public`은 워크스페이스키로 감싼다. `workspace`가 아닌 `self-hosted`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
 - `link_content`/`wrapped_link_key` — "살아있는 공개 링크" 기능 전용([05-end-to-end-encryption.md](05-end-to-end-encryption.md) "공개 링크 공유" 참고). 링크 발급 여부와 무관하게 `hosts_content`/`wrapped_content_key`는 전혀 건드리지 않는다 — 완전히 별개의 암호문 계열이다.
 - `uq_hosts_pfile_user_profile` — 같은 소유자 안에서 프로필 이름 중복 방지. 소유자가 `ws_system`으로 바뀌는 재할당 시 이름이 충돌하면 자동으로 뒤에 번호를 붙여 회피한다.
 

@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Tier-1 (security/access-control) audit trail: drives five of the recorded actions - CA
  * generation, membership approval, role change, password reset, and account deletion - through the
- * real standalone admin UI, then confirms every one of them shows up on the audit log page with the
+ * real self-hosted admin UI, then confirms every one of them shows up on the audit log page with the
  * right human-readable action label, target, and actor.
  */
 @Tag("e2e")

@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reload (a fresh unwrap via the cached workspace key, not a leftover JS variable), and a
  * private<->public visibility flip re-wraps the same DEK without corrupting the content.
  * See aidoc/e2eEncryption/00-design.md §1's correction: this only applies to HOSTS_PFILE under
- * oe.mode=workspace - the standalone editing e2e tests elsewhere exercise the unencrypted path.
+ * oe.mode=workspace - the self-hosted editing e2e tests elsewhere exercise the unencrypted path.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

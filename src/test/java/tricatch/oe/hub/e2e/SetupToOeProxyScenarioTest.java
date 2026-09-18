@@ -76,7 +76,7 @@ class SetupToOeProxyScenarioTest {
         page.locator("form[action='/setup'] button[type=submit]").click();
 
         // setup.pebble intercepts submit to generate the bootstrap admin's keypair client-side
-        // (e2eEncryption design doc §3) before actually posting - standalone skips the
+        // (e2eEncryption design doc §3) before actually posting - self-hosted skips the
         // recovery-code modal entirely (dummy identity crypto, nothing ever decrypts it) and
         // submits immediately.
         // processSetup logs the new admin in immediately and redirects back to /setup with the
@@ -116,7 +116,7 @@ class SetupToOeProxyScenarioTest {
         page.locator("form[action='/register'] button[type=submit]").click();
 
         // register.pebble intercepts submit to generate a keypair client-side (e2eEncryption
-        // design doc §3) before actually posting the form - standalone skips the recovery-code
+        // design doc §3) before actually posting the form - self-hosted skips the recovery-code
         // modal entirely (dummy identity crypto, nothing ever decrypts it) and submits
         // immediately.
         // Self-registration now starts as 'pending' (cloudGroupService design doc §2.3) and can't

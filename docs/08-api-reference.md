@@ -11,7 +11,7 @@
 필드, `oe_csrf` 쿠키와 대조)이 추가로 필요하다. `static/js/util.js`의 전역 `fetch` 래퍼가 같은
 오리진 요청에는 이 헤더를 자동으로 붙여준다.
 
-세션 쿠키가 없는 요청은 `/api/*` 전역 필터에서 `401 Unauthorized`로 거부된다. `standalone` /
+세션 쿠키가 없는 요청은 `/api/*` 전역 필터에서 `401 Unauthorized`로 거부된다. `self-hosted` /
 `workspace` 표시가 없는 항목은 두 배포 모드 모두에서 동작한다.
 
 > 브라우저 세션 없이(스크립트/CI 등에서) 호출하기 위한 개인 API 토큰(`Authorization: Bearer`)
@@ -32,7 +32,7 @@
 
 ## oeHosts (`/api/hosts/*`)
 
-hosts 프로필 CRUD와 개인 프리셋. `standalone`/`workspace` 모두 동작(`workspace` 모드에서도
+hosts 프로필 CRUD와 개인 프리셋. `self-hosted`/`workspace` 모두 동작(`workspace` 모드에서도
 oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 
 | Method | Path | 설명 |
@@ -59,7 +59,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/oid/domain/my` | 내 oeOID 도메인 오버라이드 저장 |
 | GET | `/api/oid/download` | oeOID Chrome 확장 다운로드 |
 
-## oeProxy (`/api/proxy/*`, `standalone` 전용)
+## oeProxy (`/api/proxy/*`, `self-hosted` 전용)
 
 `workspace` 모드에서는 oeProxy 자체가 비활성화되므로 이 그룹 전체가 존재하지 않는다
 ([04-deployment-modes.md](04-deployment-modes.md) 참고).
@@ -81,7 +81,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/proxy/vhosts/import` | 가져오기 |
 | GET/PUT | `/api/proxy/conf/{name}` | 개인 설정값 조회/저장 |
 
-## 관리자 — 사용자/팀 (`/api/admin/*`, `ws_adm` 또는 standalone `adm`)
+## 관리자 — 사용자/팀 (`/api/admin/*`, `ws_adm` 또는 self-hosted `adm`)
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -89,7 +89,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/admin/users/pending` | 승인 대기 목록 |
 | POST | `/api/admin/users/{userNo}/approve`\|`/reject` | 가입 승인/거부 |
 | PATCH | `/api/admin/users/{userNo}/role` | 역할 변경 (감사 로그 대상) |
-| POST | `/api/admin/users/{userNo}/reset-password` | 비밀번호 강제 재설정 (감사 로그 대상, 새 비밀번호는 응답에 1회만 노출) — **`standalone` 전용**. `workspace` 모드에서는 등록되지 않음(404): 대상자의 개인키를 재래핑할 수 없어 잠긴 계정을 되찾는 유일한 방법은 본인의 `/recover` 셀프서비스 플로우 |
+| POST | `/api/admin/users/{userNo}/reset-password` | 비밀번호 강제 재설정 (감사 로그 대상, 새 비밀번호는 응답에 1회만 노출) — **`self-hosted` 전용**. `workspace` 모드에서는 등록되지 않음(404): 대상자의 개인키를 재래핑할 수 없어 잠긴 계정을 되찾는 유일한 방법은 본인의 `/recover` 셀프서비스 플로우 |
 | DELETE | `/api/admin/users/{userNo}` | 계정 삭제 (감사 로그 대상) |
 | PATCH | `/api/admin/users/{userNo}/team` | 팀 재배정 (`workspace` 전용) |
 | GET | `/api/admin/workspace/rotation-rows` | 워크스페이스키 회전용 행 목록 |
@@ -117,7 +117,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/admin/workspaces` | 전체 워크스페이스 목록 |
 | PATCH | `/api/admin/workspaces/{wsNo}/status` | 활성/정지 전환 (감사 로그 대상, 대상 워크스페이스에 기록) |
 
-## 관리자 — 설정 (`/api/admin/settings/*`, standalone `adm` 전용)
+## 관리자 — 설정 (`/api/admin/settings/*`, self-hosted `adm` 전용)
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -138,6 +138,6 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/recover/verify`\|`/api/recover/reset` | 비밀번호 찾기 복구 플로우 |
 | GET | `/share/{hostsId}/oelink`\|`/text` | 로그인 필요 없는 워크스페이스 내부 공유 링크 |
 | GET | `/link/{hostsId}/oelink`\|`/oelink/text` | 완전 공개(비로그인) "살아있는 링크" |
-| GET | `/share/proxy/{vhostId}/view`\|`/text` | 가상 호스트 공유 링크 (standalone 전용) |
+| GET | `/share/proxy/{vhostId}/view`\|`/text` | 가상 호스트 공유 링크 (self-hosted 전용) |
 
 `/api/proxy/ca`(루트 CA 다운로드)도 인증이 필요 없다 — oeProxy 그룹 표 참고.

@@ -222,7 +222,7 @@ public class DatabaseConfig {
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hub_api_token_user ON HUB_API_TOKEN(user_no)");
             // Tier-1 (security/access-control) action trail - append-only, kept indefinitely (no
-            // retention cleanup like BackupService's backup files). ws_no is NOT NULL: standalone
+            // retention cleanup like BackupService's backup files). ws_no is NOT NULL: self-hosted
             // has exactly one workspace (design doc §2.7) and a workspace-mode instance admin's own
             // actions on another workspace (e.g. status change) are logged under that TARGET
             // workspace's ws_no, not the actor's - so its own ws_adm can see it in their own view,

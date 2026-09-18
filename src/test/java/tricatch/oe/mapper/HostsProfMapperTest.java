@@ -415,7 +415,7 @@ class HostsProfMapperTest extends MapperTestBase {
             alicePrivate.setWrappedContentKey("wrapped-alice-private");
             mapper.insert(alicePrivate);
 
-            // Unencrypted (standalone-style) row - wrappedContentKey left null.
+            // Unencrypted (self-hosted-style) row - wrappedContentKey left null.
             var bobPlain = newHosts(bob.getUserNo(), "bob plain", "content");
             bobPlain.setVisibility("public");
             mapper.insert(bobPlain);

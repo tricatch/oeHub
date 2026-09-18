@@ -16,7 +16,7 @@ import java.util.Map;
 // Instance-admin workspace console (cloudGroupService design doc §2.5 "인스턴스 admin과의 격리",
 // §3 item 2): the instance admin ('adm') can see the workspace list and toggle suspend/reactivate,
 // and nothing else - never a workspace's member list, hosts profiles, or other tenant content.
-// Workspace mode only - standalone has exactly one workspace, which is the instance itself, so there
+// Workspace mode only - self-hosted has exactly one workspace, which is the instance itself, so there
 // is nothing here to manage (design doc §2.7).
 public class WorkspaceController {
 

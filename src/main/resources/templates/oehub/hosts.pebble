@@ -420,7 +420,7 @@ const FWDPROXY_PORT = 36980;
   }
 
   // Returns the payload to actually send to the server for this content: encrypted (workspace mode,
-  // DEK already known for this row) or the plaintext itself (standalone, or no DEK yet).
+  // DEK already known for this row) or the plaintext itself (self-hosted, or no DEK yet).
   async function encryptForSave(hostId, plaintext) {
     if (!window.OE_WORKSPACE_MODE) return plaintext;
     const dek = dekByHostId[hostId];
@@ -432,7 +432,7 @@ const FWDPROXY_PORT = 36980;
   // Generates a fresh DEK for a brand-new row, wrapped for the visibility it starts as
   // ('public' for a new/copied profile - both use the workspace key, e2eEncryption design doc
   // §6). Returns {encryptedContent, wrappedContentKey} to send along with the create, or null
-  // in standalone / when session keys aren't available yet.
+  // in self-hosted / when session keys aren't available yet.
   async function encryptNewContent(plaintext) {
     if (!window.OE_WORKSPACE_MODE) return null;
     const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
@@ -464,7 +464,7 @@ const FWDPROXY_PORT = 36980;
   const btnCopyShareLink = document.getElementById('btnCopyShareLink');
   const btnPublicLink    = document.getElementById('btnPublicLink');
   const btnDownload      = document.getElementById('btnDownload');
-  // Only meaningful in workspace mode - standalone's existing /share link is already fully public/
+  // Only meaningful in workspace mode - self-hosted's existing /share link is already fully public/
   // no-login, so there's nothing separate to offer there (e2eEncryption design doc §6).
   if (window.OE_WORKSPACE_MODE) btnPublicLink.classList.remove('d-none');
   const emptyState    = document.getElementById('emptyState');
@@ -582,7 +582,7 @@ const FWDPROXY_PORT = 36980;
     // /share/.../text (used before e2eEncryption) returns a synchronous plaintext body the
     // server can't produce for encrypted (workspace mode) rows - it never holds the workspace key
     // (design doc §1/§9). /view returns the row's raw fields instead and this decrypts them the
-    // same way hosts.pebble decrypts its own list (falls through unchanged in standalone/
+    // same way hosts.pebble decrypts its own list (falls through unchanged in self-hosted/
     // unencrypted rows, since OE_CONTENT_CRYPTO.decrypt() passes plaintext straight through).
     fetch('/api/hosts/' + result.hostsId + '/view').then(r => {
       if (!r.ok) throw new Error('load failed');

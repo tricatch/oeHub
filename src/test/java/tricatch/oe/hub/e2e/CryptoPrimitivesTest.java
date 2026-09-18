@@ -33,7 +33,7 @@ class CryptoPrimitivesTest {
 
     @BeforeAll
     void startAll() throws Exception {
-        // Workspace mode (e2eEncryption design doc §1): standalone's identity crypto is a dummy
+        // Workspace mode (e2eEncryption design doc §1): self-hosted's identity crypto is a dummy
         // placeholder (nothing ever decrypts it there), so login_unwrapsAndCachesPrivate... below
         // needs a real account, which only exists in workspace mode. The other tests here just
         // call OE_CRYPTO primitives directly via page.evaluate() and don't care about server mode
@@ -45,7 +45,7 @@ class CryptoPrimitivesTest {
 
         // OeHubApplication redirects every request except /setup (and static assets) to /setup
         // until setup is complete - workspace mode only needs an admin account, no CA
-        // (cloudGroupService design doc §2.6), so this is quicker than standalone's two-step
+        // (cloudGroupService design doc §2.6), so this is quicker than self-hosted's two-step
         // version.
         var setupPage = browser.newPage();
         setupPage.navigate(server.baseUrl() + "/setup");

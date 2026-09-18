@@ -518,7 +518,7 @@ public class OeHubApplication {
             // Admin-initiated password reset only ever changes the server-side password hash - it
             // cannot re-wrap wrapped_private_key (that requires the OLD password, which the admin
             // never has), so under workspace mode it would silently strand the target member unable
-            // to decrypt their own workspace content (e2eEncryption design doc §3/§9). Standalone's
+            // to decrypt their own workspace content (e2eEncryption design doc §3/§9). Self-hosted's
             // identity crypto is a dummy placeholder (design doc §1), so the same action is harmless
             // there and stays available. The self-service /recover flow (which DOES re-wrap, via the
             // recovery code) remains the only supported recovery path in workspace mode.
@@ -530,13 +530,13 @@ public class OeHubApplication {
             config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
 
             // Admin: Tier-1 audit log - reachable by whoever "/oehub/admin/*" already lets in
-            // (ws_adm, or standalone's 'adm' - see AuthController.isWorkspaceAdmin), no separate
+            // (ws_adm, or self-hosted's 'adm' - see AuthController.isWorkspaceAdmin), no separate
             // gating needed since AuditLogController itself always scopes to the caller's own ws_no.
             config.routes.get("/oehub/admin/audit-log",           auditLogCtrl::showAuditLog);
             config.routes.get("/api/admin/audit-log",             auditLogCtrl::apiListAuditLog);
 
             // Admin: instance-wide workspace console (cloudGroupService design doc §2.5/§3 item 2)
-            // - workspace mode only, meaningless in standalone which has exactly one workspace
+            // - workspace mode only, meaningless in self-hosted which has exactly one workspace
             // (itself, design doc §2.7). 'adm'-only, gated above via settingsAdminOnly.
             if (workspaceMode) {
                 config.routes.get("/oehub/admin/workspaces",              workspaceCtrl::showWorkspaces);
@@ -545,7 +545,7 @@ public class OeHubApplication {
             }
 
             // Admin: teams (cloudGroupService design doc §2.9) - workspace mode only, meaningless
-            // in standalone's single-workspace-is-the-instance model (design doc §2.7). Same
+            // in self-hosted's single-workspace-is-the-instance model (design doc §2.7). Same
             // ws_adm scoping/guard as the rest of "/api/admin/*" above - no separate "team admin" role.
             if (workspaceMode) {
                 config.routes.get("/api/admin/teams",                 adminUser::apiListTeams);

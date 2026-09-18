@@ -79,7 +79,7 @@ class ApiTokenTest {
         page.locator("form[action='/setup'] button[type=submit]").click();
         assertThat(page).hasURL(Pattern.compile(".*/setup"));
 
-        // standalone needs a CA configured too, or every route keeps redirecting to /setup
+        // self-hosted needs a CA configured too, or every route keeps redirecting to /setup
         // (SetupController.isSetupComplete) - same as SetupToOeProxyScenarioTest's flow.
         page.locator("input[name=caName]").fill("ApiToken Test CA");
         page.locator("form[action='/setup/ca/generate'] button[type=submit]").click();

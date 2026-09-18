@@ -141,7 +141,7 @@ public class SetupController {
                 var now = LocalDateTime.now();
 
                 // Every user belongs to exactly one workspace (cloudGroupService design doc
-                // §2.1/§2.7) - standalone bootstraps its single, fixed workspace here, before the
+                // §2.1/§2.7) - self-hosted bootstraps its single, fixed workspace here, before the
                 // admin account that will own it.
                 var workspaceMapper = session.getMapper(WorkspaceMapper.class);
                 var workspace = new Workspace();

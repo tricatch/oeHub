@@ -170,7 +170,7 @@ public class HostsController {
     // read-only from search results, or for the owner's own "open as text" action - and a plain
     // synchronous text/plain response can't carry encrypted (workspace mode) content, since the
     // server never holds the key to decrypt it (design doc §1/§9). Callers decrypt client-side
-    // with OE_CONTENT_CRYPTO.decrypt(), which also handles the plaintext/standalone case as a
+    // with OE_CONTENT_CRYPTO.decrypt(), which also handles the plaintext/self-hosted case as a
     // no-op passthrough. /api/* already requires a session (OeHubApplication's before-filter).
     public void apiGetForView(Context ctx) {
         var hostsId = ctx.pathParam("hostsId");
@@ -205,7 +205,7 @@ public class HostsController {
         // fully public link and instead requires the viewer to already be logged in to the SAME
         // workspace (e2eEncryption design doc §9's reinterpretation of cloudGroupService doc
         // §2.4) - their browser then decrypts with its own cached workspace key, same as
-        // hosts.pebble. Standalone content is never encrypted (design doc §1), so it keeps the
+        // hosts.pebble. Self-hosted content is never encrypted (design doc §1), so it keeps the
         // original fully-public, no-login behavior below.
         if (workspaceMode) {
             var viewer = AuthController.currentUser(ctx);

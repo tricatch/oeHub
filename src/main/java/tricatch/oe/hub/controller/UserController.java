@@ -162,7 +162,7 @@ public class UserController {
                     h.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
                     // Was missing entirely (every restored row silently became 'public' via
                     // importProfiles' null-visibility default) - harmless bookkeeping drift in
-                    // standalone, but paired with wrappedContentKey above it matters for real in
+                    // self-hosted, but paired with wrappedContentKey above it matters for real in
                     // workspace mode: a restored 'private' row's wrap is personal-key-wrapped, and
                     // claiming 'public' would make decryptProfileInPlace try to unwrap it with the
                     // workspace key instead, failing (same "private" vs "collabo" limits as

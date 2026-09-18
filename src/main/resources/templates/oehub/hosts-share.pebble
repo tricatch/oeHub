@@ -204,7 +204,7 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
     // Encrypted rows (oe.mode=workspace, e2eEncryption design doc §1/§6/§9): decrypt() resolves the
     // ciphertext with the viewer's own cached workspace key (apiShare already required them to be
     // logged in to this same workspace) and passes plaintext straight through when the row isn't
-    // encrypted (standalone), so the rest of this script is unchanged either way.
+    // encrypted (self-hosted), so the rest of this script is unchanged either way.
     content = await OE_CONTENT_CRYPTO.decrypt({{ wrappedContentKeyJson | raw }}, {{ contentJson | raw }}, '{{ hosts.visibility }}');
     {% endif %}
   } catch (err) {

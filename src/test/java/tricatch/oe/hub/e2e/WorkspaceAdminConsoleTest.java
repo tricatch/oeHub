@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * admin과의 격리", §3 item 2): the instance admin can list every workspace and suspend/reactivate
  * one - suspension blocks login for every member of THAT workspace only, with a distinct error,
  * while leaving other workspaces unaffected - and the screen/API is unreachable by anyone but the
- * instance admin, and doesn't exist at all in standalone mode (which has exactly one workspace,
+ * instance admin, and doesn't exist at all in self-hosted mode (which has exactly one workspace,
  * itself - design doc §2.7).
  */
 @Tag("e2e")
@@ -35,8 +35,8 @@ class WorkspaceAdminConsoleTest {
     private static final int PORT = 39927;
     // Deliberately not PORT+1: the primary workspace-mode server above keeps its H2 console bound on
     // PORT+1 for this whole test class's lifetime (E2eServer never stops it early), and this
-    // standalone server (and its own H2 console, STANDALONE_PORT+1) must not collide with that.
-    private static final int STANDALONE_PORT = 45210;
+    // self-hosted server (and its own H2 console, SELF_HOSTED_PORT+1) must not collide with that.
+    private static final int SELF_HOSTED_PORT = 45210;
     private static final String INSTANCE_ADMIN_ID = "wsConsoleInstAdmin";
     private static final String INSTANCE_ADMIN_PW = "InstAdminPass123!";
     private static final String ALPHA_WS_NAME = "Alpha Workspace";
@@ -205,39 +205,39 @@ class WorkspaceAdminConsoleTest {
     }
 
     /**
-     * The console has no meaning in standalone mode (design doc §2.7 - a standalone instance IS
+     * The console has no meaning in self-hosted mode (design doc §2.7 - a self-hosted instance IS
      * its one workspace) and must not exist there: a workspace's own ws_adm equivalent (the
-     * instance 'adm', which passes isWorkspaceAdmin() in standalone) reaches the generic
+     * instance 'adm', which passes isWorkspaceAdmin() in self-hosted) reaches the generic
      * "/oehub/admin/*"/"/api/admin/*" gate fine, but no route is registered behind it, so Javalin
      * falls through to a plain 404 - the same "unrouted" shape other workspace-only endpoints have when
      * hit under the opposite mode.
      */
     @Test
     @Order(6)
-    void consoleDoesNotExistInStandaloneMode() throws Exception {
-        try (var standalone = new E2eServer(STANDALONE_PORT)) {
-            standalone.start();
+    void consoleDoesNotExistInSelfHostedMode() throws Exception {
+        try (var selfHosted = new E2eServer(SELF_HOSTED_PORT)) {
+            selfHosted.start();
             var page = browser.newPage();
-            page.navigate(standalone.baseUrl() + "/setup");
-            page.locator("form[action='/setup'] input[name=userId]").fill("wsConsoleStandaloneAdmin");
-            page.locator("form[action='/setup'] input[name=password]").fill("StandalonePass123!");
-            page.locator("form[action='/setup'] input[name=confirm]").fill("StandalonePass123!");
+            page.navigate(selfHosted.baseUrl() + "/setup");
+            page.locator("form[action='/setup'] input[name=userId]").fill("wsConsoleSelfHostedAdmin");
+            page.locator("form[action='/setup'] input[name=password]").fill("SelfHostedPass123!");
+            page.locator("form[action='/setup'] input[name=confirm]").fill("SelfHostedPass123!");
             page.locator("form[action='/setup'] button[type=submit]").click();
 
-            // Unlike workspace mode, standalone setup isn't complete until the CA step is also done
-            // (design doc §2.6 - oeProxy, and therefore its CA, only exists in standalone) - until
+            // Unlike workspace mode, self-hosted setup isn't complete until the CA step is also done
+            // (design doc §2.6 - oeProxy, and therefore its CA, only exists in self-hosted) - until
             // then every non-/setup path redirects back to /setup (OeHubApplication's
             // "isSetupComplete" before-filter), which is why this step can't be skipped here even
             // though this test doesn't otherwise care about oeProxy/CA at all.
-            page.locator("input[name=caName]").fill("WsConsole Standalone Test CA");
+            page.locator("input[name=caName]").fill("WsConsole SelfHosted Test CA");
             page.locator("form[action='/setup/ca/generate'] button[type=submit]").click();
             assertThat(page.locator("#btnGotoLogin")).isEnabled();
 
-            page.navigate(standalone.baseUrl() + "/login");
-            page.locator("input[name=userId]").fill("wsConsoleStandaloneAdmin");
-            page.locator("input[name=password]").fill("StandalonePass123!");
+            page.navigate(selfHosted.baseUrl() + "/login");
+            page.locator("input[name=userId]").fill("wsConsoleSelfHostedAdmin");
+            page.locator("input[name=password]").fill("SelfHostedPass123!");
             page.locator("#btnLoginSubmit").click();
-            page.waitForURL(standalone.baseUrl() + "/");
+            page.waitForURL(selfHosted.baseUrl() + "/");
 
             var pageStatus = (Integer) page.evaluate(
                 "async () => (await fetch('/oehub/admin/workspaces')).status");

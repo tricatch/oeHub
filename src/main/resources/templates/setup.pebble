@@ -336,16 +336,16 @@
     var publicKeyB64 = await OE_CRYPTO.exportPublicKey(keyPair.publicKey);
     document.getElementById('fldPublicKey').value = publicKeyB64;
 
-    // standalone never encrypts content (e2eEncryption design doc §1), so nothing ever unwraps
+    // self-hosted never encrypts content (e2eEncryption design doc §1), so nothing ever unwraps
     // this account's private key, recovery code, or workspace key for real work - only the
     // public key above is genuinely needed. Skip the PBKDF2/recovery-code/workspace-key
     // generation and the "save your recovery code" modal, which would have nothing meaningful to
     // protect, and submit immediately.
     if (!window.OE_WORKSPACE_MODE) {
-      document.getElementById('fldWrappedPrivateKey').value = 'standalone';
-      document.getElementById('fldWrappedPrivateKeyRecovery').value = 'standalone';
-      document.getElementById('fldRecoveryVerifier').value = 'standalone';
-      document.getElementById('fldFounderWrappedWsKey').value = 'standalone';
+      document.getElementById('fldWrappedPrivateKey').value = 'self-hosted';
+      document.getElementById('fldWrappedPrivateKeyRecovery').value = 'self-hosted';
+      document.getElementById('fldRecoveryVerifier').value = 'self-hosted';
+      document.getElementById('fldFounderWrappedWsKey').value = 'self-hosted';
       submitBtn.innerHTML = submitBtnDefaultHtml;
       form.submit();
       return;
@@ -366,7 +366,7 @@
     pendingRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(recoveryBytes);
 
     // /setup always founds the workspace this admin belongs to (cloudGroupService design doc
-    // §2.7's standalone bootstrap) - the workspace key is created right here, same as a
+    // §2.7's self-hosted bootstrap) - the workspace key is created right here, same as a
     // workspace-mode founder registering a new workspace (e2eEncryption design doc §4).
     var wsKey = await OE_CRYPTO.generateWorkspaceKey();
     var founderWrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, keyPair.publicKey);

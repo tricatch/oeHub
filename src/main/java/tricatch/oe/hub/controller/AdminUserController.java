@@ -83,7 +83,7 @@ public class AdminUserController {
     }
 
     // "가입 승인 대기" list (cloudGroupService design doc §2.8) - scoped to the caller's own
-    // workspace, a no-op filter in standalone (exactly one workspace) but already correct once a
+    // workspace, a no-op filter in self-hosted (exactly one workspace) but already correct once a
     // second workspace can exist.
     public void apiListPending(Context ctx) {
         var currentUser = AuthController.currentUser(ctx);
@@ -302,7 +302,7 @@ public class AdminUserController {
         @SuppressWarnings("unchecked")
         var body = ctx.bodyAsClass(Map.class);
         String newRole = (String) body.get("role");
-        // The "promote to admin" toggle targets 'adm' in standalone (unchanged - there's no
+        // The "promote to admin" toggle targets 'adm' in self-hosted (unchanged - there's no
         // separate ws_adm role in practice there, design doc §2.7) but 'ws_adm' in workspace mode:
         // this screen is workspace-scoped, so it must never be able to grant the instance-wide
         // 'adm' role (design doc §2.5 isolation).
@@ -326,7 +326,7 @@ public class AdminUserController {
             // if the count is 1 the caller necessarily IS that one row). When both guards would
             // fire, this one is strictly more informative/actionable ("promote someone else
             // first") than the generic "can't touch your own role" - only applies when this
-            // screen's admin role IS ws_adm (workspace mode): standalone's 'adm' isn't managed through
+            // screen's admin role IS ws_adm (workspace mode): self-hosted's 'adm' isn't managed through
             // this workspace-scoped screen, so it's out of scope here.
             if ("ws_adm".equals(adminRole) && "usr".equals(newRole) && "ws_adm".equals(target.getRole())
                     && mapper.countWsAdmins(target.getWsNo()) <= 1) {
@@ -382,8 +382,8 @@ public class AdminUserController {
     }
 
     // Outstanding invite codes for the caller's own workspace (cloudGroupService design doc
-    // §2.8) - workspace mode only in practice, since standalone never exposes the issuance UI, but
-    // the endpoint itself has no mode check: any ws_adm (or standalone adm) can call it.
+    // §2.8) - workspace mode only in practice, since self-hosted never exposes the issuance UI, but
+    // the endpoint itself has no mode check: any ws_adm (or self-hosted adm) can call it.
     public void apiListInvites(Context ctx) {
         var currentUser = AuthController.currentUser(ctx);
         try (var session = sqlSessionFactory.openSession()) {

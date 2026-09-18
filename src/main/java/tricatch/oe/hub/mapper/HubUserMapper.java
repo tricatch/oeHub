@@ -27,7 +27,7 @@ public interface HubUserMapper {
     // Excludes 'pending' (not yet approved, shown separately - see findAllPendingByWsNo) and
     // 'ws_system' (non-login workspace-owned account, not a manageable member) - see
     // cloudGroupService design doc §2.2/§2.8. Scoped to one workspace so a ws_adm never sees
-    // another workspace's members - a no-op filter in standalone (exactly one workspace) but a
+    // another workspace's members - a no-op filter in self-hosted (exactly one workspace) but a
     // real tenant boundary once a second workspace exists (design doc §2.5 isolation).
     // LEFT JOIN HUB_TEAM for the member list's team column/dropdown (design doc §2.9) - a member
     // with no team (team_no NULL) still needs to appear, hence LEFT not INNER.
@@ -40,7 +40,7 @@ public interface HubUserMapper {
     List<HubUser> searchByUserId(@Param("wsNo") Long wsNo, @Param("keyword") String keyword);
 
     // Approval-pending members of one workspace - the "가입 승인 대기" list (cloudGroupService
-    // design doc §2.8 UI). Scoped by ws_no even though standalone has exactly one workspace, so
+    // design doc §2.8 UI). Scoped by ws_no even though self-hosted has exactly one workspace, so
     // the query is already correct once a second workspace can exist.
     @Select("SELECT " + COLS + " FROM HUB_USR u WHERE u.role = 'pending' AND u.ws_no = #{wsNo} ORDER BY u.user_no")
     List<HubUser> findAllPendingByWsNo(Long wsNo);

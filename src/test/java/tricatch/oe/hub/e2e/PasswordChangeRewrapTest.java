@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the same request (e2eEncryption design doc §3) - if it didn't, the old wrap would become
  * permanently unusable the moment the password changed, since PBKDF2-deriving the KEK from the
  * new password would no longer match what wrapped it. This only has real key material to prove
- * anything with in workspace mode - standalone's identity crypto is a dummy placeholder (nothing
+ * anything with in workspace mode - self-hosted's identity crypto is a dummy placeholder (nothing
  * ever decrypts it, e2eEncryption design doc §1), so the founder account here (not the instance
  * admin bootstrapped via /setup) is the one under test.
  */

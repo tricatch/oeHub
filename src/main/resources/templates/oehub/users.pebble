@@ -189,7 +189,7 @@
 </div><!-- /settings-app -->
 
 {% if not workspaceMode %}
-<!-- Password reset result modal - standalone only, see actionHtml()'s resetPasswordHtml -->
+<!-- Password reset result modal - self-hosted only, see actionHtml()'s resetPasswordHtml -->
 <div class="modal fade" id="pwResetModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content oe-modal">
@@ -240,7 +240,7 @@
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
   // The "admin" role this screen grants/revokes: 'ws_adm' in workspace mode (this screen is
-  // workspace-scoped and must never grant the instance-wide 'adm'), 'adm' in standalone
+  // workspace-scoped and must never grant the instance-wide 'adm'), 'adm' in self-hosted
   // (unchanged - no separate ws_adm role in practice there). See AdminUserController.apiSetRole.
   var ADMIN_ROLE = '{{ workspaceMode ? "ws_adm" : "adm" }}';
   var searchTimer;
@@ -371,7 +371,7 @@
     var delDisabled  = isSelf ? ' disabled' : '';
     // Admin password reset can't re-wrap wrapped_private_key without the old password, so under
     // workspace mode it would silently strand the target member unable to decrypt their own
-    // workspace content - the button/route only exist in standalone (see OeHubApplication).
+    // workspace content - the button/route only exist in self-hosted (see OeHubApplication).
     var resetPasswordHtml = window.OE_WORKSPACE_MODE ? '' :
       ' <button class="oe-tbl-btn oe-tbl-btn-action btn-reset-password ms-1"' +
       ' title="' + escHtml(MSG['users.btn.reset.password']) + '">' +
@@ -498,7 +498,7 @@
       });
   }
 
-  // pwResetModal (and this button) only exist in standalone - see actionHtml()'s resetPasswordHtml.
+  // pwResetModal (and this button) only exist in self-hosted - see actionHtml()'s resetPasswordHtml.
   var btnCopyResetPw = document.getElementById('btnCopyResetPw');
   if (btnCopyResetPw) {
     btnCopyResetPw.addEventListener('click', function () {
@@ -722,10 +722,10 @@
 
     var wrappedWsKey;
     if (!window.OE_WORKSPACE_MODE) {
-      // standalone never had a real workspace key to wrap in the first place (dummy identity
+      // self-hosted never had a real workspace key to wrap in the first place (dummy identity
       // crypto - e2eEncryption design doc §1), and neither the approver nor the pending member
       // has one cached.
-      wrappedWsKey = 'standalone';
+      wrappedWsKey = 'self-hosted';
     } else {
       // The approving ws_adm must have their own workspace key cached from login (e2eEncryption
       // design doc §3/§5) - if not (e.g. this account predates the crypto wiring, or the cache
@@ -780,7 +780,7 @@
 
   function loadInvites() {
     var tbody = document.getElementById('invitesTbody');
-    if (!tbody) return; // workspace mode only - section isn't rendered in standalone
+    if (!tbody) return; // workspace mode only - section isn't rendered in self-hosted
     fetch('/api/admin/invites')
       .then(function (r) { return r.json(); })
       .then(renderInvites)
@@ -836,7 +836,7 @@
   // the invite modal's team dropdown and every member row's reassignment dropdown in sync.
   function loadTeams() {
     var tbody = document.getElementById('teamsTbody');
-    if (!tbody) return; // workspace mode only - section isn't rendered in standalone
+    if (!tbody) return; // workspace mode only - section isn't rendered in self-hosted
     fetch('/api/admin/teams')
       .then(function (r) { return r.json(); })
       .then(function (teams) {

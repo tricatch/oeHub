@@ -11,7 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 // Tier-1 (security/access-control) audit trail viewer. Always scoped to the caller's own
-// ws_no - both a standalone 'adm' and a workspace-mode 'ws_adm' only ever see their own single
+// ws_no - both a self-hosted 'adm' and a workspace-mode 'ws_adm' only ever see their own single
 // workspace's rows, which is also exactly what the "/oehub/admin/*" route gate already limits who
 // can reach this controller to (isWorkspaceAdmin excludes a workspace-mode instance 'adm' - see
 // AuthController.isWorkspaceAdmin), so no separate "see everything" branch is needed here.

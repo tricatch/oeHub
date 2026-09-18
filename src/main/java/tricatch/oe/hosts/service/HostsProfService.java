@@ -56,7 +56,7 @@ public class HostsProfService {
     // encryptedContent/wrappedContentKey come from the client (workspace mode only - e2eEncryption
     // design doc §1): it generates a DEK, encrypts the example content with it, and wraps the DEK
     // with the workspace key (new profiles default to 'public' visibility, same as below).
-    // Both null means standalone/plaintext, unchanged from before this wiring.
+    // Both null means self-hosted/plaintext, unchanged from before this wiring.
     public HostsProf create(Long userNo, String encryptedContent, String wrappedContentKey) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
@@ -81,7 +81,7 @@ public class HostsProfService {
 
     // linkContent (workspace mode only) is the caller's fresh re-encryption of the same content with
     // the row's existing link DEK (unwrapped client-side via wrappedLinkKey) - the "living link"
-    // sync (e2eEncryption design doc §6). Null means either standalone or no live link to refresh;
+    // sync (e2eEncryption design doc §6). Null means either self-hosted or no live link to refresh;
     // never mints a new link (syncLinkContent's own wrapped_link_key IS NOT NULL guard enforces
     // that server-side too). Collabo reference rows (parentId != null) never carry a link of their
     // own, so linkContent is simply ignored on that branch.
@@ -223,7 +223,7 @@ public class HostsProfService {
             // hosts.pebble's search-copy button now always supplies one for an encrypted source
             // (unwraps+decrypts via GET /api/hosts/{id}/view, then re-encrypts with a fresh DEK
             // - e2eEncryption design doc §9), so this guard is now purely defense in depth.
-            // Plaintext sources (standalone) are unaffected and still copy exactly as before.
+            // Plaintext sources (self-hosted) are unaffected and still copy exactly as before.
             if (source.getWrappedContentKey() != null && wrappedContentKey == null) return null;
             var copy = new HostsProf();
             copy.setHostsId(newId());
@@ -252,7 +252,7 @@ public class HostsProfService {
             // A collabo target must be in the same workspace as its owner - searchOthers() already
             // won't surface a cross-workspace item, but this call takes parentId directly, so a
             // guessed/leaked hosts_id must still be rejected here (cloudGroupService design doc
-            // §2.4 "collabo 대상 검증"). No-op check in standalone (exactly one workspace).
+            // §2.4 "collabo 대상 검증"). No-op check in self-hosted (exactly one workspace).
             var userMapper = session.getMapper(HubUserMapper.class);
             var registrant = userMapper.findByUserNo(userNo);
             var owner = userMapper.findByUserNo(-parent.getUserNo());
@@ -281,7 +281,7 @@ public class HostsProfService {
     // wrappedContentKey is the client's re-wrap of the row's existing DEK for the KEK that the
     // target visibility implies (personal key for 'private', workspace key for 'collabo'/
     // 'public') - the DEK itself never changes on a visibility flip (e2eEncryption design doc
-    // §7). Null in standalone, where content/keys are never encrypted (design doc §1).
+    // §7). Null in self-hosted, where content/keys are never encrypted (design doc §1).
     public HostsProf updateVisibility(String hostId, Long userNo, String visibility, String wrappedContentKey) {
         if ("collabo".equals(visibility)) {
             return convertToCollabo(hostId, userNo, wrappedContentKey);

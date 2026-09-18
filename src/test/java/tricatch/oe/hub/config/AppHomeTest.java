@@ -50,7 +50,7 @@ class AppHomeTest {
     // other tests.
 
     @Test
-    void isWorkspaceMode_unset_defaultsToStandaloneFalse() {
+    void isWorkspaceMode_unset_defaultsToSelfHostedFalse() {
         var original = System.getProperty("oe.mode");
         System.clearProperty("oe.mode");
         try {
@@ -61,9 +61,9 @@ class AppHomeTest {
     }
 
     @Test
-    void isWorkspaceMode_explicitStandalone_isFalse() {
+    void isWorkspaceMode_explicitSelfHosted_isFalse() {
         var original = System.getProperty("oe.mode");
-        System.setProperty("oe.mode", "standalone");
+        System.setProperty("oe.mode", "self-hosted");
         try {
             assertThat(AppHome.isWorkspaceMode()).isFalse();
         } finally {
@@ -83,8 +83,8 @@ class AppHomeTest {
     }
 
     @Test
-    void isWorkspaceMode_unrecognizedValue_fallsBackToStandaloneFalse() {
-        // Any value other than exactly "workspace" is standalone - a typo like "Workspace" or
+    void isWorkspaceMode_unrecognizedValue_fallsBackToSelfHostedFalse() {
+        // Any value other than exactly "workspace" is self-hosted - a typo like "Workspace" or
         // "cloud" must not silently disable oeProxy.
         var original = System.getProperty("oe.mode");
         System.setProperty("oe.mode", "cloud");

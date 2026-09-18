@@ -20,10 +20,10 @@ public class AppHome {
 
     // -Doe.mode=workspace runs oeHub as a multi-tenant cloud service (oeHosts only, oeProxy fully
     // disabled - see cloudGroupService design doc §2.6). Any other value, or no value at all,
-    // is "standalone" (oeHosts + oeProxy, the app's existing single-workspace behavior) - the
+    // is "self-hosted" (oeHosts + oeProxy, the app's existing single-workspace behavior) - the
     // default, so existing installs keep working unmodified with no flag.
     public static boolean isWorkspaceMode() {
-        return "workspace".equals(System.getProperty("oe.mode", "standalone"));
+        return "workspace".equals(System.getProperty("oe.mode", "self-hosted"));
     }
 
     // Workspace mode gets a distinct filename so an operator can switch -Doe.mode back and forth
@@ -36,7 +36,7 @@ public class AppHome {
     // -Doe.data.dir, when set, IS the directory holding the H2 database file, its generated
     // password file, and scheduled backups - used as-is instead of <home>/data. This only
     // relocates that containing folder (e.g. onto a different volume); the database *filename*
-    // itself still follows dbFileName() below - not user-overridable, so the standalone/workspace
+    // itself still follows dbFileName() below - not user-overridable, so the self-hosted/workspace
     // naming rule can't be bypassed. Independent of -Doe.home, which relocates the rest of the
     // app's data (config, CA) too.
     public static Path dbDataDir() {

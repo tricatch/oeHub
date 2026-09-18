@@ -311,9 +311,9 @@
     // key got into the cache.
     var newWrappedPrivateKey;
     if (!window.OE_WORKSPACE_MODE) {
-      // standalone never had a real wrap to begin with (dummy identity crypto - e2eEncryption
+      // self-hosted never had a real wrap to begin with (dummy identity crypto - e2eEncryption
       // design doc §1), so there is nothing to re-wrap and no session-cached key to require.
-      newWrappedPrivateKey = 'standalone';
+      newWrappedPrivateKey = 'self-hosted';
     } else {
       var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
       if (!privateKey) {
