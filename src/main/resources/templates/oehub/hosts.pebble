@@ -47,9 +47,6 @@
       <button class="oe-nav-action-btn" id="btnShare" title="{{ msg['tooltip.share.oelink'] }}" disabled>
         <span class="oe-icon oe-icon-share" style="width:15px;height:15px"></span>
       </button>
-      <button class="oe-nav-action-btn" id="btnCopyShareLink" title="{{ msg['tooltip.open.plain'] }}" disabled>
-        <span class="oe-icon oe-icon-content" style="width:15px;height:15px"></span>
-      </button>
       <button class="oe-nav-action-btn d-none" id="btnPublicLink" title="{{ msg['tooltip.public.link'] }}" disabled>
         <span class="oe-icon oe-icon-public-link" style="width:15px;height:15px"></span>
       </button>
@@ -461,7 +458,6 @@ const FWDPROXY_PORT = 36980;
   const oelinkArgsPreview = document.getElementById('oelinkArgsPreview');
   const btnDelete        = document.getElementById('btnDelete');
   const btnShare         = document.getElementById('btnShare');
-  const btnCopyShareLink = document.getElementById('btnCopyShareLink');
   const btnPublicLink    = document.getElementById('btnPublicLink');
   const btnDownload      = document.getElementById('btnDownload');
   // Only meaningful in workspace mode - self-hosted's existing /share link is already fully public/
@@ -573,7 +569,6 @@ const FWDPROXY_PORT = 36980;
     document.getElementById('cmHostsEditor').classList.add('readonly');
     btnDelete.disabled = true;
     btnShare.disabled = false;
-    btnCopyShareLink.disabled = false;
     btnDownload.disabled = false;
     visibilityWrap.classList.add('d-none');
     saveStatus.textContent = '';
@@ -707,7 +702,6 @@ const FWDPROXY_PORT = 36980;
     editor.setValue('', -1);
     btnDelete.disabled = true;
     btnShare.disabled = true;
-    btnCopyShareLink.disabled = true;
     btnDownload.disabled = true;
     visibilityWrap.classList.add('d-none');
     updateEditorMeta(null);
@@ -797,24 +791,6 @@ const FWDPROXY_PORT = 36980;
       ua:              userAgentInput.value.trim()
     };
     window.open('/share/' + activeHostId + '/oelink?chromeArgs=' + toBase64Url(JSON.stringify(args)), '_blank');
-  });
-
-  document.getElementById('btnCopyShareLink').addEventListener('click', async () => {
-    if (!activeHostId) return;
-    // Was window.open('/share/.../text') directly - that server route can't return encrypted
-    // (workspace mode) content synchronously (design doc §1/§9), so this fetches+decrypts via /view
-    // instead and hands the browser an object URL, working the same in both modes and for both
-    // the owner's own profile and a search result's (read-only) profile.
-    try {
-      const row = await (await fetch('/api/hosts/' + activeHostId + '/view')).json();
-      const plain = await OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
-      const modDt = row.updatedAt ? fmtDateTime(row.updatedAt) : '';
-      const header = '# ' + row.hostsProfile + ' / ' + row.userId + ' / ' + modDt + '\n\n';
-      const blob = new Blob([header + plain], {type: 'text/plain'});
-      window.open(URL.createObjectURL(blob), '_blank');
-    } catch (e) {
-      showToast(MSG['toast.load.failed']);
-    }
   });
 
   // ── Public (no-login) link ────────────────────────────────
@@ -1379,7 +1355,6 @@ const FWDPROXY_PORT = 36980;
     if (!p) return;
     const disabled = p.visibility === 'private';
     btnShare.disabled = disabled;
-    btnCopyShareLink.disabled = disabled;
     // Fully-public link (e2eEncryption design doc §6's last item) only makes sense for 'public'
     // visibility - 'collabo' is a restricted audience by design, defeating the "anyone, no login"
     // point, and the button itself only exists in workspace mode (see its init-time unhide below).
