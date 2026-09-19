@@ -1,5 +1,7 @@
 package tricatch.oe.hub.controller;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
@@ -34,21 +36,35 @@ public class AuthController {
     // enumerable via response timing.
     private static final String DUMMY_PASSWORD_HASH = PasswordUtil.hash("no-such-user-timing-parity");
 
-    // Per-IP login throttle: without it, bcrypt cost is the only thing slowing an online
-    // brute-force attempt against a single account. In-memory only (single JVM, same trust
-    // boundary as SetupController.SETUP_LOCK) - resets on restart, which is an acceptable
-    // trade-off for a self-hosted admin tool.
+    // Per-account login throttle (keyed by the attempted userId): without it, bcrypt cost is the
+    // only thing slowing an online brute-force attempt. It holds no matter how many IPs the
+    // guesses come from, and a successful login can only clear its own account's counter, so
+    // logging in as a different account never helps. Keyed by the attempted string whether or not
+    // that account exists, so lock behavior doesn't reveal which userIds are real. Trade-off:
+    // anyone can deliberately lock a known userId for LOCKOUT_DURATION - ForwardProxyServer's
+    // per-account auth lockout already accepts the same. Deliberately not keyed by IP: behind a
+    // reverse proxy every client shares one address, so an IP limit would lock everyone together.
+    //
+    // In-memory only (single JVM, same trust boundary as SetupController.SETUP_LOCK) - resets on
+    // restart, which is an acceptable trade-off for a self-hosted admin tool. Backed by a
+    // size-bounded, expiring Caffeine cache so attempts against random userIds can't grow memory
+    // without limit; each write refreshes an entry's expiry, so it always outlives its own lockout.
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final java.time.Duration ATTEMPT_WINDOW = java.time.Duration.ofMinutes(15);
     private static final java.time.Duration LOCKOUT_DURATION = java.time.Duration.ofMinutes(15);
 
-    private static final class LoginAttempts {
-        int count;
-        java.time.Instant windowStart;
-        java.time.Instant lockedUntil;
-    }
+    private record Attempt(int count, java.time.Instant windowStart, java.time.Instant lockedUntil) {}
 
-    private final java.util.concurrent.ConcurrentHashMap<String, LoginAttempts> loginAttemptsByIp = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Cache<String, Attempt> loginAttemptsByUser = Caffeine.newBuilder()
+            .expireAfterWrite(ATTEMPT_WINDOW.plus(LOCKOUT_DURATION))
+            .maximumSize(10_000)
+            .build();
+
+    // userId is attacker-controlled and unbounded; the key only needs to tell accounts apart.
+    private static String attemptUserKey(String userId) {
+        if (userId == null) return "";
+        return userId.length() > 64 ? userId.substring(0, 64) : userId;
+    }
 
     // Per-IP registration throttle: self-registration otherwise checks only userId format and
     // password strength — nothing stops one IP from scripting unlimited account creation, which
@@ -76,31 +92,28 @@ public class AuthController {
         this.jwtService        = jwtService;
     }
 
-    private boolean isLoginLocked(String ip) {
-        var a = loginAttemptsByIp.get(ip);
-        if (a == null) return false;
-        synchronized (a) {
-            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
-        }
+    boolean isLoginLocked(String userId) {
+        var a = loginAttemptsByUser.getIfPresent(attemptUserKey(userId));
+        return a != null && a.lockedUntil() != null && java.time.Instant.now().isBefore(a.lockedUntil());
     }
 
-    private void recordLoginFailure(String ip) {
-        var a = loginAttemptsByIp.computeIfAbsent(ip, k -> new LoginAttempts());
-        synchronized (a) {
-            var now = java.time.Instant.now();
-            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
-                a.windowStart = now;
-                a.count = 0;
-            }
-            a.count++;
-            if (a.count >= MAX_FAILED_ATTEMPTS) {
-                a.lockedUntil = now.plus(LOCKOUT_DURATION);
-            }
-        }
+    // compute() runs atomically per key and counts as a write, which refreshes the entry's expiry.
+    void recordLoginFailure(String userId) {
+        var now = java.time.Instant.now();
+        loginAttemptsByUser.asMap().compute(attemptUserKey(userId), (k, cur) -> {
+            boolean sameWindow = cur != null
+                    && java.time.Duration.between(cur.windowStart(), now).compareTo(ATTEMPT_WINDOW) <= 0;
+            int count = sameWindow ? cur.count() + 1 : 1;
+            var windowStart = sameWindow ? cur.windowStart() : now;
+            var lockedUntil = count >= MAX_FAILED_ATTEMPTS ? now.plus(LOCKOUT_DURATION)
+                    : (sameWindow ? cur.lockedUntil() : null);
+            return new Attempt(count, windowStart, lockedUntil);
+        });
     }
 
-    private void recordLoginSuccess(String ip) {
-        loginAttemptsByIp.remove(ip);
+    // Clears only the account that just logged in (e.g. its owner's own typos).
+    void recordLoginSuccess(String userId) {
+        loginAttemptsByUser.invalidate(attemptUserKey(userId));
     }
 
     private boolean isRegisterLocked(String ip) {
@@ -215,8 +228,7 @@ public class AuthController {
 
         if( logger.isDebugEnabled() ) logger.debug( "login, userId={}", userId);
 
-        String ip = ctx.ip();
-        if (isLoginLocked(ip)) {
+        if (isLoginLocked(userId)) {
             ctx.status(429).render("templates/login.pebble", Map.of(
                 "redirect", redirect != null ? redirect : "",
                 "error", "auth.error.too.many.attempts"
@@ -233,14 +245,14 @@ public class AuthController {
         logger.debug("login, userId={}, found={}, isCorrectPassword={}", userId, hubUser != null, isCorrectPassword);
 
         if (hubUser == null || password == null || !isCorrectPassword) {
-            recordLoginFailure(ip);
+            recordLoginFailure(userId);
             ctx.render("templates/login.pebble", Map.of(
                 "redirect", redirect != null ? redirect : "",
                 "error", "auth.error.invalid.credentials"
             ));
             return;
         }
-        recordLoginSuccess(ip);
+        recordLoginSuccess(userId);
 
         // 'pending' (awaiting workspace-admin approval) and 'ws_system' (non-login, workspace-
         // owned account) never get a session, even with the right password - cloudGroupService
@@ -579,14 +591,13 @@ public class AuthController {
      *  enumerable. */
     @SuppressWarnings("unchecked")
     public void apiRecoverVerify(Context ctx) {
-        String ip = ctx.ip();
-        if (isLoginLocked(ip)) {
+        var body = ctx.bodyAsClass(Map.class);
+        var userId = (String) body.get("userId");
+        if (isLoginLocked(userId)) {
             ctx.status(429).json(Map.of("error", "too_many_attempts"));
             return;
         }
 
-        var body = ctx.bodyAsClass(Map.class);
-        var userId = (String) body.get("userId");
         var recoveryVerifier = (String) body.get("recoveryVerifier");
 
         HubUser hubUser = findUser(userId);
@@ -595,7 +606,7 @@ public class AuthController {
         boolean isCorrect = PasswordUtil.matches(recoveryVerifier != null ? recoveryVerifier : "", hashToCheck);
 
         if (hubUser == null || hubUser.getRecoveryVerifier() == null || recoveryVerifier == null || !isCorrect) {
-            recordLoginFailure(ip);
+            recordLoginFailure(userId);
             ctx.status(400).json(Map.of("error", "invalid"));
             return;
         }
@@ -611,14 +622,13 @@ public class AuthController {
      *  here, on the actual reset, not on step 1's mere verification. */
     @SuppressWarnings("unchecked")
     public void apiRecoverReset(Context ctx) {
-        String ip = ctx.ip();
-        if (isLoginLocked(ip)) {
+        var body = ctx.bodyAsClass(Map.class);
+        var userId = (String) body.get("userId");
+        if (isLoginLocked(userId)) {
             ctx.status(429).json(Map.of("error", "too_many_attempts"));
             return;
         }
 
-        var body = ctx.bodyAsClass(Map.class);
-        var userId = (String) body.get("userId");
         var recoveryVerifier = (String) body.get("recoveryVerifier");
         var newPassword = (String) body.get("newPassword");
         var confirmPassword = (String) body.get("confirmPassword");
@@ -632,7 +642,7 @@ public class AuthController {
         boolean isCorrect = PasswordUtil.matches(recoveryVerifier != null ? recoveryVerifier : "", hashToCheck);
 
         if (hubUser == null || hubUser.getRecoveryVerifier() == null || recoveryVerifier == null || !isCorrect) {
-            recordLoginFailure(ip);
+            recordLoginFailure(userId);
             ctx.status(400).json(Map.of("error", "invalid"));
             return;
         }
@@ -661,7 +671,7 @@ public class AuthController {
             session.commit();
         }
 
-        recordLoginSuccess(ip);
+        recordLoginSuccess(userId);
         ctx.status(204);
     }
 
