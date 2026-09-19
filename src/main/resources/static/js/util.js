@@ -163,6 +163,36 @@ function initGuideModal(modalId, checkboxId, storageKey) {
   }
 }
 
+// Wires a toggle checkbox that must be confirmed via a warning modal before it can be turned on:
+// checking it opens the modal instead of applying immediately, confirming applies onApply(true),
+// and dismissing the modal any other way reverts the toggle.
+function wireConfirmToggle(toggleId, modalId, confirmBtnId, onApply) {
+  let pending = false;
+  const toggle = document.getElementById(toggleId);
+  const modalEl = document.getElementById(modalId);
+  toggle.addEventListener('change', e => {
+    if (e.target.checked) {
+      pending = true;
+      new bootstrap.Modal(modalEl).show();
+      return;
+    }
+    onApply(false);
+  });
+  document.getElementById(confirmBtnId).addEventListener('click', () => {
+    bootstrap.Modal.getInstance(modalEl).hide();
+    if (pending) {
+      pending = false;
+      onApply(true);
+    }
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    if (pending) {
+      toggle.checked = false;
+      pending = false;
+    }
+  });
+}
+
 function initWidthToggle(appEl, btns, onChange) {
   if (!Array.isArray(btns)) btns = [btns];
   function applyExpanded(expanded, isInit) {

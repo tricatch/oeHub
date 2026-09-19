@@ -182,6 +182,20 @@
 
 .oe-save-status { font-size: 0.75rem; color: #6c757d; }
 
+/* Save status overlay, positioned over the editor pane */
+.hosts-editor > .oe-save-status,
+.proxy-editor > .oe-save-status {
+  position: absolute;
+  top: 2.85rem;
+  right: 0.75rem;
+  font-size: 0.72rem;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
 .hosts-editor-body,
 .proxy-editor-body {
   flex: 1;

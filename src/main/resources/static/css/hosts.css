@@ -38,19 +38,8 @@
 #cmHostsEditor.readonly .ace_editor { background: #f8f9fa; }
 #cmHostsEditor.readonly .ace_gutter { background: #f0f0f0; }
 
-/* Save status overlay */
+/* Save status overlay positioning is shared — see oe-panel.css */
 .hosts-editor { position: relative; }
-.hosts-editor > .oe-save-status {
-  position: absolute;
-  top: 2.85rem;
-  right: 0.75rem;
-  font-size: 0.72rem;
-  z-index: 5;
-  pointer-events: none;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
 
 /* Right panel */
 .hosts-browser-panel {

@@ -8,6 +8,16 @@ import java.util.List;
 
 public interface HostsProfMapper {
 
+    // Shared by findByUserNo/findByHostsId: resolves a collabo/public reference row's real owner
+    // (CASE WHEN ... ELSE -p.user_no, since a reference row's own user_no is stored negative) and
+    // whichever of the row itself or its parent was updated more recently, for display.
+    String JOIN_FOR_DISPLAY = """
+        FROM HOSTS_PFILE h
+        LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
+        LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
+        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
+        """;
+
     @Select("""
         SELECT h.hosts_id, h.user_no, h.hosts_profile,
                COALESCE(p.hosts_content, h.hosts_content) AS hosts_content,
@@ -17,10 +27,7 @@ public interface HostsProfMapper {
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
-        FROM HOSTS_PFILE h
-        LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
-        LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
-        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
+        """ + JOIN_FOR_DISPLAY + """
         WHERE h.user_no = #{userNo}
         ORDER BY h.sort_order ASC, h.updated_at ASC
         """)
@@ -36,10 +43,7 @@ public interface HostsProfMapper {
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
-        FROM HOSTS_PFILE h
-        LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
-        LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
-        LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
+        """ + JOIN_FOR_DISPLAY + """
         WHERE h.hosts_id = #{hostsId}
         """)
     HostsProf findByHostsId(String hostsId);

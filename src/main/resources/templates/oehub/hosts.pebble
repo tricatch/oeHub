@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/css/hosts.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js" integrity="sha384-e7M5uM+69Pk0fBAnkRuFwRvZG2nFlXu572zM5jIUo36Pumtw+No4zRokAbDcqSuA" crossorigin="anonymous"></script>
 <script src="/js/ace-init.js"></script>
+<script src="/js/chrome-launch-args.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -1086,35 +1087,25 @@ const FWDPROXY_PORT = 36980;
   }
 
   function buildArgsLines() {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
-    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
-    const url = loadingUrlInput.value.trim();
+    const {rules} = buildResolverRules();
     const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
-    const userAgent   = userAgentInput.value.trim();
-    const lines = [];
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const {rules}          = buildResolverRules();
-    const hasRules         = Object.keys(rules).length > 0;
-    if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
-    if (hrrEnabled && hasRules)    lines.push('--host-resolver-rules "MAP ..."');
-    if (proxyServerEnabled)        lines.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
-    if (incognito)                 lines.push('--incognito');
-    if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
-    lines.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)             lines.unshift(`--oelink=${oelinkValue}`);
-    if (urlEnabled && url)         lines.push('  ' + url);
-
-    return lines;
+    return buildChromeArgLines({
+      oelinkEnabled: document.getElementById('toggleOelink').checked,
+      incognito: document.getElementById('toggleIncognito').checked,
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      urlEnabled: document.getElementById('toggleOpenUrl').checked,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      proxyServerEnabled: document.getElementById('toggleProxyServer').checked,
+      proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
+      url: loadingUrlInput.value.trim(),
+      userDataDir,
+      userAgent: userAgentInput.value.trim(),
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      hasRules: Object.keys(rules).length > 0,
+    });
   }
 
   function updateSchemePreview() {
@@ -1201,32 +1192,29 @@ const FWDPROXY_PORT = 36980;
   });
 
   function buildSchemeArgs(browser) {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const oelinkEnabled = document.getElementById('toggleOelink').checked;
+    const urlEnabled    = document.getElementById('toggleOpenUrl').checked;
     const url = loadingUrlInput.value.trim();
     const {rules} = buildResolverRules();
     const rulesStr = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
     const uddEnabled  = document.getElementById('toggleUserDataDir').checked;
-    const uaEnabled   = document.getElementById('toggleUserAgent').checked;
-    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
     const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
-    const userAgent   = userAgentInput.value.trim();
-    const parts = [];
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (proxyServerEnabled)        parts.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)             parts.unshift(`--oelink=${oelinkValue}`);
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr,
+      proxyServerEnabled: document.getElementById('toggleProxyServer').checked,
+      proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: userAgentInput.value.trim(),
+    });
+    const oelinkValue = chromeOelinkValue(uddEnabled, userDataDir);
+    if (oelinkEnabled) parts.unshift(`--oelink=${oelinkValue}`);
     if (urlEnabled && url) {
       const wrapped = wrapDelayedUrl(url);
       parts.push(isWin ? wrapped : macArgQuote(wrapped));
@@ -1244,40 +1232,27 @@ const FWDPROXY_PORT = 36980;
   });
 
   function buildDirectChromeCmd(os) {
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const url              = loadingUrlInput.value.trim();
-    const {rules}          = buildResolverRules();
-    const rulesStr         = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
-    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
+    const urlEnabled = document.getElementById('toggleOpenUrl').checked;
+    const url         = loadingUrlInput.value.trim();
+    const {rules}     = buildResolverRules();
+    const rulesStr    = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
     const userDataDir = resolveUDD(defaultUserDataDir, os);
-    const userAgent   = userAgentInput.value.trim();
-    const parts = [];
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (proxyServerEnabled)        parts.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    if (urlEnabled && url)         parts.push(wrapDelayedUrl(url));
-    if (os === 'win') {
-      const argList = parts.map(winArgQuote).join(', ');
-      return parts.length > 0
-        ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
-        : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
-    } else {
-      return parts.length > 0
-        ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
-        : 'open -na "Google Chrome"';
-    }
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr,
+      proxyServerEnabled: document.getElementById('toggleProxyServer').checked,
+      proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: userAgentInput.value.trim(),
+    });
+    if (urlEnabled && url) parts.push(wrapDelayedUrl(url));
+    return buildChromeCommandLine(os, parts);
   }
 
   document.getElementById('btnCopyWinChrome').addEventListener('click', () => {
@@ -1532,8 +1507,6 @@ const FWDPROXY_PORT = 36980;
     }, 800);
   });
 
-  let _pendingUdd = false;
-
   function applyUserDataDir(enabled) {
     userDataDirInput.classList.toggle('disabled', !enabled);
     fetch('/api/hosts/conf/user_data_dir_enabled', {
@@ -1543,29 +1516,7 @@ const FWDPROXY_PORT = 36980;
     updateSchemePreview();
   }
 
-  document.getElementById('toggleUserDataDir').addEventListener('change', e => {
-    if (e.target.checked) {
-      _pendingUdd = true;
-      new bootstrap.Modal(document.getElementById('uddWarnModal')).show();
-      return;
-    }
-    applyUserDataDir(false);
-  });
-
-  document.getElementById('btnUddConfirm').addEventListener('click', () => {
-    bootstrap.Modal.getInstance(document.getElementById('uddWarnModal')).hide();
-    if (_pendingUdd) {
-      _pendingUdd = false;
-      applyUserDataDir(true);
-    }
-  });
-
-  document.getElementById('uddWarnModal').addEventListener('hidden.bs.modal', () => {
-    if (_pendingUdd) {
-      document.getElementById('toggleUserDataDir').checked = false;
-      _pendingUdd = false;
-    }
-  });
+  wireConfirmToggle('toggleUserDataDir', 'uddWarnModal', 'btnUddConfirm', applyUserDataDir);
 
   document.getElementById('toggleOpenUrl').addEventListener('change', e => {
     loadingUrlInput.disabled = !e.target.checked;

@@ -181,6 +181,7 @@
 <script src="/js/crypto.js"></script>
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
+<script src="/js/chrome-launch-args.js"></script>
 <script nonce="{{ cspNonce }}">
 window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
 (async function() {
@@ -232,29 +233,25 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
   }
 
   function buildSchemeArgs() {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const oelinkEnabled = document.getElementById('toggleOelink').checked;
+    const urlEnabled    = document.getElementById('toggleOpenUrl').checked;
     const url         = document.getElementById('openUrl').value.trim();
+    const uddEnabled  = document.getElementById('toggleUserDataDir').checked;
     const userDataDir = document.getElementById('userDataDir').value.trim();
-    const userAgent   = document.getElementById('userAgent').value.trim();
-    const parts = [];
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    const rulesStr = buildResolverRulesStr();
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)     parts.unshift(`--oelink=${oelinkValue}`);
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr: buildResolverRulesStr(),
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: document.getElementById('userAgent').value.trim(),
+    });
+    const oelinkValue = chromeOelinkValue(uddEnabled, userDataDir);
+    if (oelinkEnabled) parts.unshift(`--oelink=${oelinkValue}`);
     if (urlEnabled && url) {
       const wrapped = wrapDelayedUrl(url);
       parts.push(isWin ? wrapped : macArgQuote(wrapped));
@@ -263,31 +260,21 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
   }
 
   function buildArgsLines() {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
-    const url         = document.getElementById('openUrl').value.trim();
-    const userDataDir = document.getElementById('userDataDir').value.trim();
-    const userAgent   = document.getElementById('userAgent').value.trim();
-    const lines = [];
-    if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
-    const rulesStrPreview = buildResolverRulesStr();
-    if (hrrEnabled && rulesStrPreview) lines.push('--host-resolver-rules "MAP ..."');
-    if (incognito)                 lines.push('--incognito');
-    if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
-    lines.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)             lines.unshift(`--oelink=${oelinkValue}`);
-    if (urlEnabled && url)         lines.push('  ' + url);
-    return lines;
+    return buildChromeArgLines({
+      oelinkEnabled: document.getElementById('toggleOelink').checked,
+      devTools: document.getElementById('toggleDevTools').checked,
+      incognito: document.getElementById('toggleIncognito').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      hasRules: !!buildResolverRulesStr(),
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      urlEnabled: document.getElementById('toggleOpenUrl').checked,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      url: document.getElementById('openUrl').value.trim(),
+      userDataDir: document.getElementById('userDataDir').value.trim(),
+      userAgent: document.getElementById('userAgent').value.trim(),
+    });
   }
 
   function updatePreview() {
@@ -337,32 +324,11 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
     updatePreview();
   });
   document.getElementById('userAgent').addEventListener('input', updatePreview);
-  let _pendingUdd = false;
   function applyUserDataDir(enabled) {
     document.getElementById('userDataDir').disabled = !enabled;
     updatePreview();
   }
-  document.getElementById('toggleUserDataDir').addEventListener('change', e => {
-    if (e.target.checked) {
-      _pendingUdd = true;
-      new bootstrap.Modal(document.getElementById('uddWarnModal')).show();
-      return;
-    }
-    applyUserDataDir(false);
-  });
-  document.getElementById('btnUddConfirm').addEventListener('click', () => {
-    bootstrap.Modal.getInstance(document.getElementById('uddWarnModal')).hide();
-    if (_pendingUdd) {
-      _pendingUdd = false;
-      applyUserDataDir(true);
-    }
-  });
-  document.getElementById('uddWarnModal').addEventListener('hidden.bs.modal', () => {
-    if (_pendingUdd) {
-      document.getElementById('toggleUserDataDir').checked = false;
-      _pendingUdd = false;
-    }
-  });
+  wireConfirmToggle('toggleUserDataDir', 'uddWarnModal', 'btnUddConfirm', applyUserDataDir);
   document.getElementById('userDataDir').addEventListener('input', updatePreview);
   document.getElementById('toggleOpenUrl').addEventListener('change', e => {
     document.getElementById('openUrl').disabled = !e.target.checked;
@@ -408,37 +374,23 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
   updatePreview();
 
   function buildDirectChromeCmd(os) {
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const urlEnabled = document.getElementById('toggleOpenUrl').checked;
     const url         = document.getElementById('openUrl').value.trim();
     const userDataDir = resolveUDD(baseUdd, os);
-    const userAgent   = document.getElementById('userAgent').value.trim();
-    const rulesStr    = buildResolverRulesStr();
-    const parts = [];
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    if (urlEnabled && url)         parts.push(wrapDelayedUrl(url));
-    if (os === 'win') {
-      const argList = parts.map(winArgQuote).join(', ');
-      return parts.length > 0
-        ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
-        : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
-    } else {
-      return parts.length > 0
-        ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
-        : 'open -na "Google Chrome"';
-    }
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr: buildResolverRulesStr(),
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: document.getElementById('userAgent').value.trim(),
+    });
+    if (urlEnabled && url) parts.push(wrapDelayedUrl(url));
+    return buildChromeCommandLine(os, parts);
   }
 
   document.getElementById('btnChrome').addEventListener('click', () => {

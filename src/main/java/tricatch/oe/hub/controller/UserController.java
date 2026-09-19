@@ -210,16 +210,9 @@ public class UserController {
         // the password itself, never as a separate follow-up call.
         var newWrappedPrivateKey = (String) body.get("newWrappedPrivateKey");
 
-        if (newPassword == null || newPassword.isBlank()) {
-            ctx.status(400).json(Map.of("error", "password_required"));
-            return;
-        }
-        if (newPassword.length() < 8) {
-            ctx.status(400).json(Map.of("error", "password_too_short"));
-            return;
-        }
-        if (!newPassword.equals(confirmPassword)) {
-            ctx.status(400).json(Map.of("error", "password_mismatch"));
+        var passwordError = PasswordUtil.validateNewPassword(newPassword, confirmPassword);
+        if (passwordError != null) {
+            ctx.status(400).json(Map.of("error", passwordError));
             return;
         }
         if (newWrappedPrivateKey == null || newWrappedPrivateKey.isBlank()) {

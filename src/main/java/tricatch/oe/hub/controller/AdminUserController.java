@@ -245,6 +245,12 @@ public class AdminUserController {
         ctx.status(200).result("OK");
     }
 
+    // "Last ws_adm" guard (cloudGroupService design doc §2.5 "안전장치") - a workspace must never
+    // be left with zero admins. Shared by apiDeleteUser and apiSetRole below.
+    private boolean isLastWsAdmin(HubUserMapper mapper, HubUser target) {
+        return "ws_adm".equals(target.getRole()) && mapper.countWsAdmins(target.getWsNo()) <= 1;
+    }
+
     public void apiDeleteUser(Context ctx) {
         Long userNo;
         try { userNo = Long.parseLong(ctx.pathParam("userNo")); }
@@ -268,7 +274,7 @@ public class AdminUserController {
             // "Last ws_adm" guard (design doc §2.5 "안전장치") - deletion must never leave a
             // workspace with zero admins, same as the role-demotion guard in apiSetRole below.
             // Checked before any of the deletion side effects further down run.
-            if ("ws_adm".equals(target.getRole()) && mapper.countWsAdmins(target.getWsNo()) <= 1) {
+            if (isLastWsAdmin(mapper, target)) {
                 ctx.status(400).json(Map.of("error", "last_ws_admin"));
                 return;
             }
@@ -328,8 +334,7 @@ public class AdminUserController {
             // first") than the generic "can't touch your own role" - only applies when this
             // screen's admin role IS ws_adm (workspace mode): self-hosted's 'adm' isn't managed through
             // this workspace-scoped screen, so it's out of scope here.
-            if ("ws_adm".equals(adminRole) && "usr".equals(newRole) && "ws_adm".equals(target.getRole())
-                    && mapper.countWsAdmins(target.getWsNo()) <= 1) {
+            if ("ws_adm".equals(adminRole) && "usr".equals(newRole) && isLastWsAdmin(mapper, target)) {
                 ctx.status(400).json(Map.of("error", "last_ws_admin"));
                 return;
             }
