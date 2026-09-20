@@ -499,7 +499,7 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         String connection = getHeaderValueAsString(HTTP.HEADER.CONNECTION);
         
         // Extract content length from headers
-        Integer contentLength = getHeaderValueAsInt(HTTP.HEADER.CONTENT_LENGTH);
+        Long contentLength = getHeaderValueAsLong(HTTP.HEADER.CONTENT_LENGTH);
         
         // Determine body stream type
         HttpStream httpStream = determineRequestBodyStreamType();
@@ -627,7 +627,7 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         }
 
         // Check for Content-Length
-        Integer contentLength = getHeaderValueAsInt(HTTP.HEADER.CONTENT_LENGTH);
+        Long contentLength = getHeaderValueAsLong(HTTP.HEADER.CONTENT_LENGTH);
         if (contentLength != null && contentLength >= 0) {
             return HttpStream.CONTENT_LENGTH;
         }
@@ -731,7 +731,7 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         String connection = getHeaderValueAsString(HTTP.HEADER.CONNECTION);
 
         // Extract content length from headers
-        Integer contentLength = getHeaderValueAsInt(HTTP.HEADER.CONTENT_LENGTH);
+        Long contentLength = getHeaderValueAsLong(HTTP.HEADER.CONTENT_LENGTH);
 
         // Determine body stream type
         HttpStream httpStream = determineResponseBodyStreamType(statusCode, isHeadRequest);
@@ -771,7 +771,7 @@ public class HeaderLines extends ArrayList<ByteBuffer> {
         }
 
         // Check for Content-Length
-        Integer contentLength = getHeaderValueAsInt(HTTP.HEADER.CONTENT_LENGTH);
+        Long contentLength = getHeaderValueAsLong(HTTP.HEADER.CONTENT_LENGTH);
         if (contentLength != null && contentLength >= 0) {
             return HttpStream.CONTENT_LENGTH;
         }

@@ -10,7 +10,7 @@ public class HttpResponse {
     private final int statusCode;
     private final String statusMessage;
     private final String connection;
-    private final Integer contentLength;
+    private final Long contentLength;
     private final HttpStream httpStream;
     private final HeaderLines headers;
     
@@ -24,7 +24,7 @@ public class HttpResponse {
      * @param httpStream body stream type
      * @param headers response headers
      */
-    public HttpResponse(String version, int statusCode, String statusMessage, String connection, Integer contentLength, HttpStream httpStream, HeaderLines headers) {
+    public HttpResponse(String version, int statusCode, String statusMessage, String connection, Long contentLength, HttpStream httpStream, HeaderLines headers) {
         this.version = version;
         this.statusCode = statusCode;
         this.statusMessage = statusMessage;
@@ -70,7 +70,7 @@ public class HttpResponse {
      * Get content length value
      * @return content length value
      */
-    public Integer getContentLength() {
+    public Long getContentLength() {
         return contentLength;
     }
     

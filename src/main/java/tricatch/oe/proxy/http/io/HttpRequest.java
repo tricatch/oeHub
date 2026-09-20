@@ -11,7 +11,7 @@ public class HttpRequest {
     private final String version;
     private final String host;
     private final String connection;
-    private final Integer contentLength;
+    private final Long contentLength;
     private final HttpStream httpStream;
     private final HeaderLines headers;
     
@@ -26,7 +26,7 @@ public class HttpRequest {
      * @param httpStream body stream type
      * @param headers request headers
      */
-    public HttpRequest(String method, String path, String version, String host, String connection, Integer contentLength, HttpStream httpStream, HeaderLines headers) {
+    public HttpRequest(String method, String path, String version, String host, String connection, Long contentLength, HttpStream httpStream, HeaderLines headers) {
         this.method = method;
         this.path = path;
         this.version = version;
@@ -81,7 +81,7 @@ public class HttpRequest {
      * Get content length value
      * @return content length value
      */
-    public Integer getContentLength() {
+    public Long getContentLength() {
         return contentLength;
     }
     

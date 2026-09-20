@@ -253,4 +253,36 @@ class HeaderLinesTest {
         lines.setHeaderLine("NotAHeaderLine");
         assertThat(lines.size()).isEqualTo(sizeBefore);
     }
+
+    // ── Content-Length larger than an int ────────────────────────────────────
+
+    @Test
+    void request_contentLengthAboveIntMax_isFramedByContentLength_notTreatedAsNoBody() {
+        // 3,000,000,000 does not fit in an int. It used to be read as "no Content-Length", so a POST
+        // was classified as having no body and its body bytes were then parsed as the next request.
+        HeaderLines lines = requestLines("POST /upload HTTP/1.1", "Host: a", "Content-Length: 3000000000");
+
+        var request = lines.parseHttpRequest();
+
+        assertThat(request.getHttpStream()).isEqualTo(HttpStream.CONTENT_LENGTH);
+        assertThat(request.getContentLength()).isEqualTo(3_000_000_000L);
+    }
+
+    @Test
+    void response_contentLengthAboveIntMax_isFramedByContentLength_notUntilClose() {
+        // ... and a response used to fall back to "body ends when the connection closes", which a
+        // keep-alive upstream never does.
+        HeaderLines lines = responseLines("HTTP/1.1 200 OK", "Content-Length: 5000000000");
+
+        var response = lines.parseHttpResponse(false);
+
+        assertThat(response.getBodyStream()).isEqualTo(HttpStream.CONTENT_LENGTH);
+        assertThat(response.getContentLength()).isEqualTo(5_000_000_000L);
+    }
+
+    @Test
+    void request_contentLengthBeyondEvenALong_isRejected() {
+        HeaderLines lines = requestLines("POST /x HTTP/1.1", "Host: a", "Content-Length: 99999999999999999999");
+        assertThatIllegalArgumentException().isThrownBy(lines::parseHttpRequest);
+    }
 }

@@ -20,7 +20,7 @@ public class RelayContentLength {
 
     private static final Logger logger = LoggerFactory.getLogger(RelayContentLength.class);
 
-    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, Integer contentLength, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
+    public static HttpStream.Connection relay(String clientId, String rid, HttpStream.Flow flow, Long contentLength, HttpStreamReader in, HttpStreamWriter out, boolean monitored) throws IOException {
         if (contentLength == null || contentLength <= 0) {
             if (logger.isDebugEnabled()) {
                 logger.debug("{}, {}, No content length or zero content length", rid, flow);
@@ -39,11 +39,12 @@ public class RelayContentLength {
         MonitorBodyCollector bodyCollector = monitored ? new MonitorBodyCollector() : null;
 
         byte[] buffer = new byte[HTTP.BODY_BUFFER_SIZE];
-        int remainingBytes = contentLength;
+        // long: a body may be larger than 2 GiB (Content-Length is not limited to an int)
+        long remainingBytes = contentLength;
         boolean truncated = false;
 
         while (remainingBytes > 0) {
-            int bytesToRead = Math.min(buffer.length, remainingBytes);
+            int bytesToRead = (int) Math.min(buffer.length, remainingBytes);
             int bytesRead = in.read(buffer, 0, bytesToRead);
 
             if (bytesRead == -1) {
