@@ -191,6 +191,11 @@ public class UserController {
                     return v;
                 }).toList();
                 proxyVhostService.importVhosts(userNo, entries, merge);
+                // Same reasoning as ProxyController.apiImport: keep the live routing in step with
+                // what was just written. oeProxy doesn't run in workspace mode, so nothing to do there.
+                if (!tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
+                    tricatch.oe.proxy.controller.ProxyController.refreshLiveRouting(sqlSessionFactory, userNo, ctx.ip(), !merge);
+                }
             }
         }
 

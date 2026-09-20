@@ -237,6 +237,17 @@ public class ReverseProxyServer {
         oidVirtualHostsMap.remove(OidUtil.encode(userNo));
     }
 
+    /**
+     * Drops everything the reverse proxy holds for a removed account: its live routing table and
+     * any "Use This IP" claim. Without this a deleted member's routes keep serving (their own
+     * oid, or their claimed IP, still resolves) until the process restarts.
+     */
+    public static void forgetUser(Long userNo) {
+        String oid = OidUtil.encode(userNo);
+        oidVirtualHostsMap.remove(oid);
+        ClaimedIpRegistry.release(oid);
+    }
+
     // Drops only the cached routing table, leaving any IP claim intact — for invalidating an
     // owner who isn't the current request (e.g. a collaborator on a shared vhost someone else
     // just edited). Their next request finds no cached entry and lazily reloads via getVirtualHosts().

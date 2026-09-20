@@ -8,6 +8,7 @@ import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.Role;
+import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.TeamMapper;
@@ -305,6 +306,9 @@ public class AdminUserController {
                 AuditLogger.detail("userId", targetUserId), currentUser.getUserNo());
             session.commit();
         }
+        // Their live oeProxy routing table and IP claim live in memory, not in the rows deleted
+        // above; drop them so the removed member's routes stop serving immediately.
+        ReverseProxyServer.forgetUser(userNo);
         ctx.status(200).result("OK");
     }
 

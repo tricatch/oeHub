@@ -254,12 +254,18 @@ public class ProxyController {
     }
 
     public void apiDelete(Context ctx) {
-        vhostService.delete(ctx.pathParam("vhostId"), AuthController.currentUser(ctx).getUserNo());
+        var userNo = AuthController.currentUser(ctx).getUserNo();
+        vhostService.delete(ctx.pathParam("vhostId"), userNo);
+        // The live routing table is a copy of the selected vhosts as of the last apply; a deleted
+        // vhost's routes would otherwise keep serving until the next apply or a restart.
+        refreshLiveRouting(vhostService, confService, userNo, ctx.ip(), true);
         ctx.status(204);
     }
 
     public void apiDeleteAll(Context ctx) {
-        vhostService.deleteAll(AuthController.currentUser(ctx).getUserNo());
+        var userNo = AuthController.currentUser(ctx).getUserNo();
+        vhostService.deleteAll(userNo);
+        refreshLiveRouting(vhostService, confService, userNo, ctx.ip(), true);
         ctx.status(204);
     }
 
@@ -305,7 +311,11 @@ public class ProxyController {
             v.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
             return v;
         }).toList();
-        ctx.json(vhostService.importVhosts(hubUser.getUserNo(), entries, merge));
+        var imported = vhostService.importVhosts(hubUser.getUserNo(), entries, merge);
+        // A replace-import deletes the previous vhosts, so their routes must go too; a merge only
+        // adds, so a failed apply there just leaves the current routing untouched.
+        refreshLiveRouting(vhostService, confService, hubUser.getUserNo(), ctx.ip(), !merge);
+        ctx.json(imported);
     }
 
     public void apiShare(Context ctx) throws Exception {
@@ -381,6 +391,23 @@ public class ProxyController {
     // (e.g. on login) without needing a ProxyController instance.
     public static boolean applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
         return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, null);
+    }
+
+    /**
+     * Re-pushes the user's live routing after their vhosts changed in the database. With
+     * failClosed (something was removed) a merge that can't be applied drops the cached table
+     * instead of leaving the removed routes serving; the next request rebuilds it from the
+     * database. Without it, a failed apply just keeps the current routing.
+     */
+    private static void refreshLiveRouting(ProxyVhostService vhostService, ProxyConfService confService,
+                                           Long userNo, String routeIp, boolean failClosed) {
+        boolean applied = applyMergedConfig(vhostService, confService, userNo, routeIp, null);
+        if (!applied && failClosed) ReverseProxyServer.invalidateVirtualHosts(userNo);
+    }
+
+    /** Same as above for callers outside this controller (e.g. restoring a user backup). */
+    public static void refreshLiveRouting(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp, boolean failClosed) {
+        refreshLiveRouting(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, failClosed);
     }
 
     // routeIp is only used below for the ${LOCAL_SVR} substitution fallback (see resolveLocalSvr) -
