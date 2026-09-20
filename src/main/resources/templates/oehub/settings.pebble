@@ -351,7 +351,7 @@
             <td>
               <select id="backupIntervalHours" class="form-select form-select-sm" style="width:auto;display:inline-block;">
                 {% for h in 1..24 %}
-                <option value="{{ h }}"{% if h == backupIntervalHours %} selected{% endif %}>{{ h }}</option>
+                <option value="{{ h }}"{% if h == backupIntervalHours %} selected{% endif %}>{{ h }}{{ msg[h == 1 ? 'settings.backup.interval.hour' : 'settings.backup.interval.hours'] }}</option>
                 {% endfor %}
               </select>
               <div class="form-text">{{ msg['settings.backup.interval.help'] }}</div>
