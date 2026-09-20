@@ -109,7 +109,7 @@ oelink이 전달할 수 있는 플래그에는 다음이 포함됩니다.
 - **macOS** — `oelink/mac`. `install_mac_oelink.sh`는 AppleScript `on open location`
   핸들러(macOS가 커스텀 URL 스킴을 전달하는 메커니즘)를 감싼 작은 `.app` 번들을 빌드합니다.
   이 핸들러는 Bash 런처를 셸 아웃으로 호출하고, 런처는 인수 문자열을 base64로 디코드하여
-  Chrome을 exec로 실행합니다.
+  검증한 뒤 Chrome을 실행합니다.
 
 `oelink/` 아래의 설치 파일들 — 사전 빌드된 Windows용 `oelink.exe` 포함 — 은 빌드 시점에 생성되지
 않고 저장소에 그대로 커밋되어 있습니다. 그래서 전체 Gradle 빌드를 먼저 하지 않아도, 클론 직후
@@ -126,6 +126,23 @@ macOS에서는 추가로 `--oelink=<id>` 인수가 붙어, 특정 실행이 어�
 식별합니다(`--user-data-dir`이 없는 기본 프로필은 `0`, 그렇지 않으면 `--user-data-dir` 경로의
 CRC32 해시). 이 덕분에 같은 프로필을 다시 실행할 때, 충돌하는 이미 실행 중인 Chrome을 감지하고
 먼저 닫을지 물어볼 수 있습니다.
+
+### 인수 검증
+
+`oelink://` 링크는 누구나 만들어 보낼 수 있으므로(공유된 프로필, 붙여넣은 URL 등) 핸들러는 디코드한
+문자열을 셸에 넘기지 않습니다. 따옴표 단위로 직접 단어를 나누고(확장·치환 없음) 각 단어를 검사하며,
+하나라도 허용되지 않으면 Chrome을 전혀 실행하지 않고 안내 대화상자만 띄웁니다.
+
+- 허용: `--플래그` 또는 `--플래그=값` 형태의 단어, 그리고 시작 URL(`http(s)://`, `about:`, `chrome://`,
+  oeHosts가 만드는 지연 이동용 `data:text/html,<script>setTimeout(...)` 페이지).
+- 거부: 프로그램을 실행하게 하거나(`--renderer-cmd-prefix`, `--gpu-launcher` 등), 샌드박스를
+  약화시키거나(`--no-sandbox`, `--disable-web-security`), 디버깅 채널을 여는(`--remote-debugging-*`)
+  플래그, 확장 로드(`--load-extension`), 트래픽 우회(`--proxy-pac-url`, `--ignore-certificate-errors*`)
+  플래그, 그리고 `file:` 같은 그 밖의 URL. 거부 목록은 `chrome-launch-args.js`,
+  `install_mac_oelink.sh`, `_oelink_exe.ps1`에 같은 내용으로 있으므로 함께 수정해야 합니다.
+
+hosts 내용은 `MAP <호스트> <IP>` 규칙으로 바뀌기 전에 호스트 이름과 IP 형식만 남기고 나머지 줄은
+버립니다. 사용자 에이전트·데이터 디렉터리·추가 인수 값에서는 따옴표와 제어 문자를 제거합니다.
 
 ## 모범 사례
 

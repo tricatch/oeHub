@@ -28,13 +28,22 @@ function fmtDateTime(d) {
   return String(d).slice(0, 16).replace('T', ' ');
 }
 
+// Host name and address as they may appear in a --host-resolver-rules "MAP host ip" rule. Hosts
+// content is shared between accounts and ends up inside a browser launch argument, so a line that
+// carries anything else (quotes, spaces, shell characters, extra flags) is dropped, never quoted.
+// The address may still be the ${PROXY_SVR} placeholder, which the pages substitute afterwards.
+const HOSTS_RULE_HOST = /^[A-Za-z0-9_.*-]+$/;
+const HOSTS_RULE_IP = /^(?:\$\{PROXY_SVR\}|[0-9A-Fa-f:.]+)$/;
+
 function parseHostsToMap(content) {
   const map = {};
   content.split('\n').forEach(line => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) return;
     const parts = trimmed.split(/\s+/);
-    if (parts.length >= 2 && !map[parts[1]]) map[parts[1]] = parts[0];
+    if (parts.length < 2 || map[parts[1]]) return;
+    if (!HOSTS_RULE_IP.test(parts[0]) || !HOSTS_RULE_HOST.test(parts[1])) return;
+    map[parts[1]] = parts[0];
   });
   return map;
 }

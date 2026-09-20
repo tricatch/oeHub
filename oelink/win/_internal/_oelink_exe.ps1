@@ -97,9 +97,78 @@ function Decode-Base64Url($Encoded) {
     return [System.Text.Encoding]::UTF8.GetString($bytes)
 }
 
-function Launch-WithArgs($ExePath, $ArgsStr) {
+# The argument string comes from a link anyone can craft (a shared profile, a pasted oelink:// URL),
+# so it is split into words by hand (double quotes group, nothing is expanded) and every word is
+# checked before Chrome is started. One rejected word cancels the whole launch.
+
+# Flag names (without the leading --) that run programs, weaken the sandbox, open a debugging
+# channel or redirect traffic. A trailing * matches any suffix.
+$DENIED_FLAGS = @(
+    'renderer-cmd-prefix', 'gpu-launcher', 'utility-cmd-prefix', 'zygote-cmd-prefix',
+    'plugin-launcher', 'ppapi-plugin-launcher', 'nacl-gdb', 'nacl-gdb-script', 'browser-subprocess-path',
+    'load-extension', 'disable-extensions-except', 'load-component-extension',
+    'remote-debugging-*', 'remote-allow-origins', 'enable-automation',
+    'no-sandbox', 'disable-gpu-sandbox', 'disable-setuid-sandbox', 'disable-web-security',
+    'disable-site-isolation-trials', 'allow-file-access-from-files', 'allow-running-insecure-content',
+    'ignore-certificate-errors*', 'proxy-pac-url', 'proxy-auto-detect', 'js-flags',
+    'utility-and-browser-sandbox-cmd-prefix', 'ppapi-flash-path', 'enable-logging', 'log-file'
+)
+
+# Returns the words, or $null when a quote is left open.
+function Split-OelinkArgs([string]$Line) {
+    $words = New-Object System.Collections.Generic.List[string]
+    $sb = New-Object System.Text.StringBuilder
+    $inQuote = $false
+    $have = $false
+    foreach ($ch in $Line.ToCharArray()) {
+        if ($ch -eq [char]'"') {
+            $inQuote = -not $inQuote
+            $have = $true
+        } elseif (-not $inQuote -and [char]::IsWhiteSpace($ch)) {
+            if ($have) { $words.Add($sb.ToString()); [void]$sb.Clear(); $have = $false }
+        } else {
+            [void]$sb.Append($ch)
+            $have = $true
+        }
+    }
+    if ($inQuote) { return $null }
+    if ($have) { $words.Add($sb.ToString()) }
+    return ,$words.ToArray()
+}
+
+# $true when the word is a permitted flag or a permitted start URL.
+function Test-OelinkArg([string]$Word) {
+    if ($Word -match '[\x00-\x1f]') { return $false }
+    if ($Word -match '^--([A-Za-z0-9][A-Za-z0-9-]*)(=|$)') {
+        $name = $Matches[1].ToLower()
+        foreach ($pat in $DENIED_FLAGS) {
+            if ($name -like $pat) { return $false }
+        }
+        return $true
+    }
+    if ($Word -match '^(https?://|about:|chrome://)') { return $true }
+    # The delayed-redirect page hosts.pebble builds (wrapDelayedUrl in util.js).
+    if ($Word.StartsWith("data:text/html,<script>setTimeout(()=>location.replace('") -and $Word.EndsWith("'),1000)</script>")) { return $true }
+    return $false
+}
+
+# One word as a command-line argument: quoted whole, with the backslashes in front of the closing
+# quote doubled so they cannot escape it.
+function Quote-OelinkArg([string]$Word) {
+    $trailing = [regex]::Match($Word, '\\*$').Value
+    return '"' + $Word + $trailing + '"'
+}
+
+function Launch-WithArgs($ExePath, [string[]]$Words) {
     $shell = New-Object -ComObject WScript.Shell
-    $null = $shell.Run("`"$ExePath`" $ArgsStr", 1, $false)
+    $line = ($Words | ForEach-Object { Quote-OelinkArg $_ }) -join ' '
+    $null = $shell.Run("`"$ExePath`" $line", 1, $false)
+}
+
+function Reject-Launch() {
+    $text = if ($UI_LANG -eq 'ko') { '허용되지 않는 실행 옵션이 포함되어 있어 실행하지 않았습니다.' } else { 'The link contains a launch option that is not allowed, so nothing was started.' }
+    $wsh = New-Object -ComObject WScript.Shell
+    $null = $wsh.Popup($text, 0, 'oelink', 16)
 }
 
 Add-Content $LOG "[oelink] Received: $RawUrl"
@@ -129,6 +198,25 @@ if (-not [string]::IsNullOrEmpty($argsStr)) {
 }
 $targetId = Get-OelinkId $argsStr
 
+# Vet every word before anything runs.
+$argWords = @()
+if (-not [string]::IsNullOrEmpty($argsStr)) {
+    $argWords = Split-OelinkArgs $argsStr
+    $bad = $null
+    if ($null -eq $argWords) {
+        $bad = 'unbalanced quotes'
+    } else {
+        foreach ($w in $argWords) {
+            if (-not (Test-OelinkArg $w)) { $bad = $w; break }
+        }
+    }
+    if ($null -ne $bad) {
+        Add-Content $LOG "[oelink] Refused: argument not allowed: $bad"
+        Reject-Launch
+        exit 1
+    }
+}
+
 switch ($browser) {
     'chrome' {
         $exe = Find-Exe $CHROME_PATHS
@@ -136,12 +224,12 @@ switch ($browser) {
 
         if (Check-OelinkChrome $targetId) { exit 0 }
 
-        if ([string]::IsNullOrEmpty($argsStr)) {
+        if ($argWords.Count -eq 0) {
             Add-Content $LOG '[oelink] Launching Chrome with no args'
             Start-Process $exe
         } else {
             Add-Content $LOG "[oelink] Launching Chrome: $argsStr"
-            Launch-WithArgs $exe $argsStr
+            Launch-WithArgs $exe $argWords
         }
     }
     default {

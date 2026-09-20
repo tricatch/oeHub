@@ -143,6 +143,94 @@ decode_b64() {
     printf '%s' "$b64" | base64 --decode 2>/dev/null
 }
 
+# ── Launch-argument parsing and validation ───────────────────────────────────
+#    The argument string arrives from a link anyone can craft (a shared profile, a pasted oelink://
+#    URL), so it is never handed to a shell: it is split into words by hand (double quotes group,
+#    backslash escapes \ $ " ` inside them, nothing is expanded) and every word is checked before
+#    Chrome is started. One rejected word cancels the whole launch.
+
+# Flag names (without the leading --) that run programs, weaken the sandbox, open a debugging
+# channel or redirect traffic. A trailing * matches any suffix.
+DENIED_FLAGS=(
+    'renderer-cmd-prefix' 'gpu-launcher' 'utility-cmd-prefix' 'zygote-cmd-prefix'
+    'plugin-launcher' 'ppapi-plugin-launcher' 'nacl-gdb' 'nacl-gdb-script' 'browser-subprocess-path'
+    'load-extension' 'disable-extensions-except' 'load-component-extension'
+    'remote-debugging-*' 'remote-allow-origins' 'enable-automation'
+    'no-sandbox' 'disable-gpu-sandbox' 'disable-setuid-sandbox' 'disable-web-security'
+    'disable-site-isolation-trials' 'allow-file-access-from-files' 'allow-running-insecure-content'
+    'ignore-certificate-errors*' 'proxy-pac-url' 'proxy-auto-detect' 'js-flags'
+    'utility-and-browser-sandbox-cmd-prefix' 'ppapi-flash-path' 'enable-logging' 'log-file'
+)
+
+ARGV=()
+split_args() {
+    ARGV=()
+    local s="$1" n=${#1} i=0 c nx cur="" inq=0 have=0
+    while (( i < n )); do
+        c="${s:i:1}"
+        if (( inq )); then
+            if [[ "$c" == '\' ]] && (( i + 1 < n )); then
+                nx="${s:i+1:1}"
+                if [[ "$nx" == '\' || "$nx" == '$' || "$nx" == '"' || "$nx" == '`' ]]; then
+                    cur+="$nx"
+                    i=$(( i + 2 ))
+                    continue
+                fi
+                cur+="$c"
+            elif [[ "$c" == '"' ]]; then
+                inq=0
+            else
+                cur+="$c"
+            fi
+        elif [[ "$c" == '"' ]]; then
+            inq=1
+            have=1
+        elif [[ "$c" == ' ' || "$c" == $'\t' ]]; then
+            if (( have )); then ARGV+=("$cur"); cur=""; have=0; fi
+        else
+            cur+="$c"
+            have=1
+        fi
+        i=$(( i + 1 ))
+    done
+    (( inq )) && return 1
+    (( have )) && ARGV+=("$cur")
+    return 0
+}
+
+# 0 when the word is a permitted flag or a permitted start URL.
+arg_allowed() {
+    local tok="$1"
+    [[ "$tok" =~ [[:cntrl:]] ]] && return 1
+    if [[ "$tok" =~ ^--([A-Za-z0-9][A-Za-z0-9-]*)(=|$) ]]; then
+        local name pat
+        name=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+        for pat in "${DENIED_FLAGS[@]}"; do
+            # shellcheck disable=SC2053
+            [[ "$name" == $pat ]] && return 1
+        done
+        return 0
+    fi
+    [[ "$tok" =~ ^(https?://|about:|chrome://) ]] && return 0
+    # The delayed-redirect page hosts.pebble builds (wrapDelayedUrl in util.js).
+    if [[ "$tok" == "data:text/html,<script>setTimeout(()=>location.replace('"* \
+        && "$tok" == *"'),1000)</script>" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Tells the user a link was turned away; nothing is launched.
+reject_launch() {
+    local msg
+    if [[ "$(get_lang)" == "ko" ]]; then
+        msg="허용되지 않는 실행 옵션이 포함되어 있어 실행하지 않았습니다."
+    else
+        msg="The link contains a launch option that is not allowed, so nothing was started."
+    fi
+    /usr/bin/osascript -e "display dialog \"$msg\" with title \"oelink\" buttons {\"OK\"} default button \"OK\" with icon stop" >/dev/null 2>&1 || true
+}
+
 # ── Main handler ─────────────────────────────────────────────────────────────
 handle() {
     local raw_url="${1:-}"
@@ -163,12 +251,32 @@ handle() {
     local args_str=""
     if [[ -n "$encoded" ]]; then
         if args_str=$(decode_b64 "$encoded"); then
-            args_str="${args_str//\~/$HOME}"
-            args_str="${args_str//\$HOME/$HOME}"
+            :
         else
             echo "[oelink] Chrome base64 decode failed — launching with defaults" >> "$LOG"
             args_str=""
         fi
+    fi
+
+    # Split into words and vet every one before anything runs.
+    local chrome_args=()
+    if [[ -n "$args_str" ]]; then
+        if ! split_args "$args_str"; then
+            echo "[oelink] Refused: unbalanced quotes in: $args_str" >> "$LOG"
+            reject_launch
+            return
+        fi
+        local word
+        for word in "${ARGV[@]}"; do
+            if ! arg_allowed "$word"; then
+                echo "[oelink] Refused: argument not allowed: $word" >> "$LOG"
+                reject_launch
+                return
+            fi
+            word="${word//\~/$HOME}"
+            word="${word//\$HOME/$HOME}"
+            chrome_args+=("$word")
+        done
     fi
     local target_id
     target_id=$(get_oelink_id "$args_str")
@@ -176,12 +284,12 @@ handle() {
     case "$browser" in
         chrome)
             check_oelink_chrome "$target_id" || return
-            if [[ -z "$args_str" ]]; then
+            if (( ${#chrome_args[@]} == 0 )); then
                 echo "[oelink] Launching Chrome with no args" >> "$LOG"
                 open -na "Google Chrome" &
             else
-                echo "[oelink] Launching Chrome: $args_str" >> "$LOG"
-                eval "open -na \"Google Chrome\" --args $args_str" &
+                echo "[oelink] Launching Chrome: ${chrome_args[*]}" >> "$LOG"
+                open -na "Google Chrome" --args "${chrome_args[@]}" &
             fi
             ;;
 
