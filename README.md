@@ -107,7 +107,7 @@ oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습�
 - **`self-hosted`** (기본값) — 단일 셀프 호스팅 인스턴스. oeHosts와 oeProxy가 모두 사용 가능하며, 워크스페이스가 정확히 하나 존재합니다.
 - **`workspace`** — 하나의 실행 중인 인스턴스 뒤에서 여러 독립적인 워크스페이스(회사 또는 팀)를 호스팅하는 멀티테넌트 클라우드 서비스. oeHosts만 사용 가능하며 oeProxy는 아예 비활성화되고, 워크스페이스 콘텐츠에는 종단간 암호화가 적용됩니다.
 
-역할(`adm`/`ws_adm`/`usr` 등), 가입·승인 흐름, 모드별로 달라지는 동작에 대한 자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
+역할(`adm`/`wsa`/`usr` 등), 가입·승인 흐름, 모드별로 달라지는 동작에 대한 자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
 
 ### 로깅
 

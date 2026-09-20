@@ -62,18 +62,20 @@
             <a href="#" class="dropdown-item" id="navBtnReissueRecovery">{{ msg['nav.reissue.recovery'] }}</a>
             {% endif %}
             {% if user.role == 'adm' %}
-            <a href="/oehub/settings" class="dropdown-item">{{ msg['nav.settings'] }}</a>
-            <a href="/oehub/admin/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
-            <a href="/oehub/admin/audit-log" class="dropdown-item">{{ msg['nav.admin.audit.log'] }}</a>
-            {% if workspaceMode %}
-            <a href="/oehub/admin/workspaces" class="dropdown-item">{{ msg['nav.admin.workspaces'] }}</a>
+            <a href="/adm/settings" class="dropdown-item">{{ msg['nav.settings'] }}</a>
+            {% if not workspaceMode %}
+            <a href="/wsa/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
+            <a href="/wsa/audit-log" class="dropdown-item">{{ msg['nav.admin.audit.log'] }}</a>
             {% endif %}
-            <a href="/oehub/h2" target="_blank" class="dropdown-item">{{ msg['nav.h2console'] }}</a>
+            {% if workspaceMode %}
+            <a href="/adm/workspaces" class="dropdown-item">{{ msg['nav.admin.workspaces'] }}</a>
+            {% endif %}
+            <a href="/adm/h2" target="_blank" class="dropdown-item">{{ msg['nav.h2console'] }}</a>
             {% else %}
             <a href="/oehub/my/setting" class="dropdown-item">{{ msg['nav.settings'] }}</a>
-            {% if user.role == 'ws_adm' %}
-            <a href="/oehub/admin/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
-            <a href="/oehub/admin/audit-log" class="dropdown-item">{{ msg['nav.admin.audit.log'] }}</a>
+            {% if user.role == 'wsa' %}
+            <a href="/wsa/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
+            <a href="/wsa/audit-log" class="dropdown-item">{{ msg['nav.admin.audit.log'] }}</a>
             {% endif %}
             {% endif %}
             <a href="/oehub/licenses" class="dropdown-item">{{ msg['nav.licenses'] }}</a>

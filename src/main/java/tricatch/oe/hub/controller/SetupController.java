@@ -10,6 +10,7 @@ import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.hosts.model.HostsUa;
 import tricatch.oe.hosts.model.HostsUrl;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.WorkspaceMapper;
@@ -154,7 +155,7 @@ public class SetupController {
                 var hubUser = new HubUser();
                 hubUser.setUserId(userId);
                 hubUser.setPassword(PasswordUtil.hash(password));
-                hubUser.setRole("adm");
+                hubUser.setRole(Role.ADM);
                 hubUser.setWsNo(workspace.getWsNo());
                 hubUser.setPublicKey(publicKey);
                 hubUser.setWrappedPrivateKey(wrappedPrivateKey);
@@ -179,13 +180,13 @@ public class SetupController {
 
                 // Non-login, workspace-owned system account for orphaned-resource ownership later
                 // (cloudGroupService design doc §2.2) - created alongside the workspace so a "no
-                // ws_system yet" state never exists. userId uses '_', which processRegister's
+                // wss yet" state never exists. userId uses '_', which processRegister's
                 // validation (`[A-Za-z0-9._-]+` minus leading/reserved forms handled there) never
                 // produces for a real signup, so it can't collide with a chosen userId.
                 var wsSystemUser = new HubUser();
                 wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
                 wsSystemUser.setPassword(PasswordUtil.hash(java.util.UUID.randomUUID().toString()));
-                wsSystemUser.setRole("ws_system");
+                wsSystemUser.setRole(Role.WSS);
                 wsSystemUser.setWsNo(workspace.getWsNo());
                 wsSystemUser.setCreatedBy(hubUser.getUserNo());
                 wsSystemUser.setUpdatedBy(hubUser.getUserNo());

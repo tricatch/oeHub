@@ -40,6 +40,27 @@
 - The calling service is responsible for setting the timestamp via `LocalDateTime.now()` on the model or as an explicit `@Param` before invoking the mapper method.
 - This keeps the Java object and the database value in sync without requiring a post-insert re-fetch.
 
+## Roles and URL Prefixes
+
+Every URL (page, API, form POST) belongs to exactly one access class, and the class is visible from the path. Follow this whenever a route is added, moved, or renamed.
+
+- **Access classes and prefixes.** Instance-admin routes use `/adm/**` (pages) and `/api/adm/**` (API). Workspace-admin routes use `/wsa/**` and `/api/wsa/**`. Routes for any logged-in account (`adm`, `wsa`, `usr`) stay under `/oehub/**` and the remaining `/api/**`. Anonymous routes (login, register, recover, share/link viewers, setup wizard, CA download) sit outside all of these and each one is a deliberate, commented exception in `OeHubApplication`.
+- **Pick the prefix from who may call it, never from where the button sits.** Do not add an admin page or API under `/oehub/**` or an unscoped `/api/**`, and do not add a new top-level prefix without adding a matching filter. If a screen mixes audiences, split it into one route per audience.
+- **Role codes.** `HUB_USR.role` values are exactly three lowercase letters and are defined only in `tricatch.oe.hub.config.Role`. Never spell a role literal anywhere else (Java, SQL annotations via string concatenation, Pebble, JS): use the constants and the `Role` helpers (`canLogin`, `isInstanceAdmin`, `isWorkspaceAdmin`).
+- **Where the check lives.** Access to a prefix is enforced by the per-prefix filter in `OeHubApplication` (one role per prefix, via `requireRole`), not inside individual controllers. A route that is registered under a prefix inherits that check automatically; do not re-implement it per handler. A controller that acts on another account (change role, delete, reset) still validates that account's current role.
+- **Mode-specific routes** (workspace-only or self-hosted-only) are registered conditionally, so the wrong mode gets a plain 404 rather than a permission error.
+- **Navigation.** A menu link to a role-scoped route is rendered only for a role and mode that can actually open it; never show a link that would answer 403.
+
+### Checklist when adding a URL
+1. Decide the access class (anonymous / any logged-in / `wsa` / `adm`) and put the path under the matching prefix.
+2. Register it in `OeHubApplication`; confirm the prefix filter covers it, or add the filter first if the prefix is new.
+3. Add or extend an e2e assertion for the denied cases (wrong role → 403, no session → 401 for `/api/**` or a login redirect for pages).
+4. Update the Korean API reference (`docs/08-api-reference.md`) under the section for that prefix.
+5. If a nav link is added, gate it in `app-layout.pebble` by role and mode.
+
+### Adding or renaming a role
+Update `Role`, the `HUB_USR.role` column width, the affected mapper SQL, the per-prefix filters, and the Korean docs (`docs/04`, `docs/07`, `docs/08`) together, in one change.
+
 ## Launch Options — JVM System Properties
 
 - Every oeHub-specific launch option is a JVM system property named `-Doe.<name>` (e.g. `-Doe.port`, `-Doe.home`, `-Doe.mode`, `-Doe.db.file`, `-Doe.dev`, `-Doe.app.version`). Read it with `System.getProperty("oe.<name>")`.

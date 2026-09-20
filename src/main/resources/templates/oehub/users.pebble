@@ -239,10 +239,10 @@
 <script nonce="{{ cspNonce }}">
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
-  // The "admin" role this screen grants/revokes: 'ws_adm' in workspace mode (this screen is
+  // The "admin" role this screen grants/revokes: 'wsa' in workspace mode (this screen is
   // workspace-scoped and must never grant the instance-wide 'adm'), 'adm' in self-hosted
-  // (unchanged - no separate ws_adm role in practice there). See AdminUserController.apiSetRole.
-  var ADMIN_ROLE = '{{ workspaceMode ? "ws_adm" : "adm" }}';
+  // (unchanged - no separate wsa role in practice there). See AdminUserController.apiSetRole.
+  var ADMIN_ROLE = '{{ workspaceMode ? "wsa" : "adm" }}';
   var searchTimer;
   var currentUsers = [];
   var currentTeams = [];
@@ -277,7 +277,7 @@
   }
 
   function loadUsers(q) {
-    var url = '/api/admin/users' + (q.trim() ? '?q=' + encodeURIComponent(q.trim()) : '');
+    var url = '/api/wsa/users' + (q.trim() ? '?q=' + encodeURIComponent(q.trim()) : '');
     fetch(url)
       .then(function (r) { return r.json(); })
       .then(function (users) {
@@ -417,7 +417,7 @@
     var userNo = row.dataset.userNo;
     var teamNo = sel.value ? Number(sel.value) : null;
     sel.disabled = true;
-    fetch('/api/admin/users/' + userNo + '/team', {
+    fetch('/api/wsa/users/' + userNo + '/team', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ teamNo: teamNo })
@@ -444,7 +444,7 @@
     var confirmMsg = newRole === ADMIN_ROLE ? MSG['confirm.grant.admin'] : MSG['confirm.revoke.admin'];
     if (!confirm(confirmMsg)) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo + '/role', {
+    fetch('/api/wsa/users/' + userNo + '/role', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: newRole })
@@ -482,7 +482,7 @@
     var userNo = row.dataset.userNo;
     if (!confirm(MSG['confirm.reset.password'])) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo + '/reset-password', { method: 'POST' })
+    fetch('/api/wsa/users/' + userNo + '/reset-password', { method: 'POST' })
       .then(function (r) {
         btn.disabled = false;
         if (r.ok) {
@@ -526,7 +526,7 @@
       var excluded = excludeUserNo != null && String(u.userNo) === String(excludeUserNo);
       return !excluded && u.publicKey;
     });
-    const rows = await (await fetch('/api/admin/workspace/rotation-rows')).json();
+    const rows = await (await fetch('/api/wsa/workspace/rotation-rows')).json();
 
     const total = eligibleMembers.length + rows.length;
     let done = 0;
@@ -558,7 +558,7 @@
       if (onProgress) onProgress(done, total);
     }
 
-    const res = await fetch('/api/admin/workspace/rotate', {
+    const res = await fetch('/api/wsa/workspace/rotate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ memberWraps: memberWraps, contentRewraps: contentRewraps })
@@ -600,7 +600,7 @@
 
     // Cheap client-side pre-check (cloudGroupService design doc §2.5 "안전장치"): the server
     // rejects this outright anyway, but without this check the client-driven rotation dance above
-    // would still run first and leave the (not actually departing) sole ws_adm's own key wrap
+    // would still run first and leave the (not actually departing) sole wsa's own key wrap
     // stale - everyone else's wrap and every shared content key would move to a new workspace key
     // that this admin never receives. Skip rotation entirely when it's foredoomed. The server-side
     // check in apiDeleteUser remains authoritative against a stale currentUsers snapshot.
@@ -619,7 +619,7 @@
       } catch (e) {
         // Rotation failing must block the deletion (design doc §7.1 policy change): proceeding
         // anyway would strand the departing member with continued access to the old workspace
-        // key's content. Surface it distinctly and let the ws_adm retry (delete again, or use the
+        // key's content. Surface it distinctly and let the wsa retry (delete again, or use the
         // manual "Rotate Workspace Key" button).
         btn.disabled = false;
         showToast(MSG['toast.rotation.failed']);
@@ -627,7 +627,7 @@
       }
     }
 
-    fetch('/api/admin/users/' + userNo, { method: 'DELETE' })
+    fetch('/api/wsa/users/' + userNo, { method: 'DELETE' })
       .then(function (r) {
         if (r.ok) {
           showToast(MSG['toast.user.deleted']);
@@ -667,7 +667,7 @@
   }
 
   function loadPending() {
-    fetch('/api/admin/users/pending')
+    fetch('/api/wsa/users/pending')
       .then(function (r) { return r.json(); })
       .then(renderPending)
       .catch(function () {});
@@ -727,7 +727,7 @@
       // has one cached.
       wrappedWsKey = 'self-hosted';
     } else {
-      // The approving ws_adm must have their own workspace key cached from login (e2eEncryption
+      // The approving wsa must have their own workspace key cached from login (e2eEncryption
       // design doc §3/§5) - if not (e.g. this account predates the crypto wiring, or the cache
       // was never populated), approval can't proceed: there would be nothing correct to wrap.
       var wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
@@ -740,7 +740,7 @@
       wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, publicKey);
     }
 
-    var r = await fetch('/api/admin/users/' + userNo + '/approve', {
+    var r = await fetch('/api/wsa/users/' + userNo + '/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wrappedWsKey: wrappedWsKey })
@@ -762,7 +762,7 @@
     var userNo = row.dataset.userNo;
     if (!confirm(MSG['confirm.reject.user'])) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo + '/reject', { method: 'POST' })
+    fetch('/api/wsa/users/' + userNo + '/reject', { method: 'POST' })
       .then(function (r) {
         if (r.ok) {
           showToast(MSG['toast.user.rejected']);
@@ -781,7 +781,7 @@
   function loadInvites() {
     var tbody = document.getElementById('invitesTbody');
     if (!tbody) return; // workspace mode only - section isn't rendered in self-hosted
-    fetch('/api/admin/invites')
+    fetch('/api/wsa/invites')
       .then(function (r) { return r.json(); })
       .then(renderInvites)
       .catch(function () {});
@@ -816,7 +816,7 @@
       btnCreateInvite.disabled = true;
       var teamSelect = document.getElementById('inviteTeamSelect');
       var teamNo = teamSelect && teamSelect.value ? Number(teamSelect.value) : null;
-      fetch('/api/admin/invites', {
+      fetch('/api/wsa/invites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teamNo: teamNo })
@@ -837,7 +837,7 @@
   function loadTeams() {
     var tbody = document.getElementById('teamsTbody');
     if (!tbody) return; // workspace mode only - section isn't rendered in self-hosted
-    fetch('/api/admin/teams')
+    fetch('/api/wsa/teams')
       .then(function (r) { return r.json(); })
       .then(function (teams) {
         currentTeams = teams;
@@ -920,7 +920,7 @@
       }
       var row = span.closest('tr');
       var teamNo = row.dataset.teamNo;
-      fetch('/api/admin/teams/' + teamNo, {
+      fetch('/api/wsa/teams/' + teamNo, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teamName: newName })
@@ -961,7 +961,7 @@
     var teamNo = row.dataset.teamNo;
     if (!confirm(MSG['confirm.delete.team'])) return;
     btn.disabled = true;
-    fetch('/api/admin/teams/' + teamNo, { method: 'DELETE' })
+    fetch('/api/wsa/teams/' + teamNo, { method: 'DELETE' })
       .then(function (r) {
         if (r.ok) {
           showToast(MSG['toast.team.deleted']);
@@ -990,7 +990,7 @@
       var name = newTeamNameInput.value.trim();
       if (!name) return;
       btnCreateTeam.disabled = true;
-      fetch('/api/admin/teams', {
+      fetch('/api/wsa/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teamName: name })

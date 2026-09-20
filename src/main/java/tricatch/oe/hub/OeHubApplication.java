@@ -16,6 +16,7 @@ import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.BackupService;
 import tricatch.oe.hub.config.DatabaseConfig;
 import tricatch.oe.hub.config.JwtService;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.controller.AdminHostsUaController;
 import tricatch.oe.hub.controller.AdminHostsUrlController;
 import tricatch.oe.hub.controller.OidExtensionController;
@@ -92,6 +93,24 @@ public class OeHubApplication {
             + "base-uri 'self'; "
             + "form-action 'self'; "
             + "frame-ancestors 'self'";
+    }
+
+    /** Login gate plus role check for a role-scoped prefix: anonymous callers are sent to the
+     *  login page (pages) or get 401 (API), logged-in callers without the role get 403. */
+    private static void requireRole(io.javalin.http.Context ctx,
+                                    java.util.function.Predicate<tricatch.oe.hub.model.HubUser> allowed,
+                                    boolean page) {
+        var user = AuthController.currentUser(ctx);
+        if (user == null) {
+            if (page) ctx.redirect("/login?redirect=" + ctx.path());
+            else ctx.status(401).result("Unauthorized");
+            ctx.skipRemainingHandlers();
+            return;
+        }
+        if (!allowed.test(user)) {
+            ctx.status(403).result("Forbidden");
+            ctx.skipRemainingHandlers();
+        }
     }
 
     private static boolean constantTimeEquals(String a, String b) {
@@ -234,52 +253,16 @@ public class OeHubApplication {
                     ctx.skipRemainingHandlers();
                 }
             });
-            io.javalin.http.Handler settingsAdminOnly = ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            };
-            config.routes.before("/oehub/settings", settingsAdminOnly);
-            config.routes.before("/oehub/settings/*", settingsAdminOnly);
-            // Instance-admin workspace console (design doc §2.5) is 'adm'-only, unlike the
-            // ws_adm-reachable "/oehub/admin/*" prefix below - a workspace's own ws_adm must never
-            // reach this instance-wide screen (isolation principle), so it needs the stricter
-            // settingsAdminOnly check, not the isWorkspaceAdmin one.
-            if (workspaceMode) {
-                config.routes.before("/oehub/admin/workspaces", settingsAdminOnly);
-                config.routes.before("/api/admin/workspaces", settingsAdminOnly);
-                config.routes.before("/api/admin/workspaces/*", settingsAdminOnly);
-            }
-            // User management (member list, pending approval) is workspace-scoped: a workspace's
-            // own ws_adm needs it, not just the instance 'adm' - see AuthController.isWorkspaceAdmin.
-            // The workspace console ("/oehub/admin/workspaces", "/api/admin/workspaces*") is the
-            // opposite - instance 'adm' only, already gated (more strictly) by settingsAdminOnly
-            // above - so it's excluded here rather than rejected: in workspace mode isWorkspaceAdmin()
-            // deliberately excludes 'adm' (design doc §2.5 isolation), which would otherwise block
-            // the very instance admin this screen is for.
-            config.routes.before("/oehub/admin/*", ctx -> {
-                if (workspaceMode && "/oehub/admin/workspaces".equals(ctx.path())) return;
-                if (!AuthController.isWorkspaceAdmin(AuthController.currentUser(ctx))) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            });
-            config.routes.before("/api/admin/*", ctx -> {
-                if (workspaceMode && ctx.path().startsWith("/api/admin/workspaces")) return;
-                if (!AuthController.isWorkspaceAdmin(AuthController.currentUser(ctx))) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            });
-            config.routes.before("/oehub/h2", ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            });
+            // Role-scoped URL prefixes (see Role): the path alone says who may call it.
+            //   /adm/* and /api/adm/* - instance admin only (settings, CA, global presets, the
+            //                           workspace console, H2 console);
+            //   /wsa/* and /api/wsa/* - workspace admin (members, invites, teams, audit log, key
+            //                           rotation), always scoped to the caller's own workspace.
+            // Everything else under /oehub/* and /api/* is open to any logged-in account.
+            config.routes.before("/adm/*",     ctx -> requireRole(ctx, Role::isInstanceAdmin, true));
+            config.routes.before("/wsa/*",     ctx -> requireRole(ctx, Role::isWorkspaceAdmin, true));
+            config.routes.before("/api/adm/*", ctx -> requireRole(ctx, Role::isInstanceAdmin, false));
+            config.routes.before("/api/wsa/*", ctx -> requireRole(ctx, Role::isWorkspaceAdmin, false));
             config.routes.before("/api/*", ctx -> {
                 // oeProxy CA certificate download is deliberately public — a device installing
                 // the root CA to trust the SSL reverse proxy may not have (or need) an oeHub
@@ -309,8 +292,7 @@ public class OeHubApplication {
             // admin in immediately so the legitimate wizard flow keeps working once this closes.
             config.routes.before("/setup/*", ctx -> {
                 if (SetupController.isAdminConfigured()) {
-                    var user = AuthController.currentUser(ctx);
-                    if (user == null || !"adm".equals(user.getRole())) {
+                    if (!Role.isInstanceAdmin(AuthController.currentUser(ctx))) {
                         ctx.status(403).result("Forbidden");
                         ctx.skipRemainingHandlers();
                     }
@@ -374,21 +356,21 @@ public class OeHubApplication {
             config.routes.post("/api/recover/reset",  auth::apiRecoverReset);
 
             // Admin settings
-            config.routes.get("/oehub/settings",              settings::showSettings);
-            config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
-            config.routes.post("/api/admin/settings/backup-interval", settings::apiSaveBackupInterval);
+            config.routes.get("/adm/settings",              settings::showSettings);
+            config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
+            config.routes.post("/api/adm/settings/backup-interval", settings::apiSaveBackupInterval);
             if (!workspaceMode) {
                 // IP identifier / forward-proxy whitelist / CA are all oeProxy-only concerns -
                 // meaningless (and their backing servers non-existent) under workspace mode.
-                config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
-                config.routes.post("/api/admin/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
-                config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
-                config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
-                config.routes.post("/oehub/settings/ca/import",   settings::importCa);
+                config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
+                config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
+                config.routes.post("/api/adm/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
+                config.routes.post("/adm/settings/ca/generate", settings::generateCa);
+                config.routes.post("/adm/settings/ca/import",   settings::importCa);
             }
 
             // H2 console (adm only)
-            config.routes.get("/oehub/h2", ctx ->
+            config.routes.get("/adm/h2", ctx ->
                 ctx.redirect("http://localhost:" + h2ConsolePort + "/login.do?setting=oeHub"));
 
             // oeHosts UI
@@ -507,14 +489,14 @@ public class OeHubApplication {
             // config.routes.delete("/api/user/api-tokens/{tokenId}",   userCtrl::apiDeleteApiToken);
 
             // Admin: user management
-            config.routes.get("/oehub/admin/users",               adminUser::showUsers);
-            config.routes.get("/api/admin/users",                 adminUser::apiSearch);
-            config.routes.get("/api/admin/users/pending",         adminUser::apiListPending);
-            config.routes.post("/api/admin/users/{userNo}/approve", adminUser::apiApprovePending);
-            config.routes.post("/api/admin/users/{userNo}/reject",  adminUser::apiRejectPending);
-            config.routes.get("/api/admin/invites",               adminUser::apiListInvites);
-            config.routes.post("/api/admin/invites",              adminUser::apiCreateInvite);
-            config.routes.patch("/api/admin/users/{userNo}/role",  adminUser::apiSetRole);
+            config.routes.get("/wsa/users",               adminUser::showUsers);
+            config.routes.get("/api/wsa/users",                 adminUser::apiSearch);
+            config.routes.get("/api/wsa/users/pending",         adminUser::apiListPending);
+            config.routes.post("/api/wsa/users/{userNo}/approve", adminUser::apiApprovePending);
+            config.routes.post("/api/wsa/users/{userNo}/reject",  adminUser::apiRejectPending);
+            config.routes.get("/api/wsa/invites",               adminUser::apiListInvites);
+            config.routes.post("/api/wsa/invites",              adminUser::apiCreateInvite);
+            config.routes.patch("/api/wsa/users/{userNo}/role",  adminUser::apiSetRole);
             // Admin-initiated password reset only ever changes the server-side password hash - it
             // cannot re-wrap wrapped_private_key (that requires the OLD password, which the admin
             // never has), so under workspace mode it would silently strand the target member unable
@@ -523,49 +505,49 @@ public class OeHubApplication {
             // there and stays available. The self-service /recover flow (which DOES re-wrap, via the
             // recovery code) remains the only supported recovery path in workspace mode.
             if (!workspaceMode) {
-                config.routes.post("/api/admin/users/{userNo}/reset-password", adminUser::apiResetPassword);
+                config.routes.post("/api/wsa/users/{userNo}/reset-password", adminUser::apiResetPassword);
             }
-            config.routes.get("/api/admin/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
-            config.routes.post("/api/admin/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
-            config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
+            config.routes.get("/api/wsa/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
+            config.routes.post("/api/wsa/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
+            config.routes.delete("/api/wsa/users/{userNo}",      adminUser::apiDeleteUser);
 
-            // Admin: Tier-1 audit log - reachable by whoever "/oehub/admin/*" already lets in
-            // (ws_adm, or self-hosted's 'adm' - see AuthController.isWorkspaceAdmin), no separate
+            // Admin: Tier-1 audit log - reachable by whoever "/wsa/*" already lets in
+            // (wsa, or self-hosted's 'adm' - see Role.isWorkspaceAdmin), no separate
             // gating needed since AuditLogController itself always scopes to the caller's own ws_no.
-            config.routes.get("/oehub/admin/audit-log",           auditLogCtrl::showAuditLog);
-            config.routes.get("/api/admin/audit-log",             auditLogCtrl::apiListAuditLog);
+            config.routes.get("/wsa/audit-log",           auditLogCtrl::showAuditLog);
+            config.routes.get("/api/wsa/audit-log",             auditLogCtrl::apiListAuditLog);
 
             // Admin: instance-wide workspace console (cloudGroupService design doc §2.5/§3 item 2)
             // - workspace mode only, meaningless in self-hosted which has exactly one workspace
-            // (itself, design doc §2.7). 'adm'-only, gated above via settingsAdminOnly.
+            // (itself, design doc §2.7). 'adm'-only, gated above by the "/adm/*" and "/api/adm/*" prefix guards.
             if (workspaceMode) {
-                config.routes.get("/oehub/admin/workspaces",              workspaceCtrl::showWorkspaces);
-                config.routes.get("/api/admin/workspaces",                workspaceCtrl::apiListWorkspaces);
-                config.routes.patch("/api/admin/workspaces/{wsNo}/status", workspaceCtrl::apiUpdateWorkspaceStatus);
+                config.routes.get("/adm/workspaces",              workspaceCtrl::showWorkspaces);
+                config.routes.get("/api/adm/workspaces",                workspaceCtrl::apiListWorkspaces);
+                config.routes.patch("/api/adm/workspaces/{wsNo}/status", workspaceCtrl::apiUpdateWorkspaceStatus);
             }
 
             // Admin: teams (cloudGroupService design doc §2.9) - workspace mode only, meaningless
             // in self-hosted's single-workspace-is-the-instance model (design doc §2.7). Same
-            // ws_adm scoping/guard as the rest of "/api/admin/*" above - no separate "team admin" role.
+            // wsa scoping/guard as the rest of "/api/wsa/*" above - no separate "team admin" role.
             if (workspaceMode) {
-                config.routes.get("/api/admin/teams",                 adminUser::apiListTeams);
-                config.routes.post("/api/admin/teams",                adminUser::apiCreateTeam);
-                config.routes.patch("/api/admin/teams/{teamNo}",      adminUser::apiRenameTeam);
-                config.routes.delete("/api/admin/teams/{teamNo}",     adminUser::apiDeleteTeam);
-                config.routes.patch("/api/admin/users/{userNo}/team", adminUser::apiSetUserTeam);
+                config.routes.get("/api/wsa/teams",                 adminUser::apiListTeams);
+                config.routes.post("/api/wsa/teams",                adminUser::apiCreateTeam);
+                config.routes.patch("/api/wsa/teams/{teamNo}",      adminUser::apiRenameTeam);
+                config.routes.delete("/api/wsa/teams/{teamNo}",     adminUser::apiDeleteTeam);
+                config.routes.patch("/api/wsa/users/{userNo}/team", adminUser::apiSetUserTeam);
             }
 
             // Admin: hosts user-agent presets
-            config.routes.get("/api/admin/hosts/ua",              adminUa::apiList);
-            config.routes.post("/api/admin/hosts/ua",             adminUa::apiCreate);
-            config.routes.patch("/api/admin/hosts/ua/{uaId}",     adminUa::apiUpdate);
-            config.routes.delete("/api/admin/hosts/ua/{uaId}",    adminUa::apiDelete);
-            config.routes.put("/api/admin/hosts/ua/order",        adminUa::apiReorder);
-            config.routes.get("/api/admin/hosts/url",             adminUrl::apiList);
-            config.routes.post("/api/admin/hosts/url",            adminUrl::apiCreate);
-            config.routes.patch("/api/admin/hosts/url/{urlId}",   adminUrl::apiUpdate);
-            config.routes.delete("/api/admin/hosts/url/{urlId}",  adminUrl::apiDelete);
-            config.routes.put("/api/admin/hosts/url/order",       adminUrl::apiReorder);
+            config.routes.get("/api/adm/hosts/ua",              adminUa::apiList);
+            config.routes.post("/api/adm/hosts/ua",             adminUa::apiCreate);
+            config.routes.patch("/api/adm/hosts/ua/{uaId}",     adminUa::apiUpdate);
+            config.routes.delete("/api/adm/hosts/ua/{uaId}",    adminUa::apiDelete);
+            config.routes.put("/api/adm/hosts/ua/order",        adminUa::apiReorder);
+            config.routes.get("/api/adm/hosts/url",             adminUrl::apiList);
+            config.routes.post("/api/adm/hosts/url",            adminUrl::apiCreate);
+            config.routes.patch("/api/adm/hosts/url/{urlId}",   adminUrl::apiUpdate);
+            config.routes.delete("/api/adm/hosts/url/{urlId}",  adminUrl::apiDelete);
+            config.routes.put("/api/adm/hosts/url/order",       adminUrl::apiReorder);
             if (!workspaceMode) {
                 config.routes.get("/api/proxy/conf/{name}",                     proxy::apiConfGet);
                 config.routes.put("/api/proxy/conf/{name}",                     proxy::apiConfSet);
@@ -644,7 +626,7 @@ public class OeHubApplication {
         Server.createWebServer("-webPort", String.valueOf(h2ConsolePort),
                 "-properties", oeHubDir.toString()).start();
         // Credentials intentionally not logged here (see DatabaseConfig) - keeps them out of log
-        // files/aggregation even though the /oehub/h2 route itself already requires admin login.
+        // files/aggregation even though the /adm/h2 route itself already requires admin login.
         logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub", h2ConsolePort);
 
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();

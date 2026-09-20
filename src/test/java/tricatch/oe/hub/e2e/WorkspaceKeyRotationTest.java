@@ -21,10 +21,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves the automatic workspace-key rotation wired into the "delete member" action
- * (e2eEncryption design doc §7): when a ws_adm removes a member, the remaining member's
+ * (e2eEncryption design doc §7): when a wsa removes a member, the remaining member's
  * HUB_WS_KEY wrap and every shared (public/collabo) row's wrapped_content_key across the WHOLE
- * workspace (not just the ws_adm's own rows) get replaced with fresh wraps of a newly-generated
- * workspace key - all computed in the ws_adm's browser (server-blind, same as approval, §5) -
+ * workspace (not just the wsa's own rows) get replaced with fresh wraps of a newly-generated
+ * workspace key - all computed in the wsa's browser (server-blind, same as approval, §5) -
  * and the remaining member can still decrypt everything correctly on their next login, using
  * only the new key. The departing member's account is also actually gone afterward.
  */
@@ -93,10 +93,10 @@ class WorkspaceKeyRotationTest {
     }
 
     private String createInvite(Page adminPage) {
-        adminPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        adminPage.navigate(server.baseUrl() + "/wsa/users");
         Object code = adminPage.evaluate("""
             async () => {
-                const r = await fetch('/api/admin/invites', { method: 'POST' });
+                const r = await fetch('/api/wsa/invites', { method: 'POST' });
                 return (await r.json()).inviteCode;
             }
             """);
@@ -104,7 +104,7 @@ class WorkspaceKeyRotationTest {
     }
 
     private void approveOnlyPending(Page adminPage) {
-        adminPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        adminPage.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = adminPage.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         pendingRow.locator(".btn-approve-pending").click();
@@ -175,7 +175,7 @@ class WorkspaceKeyRotationTest {
     @Test
     @Order(3)
     void founderDeletesLeave_rotatingTheWorkspaceKey() {
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         var leaveRow = founderPage.locator("tbody tr").filter(new com.microsoft.playwright.Locator.FilterOptions().setHasText(LEAVE_ID));
         assertThat(leaveRow).hasCount(1);
         leaveUserNo = Long.parseLong(leaveRow.getAttribute("data-user-no"));
@@ -189,7 +189,7 @@ class WorkspaceKeyRotationTest {
     @Order(4)
     void wrapsActuallyChanged_serverSide() {
         var rows = (List<?>) founderPage.evaluate(
-            "async () => await (await fetch('/api/admin/workspace/rotation-rows')).json()");
+            "async () => await (await fetch('/api/wsa/workspace/rotation-rows')).json()");
         var row = rows.stream()
             .map(o -> (Map<?, ?>) o)
             .filter(m -> hostsId.equals(m.get("hostsId")))
@@ -229,7 +229,7 @@ class WorkspaceKeyRotationTest {
     }
 
     /**
-     * Manual "Rotate Workspace Key" button (design doc §7.1): a ws_adm can trigger the same
+     * Manual "Rotate Workspace Key" button (design doc §7.1): a wsa can trigger the same
      * rotation computation with nobody excluded - the retry/leak-response path. Also covers the
      * progress modal (shown while rotating, hidden afterward, counter ends at N/N with N > 0),
      * delaying the rotation-rows round trip a little so the modal has time to actually render
@@ -245,8 +245,8 @@ class WorkspaceKeyRotationTest {
         var wrappedContentKeyBeforeManual = rotationRowWrappedContentKey(founderPage, hostsId);
         assertThat(wrappedContentKeyBeforeManual).isNotBlank();
 
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
-        founderPage.route("**/api/admin/workspace/rotation-rows", route -> {
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
+        founderPage.route("**/api/wsa/workspace/rotation-rows", route -> {
             try { Thread.sleep(400); } catch (InterruptedException ignored) {}
             route.resume();
         });
@@ -259,7 +259,7 @@ class WorkspaceKeyRotationTest {
         assertThat(founderPage.locator("#toast")).containsText("Workspace key rotated.",
             new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
         assertThat(founderPage.locator("#rotationProgressModal")).not().isVisible();
-        founderPage.unroute("**/api/admin/workspace/rotation-rows");
+        founderPage.unroute("**/api/wsa/workspace/rotation-rows");
 
         var progressCountText = founderPage.locator("#rotationProgressCount").textContent();
         var m = Pattern.compile("^(\\d+) / (\\d+)$").matcher(progressCountText.trim());
@@ -287,7 +287,7 @@ class WorkspaceKeyRotationTest {
 
     private String rotationRowWrappedContentKey(Page adminPage, String hostsId) {
         var rows = (List<?>) adminPage.evaluate(
-            "async () => await (await fetch('/api/admin/workspace/rotation-rows')).json()");
+            "async () => await (await fetch('/api/wsa/workspace/rotation-rows')).json()");
         return (String) rows.stream()
             .map(o -> (Map<?, ?>) o)
             .filter(m -> hostsId.equals(m.get("hostsId")))
@@ -309,15 +309,15 @@ class WorkspaceKeyRotationTest {
         approveOnlyPending(founderPage);
         blockedPage.close();
 
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
 
         var deleteRequests = new java.util.concurrent.atomic.AtomicInteger(0);
         founderPage.onRequest(req -> {
-            if ("DELETE".equals(req.method()) && req.url().matches(".*/api/admin/users/\\d+$")) {
+            if ("DELETE".equals(req.method()) && req.url().matches(".*/api/wsa/users/\\d+$")) {
                 deleteRequests.incrementAndGet();
             }
         });
-        founderPage.route("**/api/admin/workspace/rotate", route ->
+        founderPage.route("**/api/wsa/workspace/rotate", route ->
             route.fulfill(new com.microsoft.playwright.Route.FulfillOptions().setStatus(500)));
 
         var blockedRow = founderPage.locator("tbody tr").filter(new com.microsoft.playwright.Locator.FilterOptions().setHasText(BLOCKED_ID));
@@ -333,9 +333,9 @@ class WorkspaceKeyRotationTest {
             .hasCount(1);
 
         var stillListed = (List<?>) founderPage.evaluate(
-            "async () => await (await fetch('/api/admin/users')).json()");
+            "async () => await (await fetch('/api/wsa/users')).json()");
         assertThat(stillListed.stream().map(o -> (Map<?, ?>) o).anyMatch(m -> BLOCKED_ID.equals(m.get("userId")))).isTrue();
 
-        founderPage.unroute("**/api/admin/workspace/rotate");
+        founderPage.unroute("**/api/wsa/workspace/rotate");
     }
 }

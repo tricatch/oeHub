@@ -82,13 +82,13 @@ class AuditLogTest {
     @Order(2)
     void regeneratesCaFromSettingsPage() {
         // This is the one that should be audited (settings.ca.generate).
-        page.navigate(server.baseUrl() + "/oehub/settings");
+        page.navigate(server.baseUrl() + "/adm/settings");
         // The CA form is collapsed by default once a CA already exists - expand it first.
         page.locator("[data-bs-target='#caConfigureDiv']").click();
         assertThat(page.locator("#caConfigureDiv")).isVisible();
         page.locator("input[name=caName]").fill("Audit Test CA v2");
-        page.locator("form[action='/oehub/settings/ca/generate'] button[type=submit]").click();
-        assertThat(page).hasURL(Pattern.compile(".*/oehub/settings.*"));
+        page.locator("form[action='/adm/settings/ca/generate'] button[type=submit]").click();
+        assertThat(page).hasURL(Pattern.compile(".*/adm/settings.*"));
     }
 
     @Test
@@ -109,7 +109,7 @@ class AuditLogTest {
         // next navigate() can race the POST /login response and fire before its Set-Cookie applies.
         assertThat(page).hasURL(server.baseUrl() + "/");
 
-        page.navigate(server.baseUrl() + "/oehub/admin/users");
+        page.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = page.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         pendingRow.locator(".btn-approve-pending").click();
@@ -134,7 +134,7 @@ class AuditLogTest {
     @Test
     @Order(5)
     void auditLogShowsEveryRecordedActionWithReadableLabels() {
-        page.navigate(server.baseUrl() + "/oehub/admin/audit-log");
+        page.navigate(server.baseUrl() + "/wsa/audit-log");
         var rows = page.locator("#auditLogTbody tr");
         // settings.ca.generate, user.approve, user.role_change, user.password_reset, user.delete
         assertThat(rows).hasCount(5);

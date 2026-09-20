@@ -57,7 +57,7 @@
   var auditLogPage = 0;
 
   function loadAuditLog() {
-    fetch('/api/admin/audit-log?page=' + auditLogPage)
+    fetch('/api/wsa/audit-log?page=' + auditLogPage)
       .then(function (r) { return r.json(); })
       .then(renderAuditLog)
       .catch(function () {});

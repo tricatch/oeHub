@@ -134,7 +134,7 @@ class WorkspaceAdminConsoleTest {
     @Order(2)
     @SuppressWarnings("unchecked")
     void instanceAdminSeesBothWorkspacesListed() {
-        instAdminPage.navigate(server.baseUrl() + "/oehub/admin/workspaces");
+        instAdminPage.navigate(server.baseUrl() + "/adm/workspaces");
         // At least Alpha + Beta - not necessarily exactly 2: /setup itself creates its own
         // workspace for the instance admin regardless of mode (design doc §2.7), so this list can
         // legitimately contain more than the two founded here.
@@ -142,7 +142,7 @@ class WorkspaceAdminConsoleTest {
             new com.microsoft.playwright.assertions.LocatorAssertions.HasCountOptions().setTimeout(5000));
 
         var workspaces = (List<?>) instAdminPage.evaluate(
-            "async () => await (await fetch('/api/admin/workspaces')).json()");
+            "async () => await (await fetch('/api/adm/workspaces')).json()");
         var byName = workspaces.stream().map(o -> (Map<String, Object>) o)
             .collect(java.util.stream.Collectors.toMap(m -> (String) m.get("wsName"), m -> m));
         assertThat(byName).containsKey(ALPHA_WS_NAME);
@@ -158,17 +158,17 @@ class WorkspaceAdminConsoleTest {
     @Order(3)
     void nonInstanceAdminCannotReachTheConsole() {
         var pageStatus = (Integer) alphaPage.evaluate(
-            "async () => (await fetch('/oehub/admin/workspaces')).status");
+            "async () => (await fetch('/adm/workspaces')).status");
         assertThat(pageStatus).isEqualTo(403);
         var apiStatus = (Integer) alphaPage.evaluate(
-            "async () => (await fetch('/api/admin/workspaces')).status");
+            "async () => (await fetch('/api/adm/workspaces')).status");
         assertThat(apiStatus).isEqualTo(403);
     }
 
     @Test
     @Order(4)
     void instanceAdminSuspendsAlpha_blockingItsMembersOnly() {
-        instAdminPage.navigate(server.baseUrl() + "/oehub/admin/workspaces");
+        instAdminPage.navigate(server.baseUrl() + "/adm/workspaces");
         instAdminPage.onDialog(com.microsoft.playwright.Dialog::accept);
         var alphaRow = instAdminPage.locator("tbody#workspacesTbody tr").filter(
             new com.microsoft.playwright.Locator.FilterOptions().setHasText(ALPHA_WS_NAME));
@@ -191,7 +191,7 @@ class WorkspaceAdminConsoleTest {
     @Test
     @Order(5)
     void reactivatingAlphaRestoresLogin() {
-        instAdminPage.navigate(server.baseUrl() + "/oehub/admin/workspaces");
+        instAdminPage.navigate(server.baseUrl() + "/adm/workspaces");
         var alphaRow = instAdminPage.locator("tbody#workspacesTbody tr").filter(
             new com.microsoft.playwright.Locator.FilterOptions().setHasText(ALPHA_WS_NAME));
         assertThat(alphaRow).hasCount(1);
@@ -206,9 +206,9 @@ class WorkspaceAdminConsoleTest {
 
     /**
      * The console has no meaning in self-hosted mode (design doc §2.7 - a self-hosted instance IS
-     * its one workspace) and must not exist there: a workspace's own ws_adm equivalent (the
-     * instance 'adm', which passes isWorkspaceAdmin() in self-hosted) reaches the generic
-     * "/oehub/admin/*"/"/api/admin/*" gate fine, but no route is registered behind it, so Javalin
+     * its one workspace) and must not exist there: a workspace's own wsa equivalent (the
+     * instance 'adm', which passes isWorkspaceAdmin() in self-hosted) reaches the
+     * "/adm/*"/"/api/adm/*" gate fine, but no route is registered behind it, so Javalin
      * falls through to a plain 404 - the same "unrouted" shape other workspace-only endpoints have when
      * hit under the opposite mode.
      */
@@ -240,13 +240,78 @@ class WorkspaceAdminConsoleTest {
             page.waitForURL(selfHosted.baseUrl() + "/");
 
             var pageStatus = (Integer) page.evaluate(
-                "async () => (await fetch('/oehub/admin/workspaces')).status");
+                "async () => (await fetch('/adm/workspaces')).status");
             assertThat(pageStatus).isEqualTo(404);
             var apiStatus = (Integer) page.evaluate(
-                "async () => (await fetch('/api/admin/workspaces')).status");
+                "async () => (await fetch('/api/adm/workspaces')).status");
             assertThat(apiStatus).isEqualTo(404);
 
             page.close();
         }
+    }
+
+    private Integer status(Page page, String path) {
+        return (Integer) page.evaluate("async (u) => (await fetch(u)).status", path);
+    }
+
+    /**
+     * The role-scoped URL prefixes (see Role): "/adm/*" and "/api/adm/*" belong to the instance
+     * admin only, "/wsa/*" and "/api/wsa/*" to a workspace admin only - in workspace mode neither
+     * role reaches the other's tree, and anonymous callers reach neither (401 for the API, a
+     * redirect to the login page for pages).
+     */
+    @Test
+    @Order(7)
+    void roleUrlPrefixesAreEnforced() {
+        // wsa: its own workspace's tree, never the instance-wide one - including the global
+        // presets and settings API that used to be reachable through "/api/admin/*".
+        assertThat(status(alphaPage, "/wsa/users")).isEqualTo(200);
+        assertThat(status(alphaPage, "/api/wsa/users")).isEqualTo(200);
+        assertThat(status(alphaPage, "/adm/settings")).isEqualTo(403);
+        assertThat(status(alphaPage, "/api/adm/hosts/ua")).isEqualTo(403);
+        assertThat(status(alphaPage, "/api/adm/hosts/url")).isEqualTo(403);
+
+        // adm in workspace mode: the reverse - it must never reach a tenant's internals.
+        assertThat(status(instAdminPage, "/adm/settings")).isEqualTo(200);
+        assertThat(status(instAdminPage, "/api/adm/hosts/ua")).isEqualTo(200);
+        assertThat(status(instAdminPage, "/wsa/users")).isEqualTo(403);
+        assertThat(status(instAdminPage, "/api/wsa/users")).isEqualTo(403);
+
+        var anon = playwright.request().newContext();
+        try {
+            assertThat(anon.get(server.baseUrl() + "/api/adm/hosts/ua").status()).isEqualTo(401);
+            assertThat(anon.get(server.baseUrl() + "/api/wsa/users").status()).isEqualTo(401);
+            var redirect = anon.get(server.baseUrl() + "/adm/settings",
+                com.microsoft.playwright.options.RequestOptions.create().setMaxRedirects(0));
+            assertThat(redirect.status()).isEqualTo(302);
+            assertThat(redirect.headers().get("location")).startsWith("/login");
+        } finally {
+            anon.dispose();
+        }
+    }
+
+    /** Suspending the workspace the instance admin belongs to would block their own next login
+     *  with nobody left to reactivate it, so the server refuses and the console shows no button. */
+    @Test
+    @Order(8)
+    @SuppressWarnings("unchecked")
+    void instanceAdminCannotSuspendTheirOwnWorkspace() {
+        instAdminPage.navigate(server.baseUrl() + "/adm/workspaces");
+        var workspaces = (List<?>) instAdminPage.evaluate(
+            "async () => await (await fetch('/api/adm/workspaces')).json()");
+        var own = workspaces.stream().map(o -> (Map<String, Object>) o)
+            .filter(m -> "Default".equals(m.get("wsName"))).findFirst().orElseThrow();
+        var ownWsNo = String.valueOf(((Number) own.get("wsNo")).longValue());
+
+        var patchStatus = (Integer) instAdminPage.evaluate(
+            "async (n) => (await fetch('/api/adm/workspaces/' + n + '/status', {method: 'PATCH', "
+                + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status: 'suspended'})})).status",
+            ownWsNo);
+        assertThat(patchStatus).isEqualTo(400);
+
+        assertThat(instAdminPage.locator("tbody#workspacesTbody tr[data-ws-no='" + ownWsNo + "']"))
+            .hasCount(1);
+        assertThat(instAdminPage.locator(
+            "tbody#workspacesTbody tr[data-ws-no='" + ownWsNo + "'] .btn-toggle-ws-status")).hasCount(0);
     }
 }

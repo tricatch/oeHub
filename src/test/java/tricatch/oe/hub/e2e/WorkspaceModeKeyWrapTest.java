@@ -119,10 +119,10 @@ class WorkspaceModeKeyWrapTest {
     @Test
     @Order(3)
     void founderGeneratesInviteCode() {
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         Object codeJson = founderPage.evaluate("""
             async () => {
-                const r = await fetch('/api/admin/invites', { method: 'POST' });
+                const r = await fetch('/api/wsa/invites', { method: 'POST' });
                 const data = await r.json();
                 return data.inviteCode;
             }
@@ -155,7 +155,7 @@ class WorkspaceModeKeyWrapTest {
     @Test
     @Order(5)
     void founderApprovesJoiner_bundlingWorkspaceKeyWrap() {
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = founderPage.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         assertThat(pendingRow).containsText(JOINER_ID);

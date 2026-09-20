@@ -11,10 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 // Tier-1 (security/access-control) audit trail viewer. Always scoped to the caller's own
-// ws_no - both a self-hosted 'adm' and a workspace-mode 'ws_adm' only ever see their own single
-// workspace's rows, which is also exactly what the "/oehub/admin/*" route gate already limits who
+// ws_no - both a self-hosted 'adm' and a workspace-mode 'wsa' only ever see their own single
+// workspace's rows, which is also exactly what the "/wsa/*" route gate already limits who
 // can reach this controller to (isWorkspaceAdmin excludes a workspace-mode instance 'adm' - see
-// AuthController.isWorkspaceAdmin), so no separate "see everything" branch is needed here.
+// Role.isWorkspaceAdmin), so no separate "see everything" branch is needed here.
 public class AuditLogController {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");

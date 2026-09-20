@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 // Account deletion must not silently destroy content the rest of the workspace still depends on
 // - cloudGroupService design doc §2.5's orphan-handling rule: 'public' survives (reassigned to
-// ws_system), 'private'/'collabo' still go away with the account.
+// wss), 'private'/'collabo' still go away with the account.
 class HostsProfServiceDeleteAllTest extends MapperTestBase {
 
     private HubUser insertWsSystem(Long wsNo) {
@@ -20,7 +20,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
         var wsSystem = new HubUser();
         wsSystem.setUserId("__ws_system_" + wsNo + "_" + newId().substring(0, 6));
         wsSystem.setPassword(PasswordUtil.hash(newId()));
-        wsSystem.setRole("ws_system");
+        wsSystem.setRole("wss");
         wsSystem.setWsNo(wsNo);
         wsSystem.setCreateAt(now);
         wsSystem.setUpdatedAt(now);
@@ -44,7 +44,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
 
         service.deleteAll(owner.getUserNo());
 
-        // 'public' survives, now owned by ws_system.
+        // 'public' survives, now owned by wss.
         var survived = service.get(publicProfile.getHostsId());
         assertThat(survived).isNotNull();
         assertThat(survived.getUserNo()).isEqualTo(wsSystem.getUserNo());
@@ -61,7 +61,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
         var owner = insertUser("deleteAllDupeOwner");
         var service = new HostsProfService(FACTORY);
 
-        // ws_system already owns a profile named "Default" (e.g. from an earlier deletion).
+        // wss already owns a profile named "Default" (e.g. from an earlier deletion).
         var existing = service.create(wsSystem.getUserNo());
         service.updateProfile(existing.getHostsId(), wsSystem.getUserNo(), "Default");
 
@@ -77,7 +77,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
 
     @Test
     void deleteAll_noWsSystem_stillDeletesPrivateWithoutError() {
-        // A workspace with no ws_system account (shouldn't happen in practice, but deleteAll must
+        // A workspace with no wss account (shouldn't happen in practice, but deleteAll must
         // degrade gracefully rather than throw) - public profiles are simply not preserved.
         var owner = insertUser("noWsSystemOwner");
         var service = new HostsProfService(FACTORY);

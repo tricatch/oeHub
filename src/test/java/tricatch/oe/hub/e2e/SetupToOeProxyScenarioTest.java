@@ -132,7 +132,7 @@ class SetupToOeProxyScenarioTest {
         page.locator("form[action='/login'] button[type=submit]").click();
         assertThat(page).hasURL(server.baseUrl() + "/");
 
-        page.navigate(server.baseUrl() + "/oehub/admin/users");
+        page.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = page.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         assertThat(pendingRow).containsText(USER_ID);

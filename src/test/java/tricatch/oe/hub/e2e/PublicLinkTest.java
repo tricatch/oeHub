@@ -226,7 +226,7 @@ class PublicLinkTest {
         // wrapped_link_key must rotate in lockstep with wrapped_content_key (e2eEncryption design
         // doc §6/§7) - otherwise the very next save after a rotation would silently break the
         // link (the editor's browser would fail to unwrap it with the new workspace key).
-        page.navigate(server.baseUrl() + "/oehub/admin/users");
+        page.navigate(server.baseUrl() + "/wsa/users");
         page.onceDialog(com.microsoft.playwright.Dialog::accept);
         // The button is hidden in the UI (display:none), so dispatch the click directly rather than
         // through Playwright's actionable click, which requires visibility - same as

@@ -172,7 +172,7 @@ public class HostsProfService {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
 
-            // 'public' profiles are reassigned to the workspace's ws_system account rather than
+            // 'public' profiles are reassigned to the workspace's wss account rather than
             // deleted with the account - 'private'/'collabo' still go away below, unchanged
             // (cloudGroupService design doc §2.5 orphan handling). Must run before deleteByUserNo,
             // which would otherwise delete these too.

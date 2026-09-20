@@ -10,6 +10,7 @@ import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.WorkspaceMapper;
@@ -254,14 +255,14 @@ public class AuthController {
         }
         recordLoginSuccess(userId);
 
-        // 'pending' (awaiting workspace-admin approval) and 'ws_system' (non-login, workspace-
+        // 'pen' (awaiting workspace-admin approval) and 'wss' (non-login, workspace-
         // owned account) never get a session, even with the right password - cloudGroupService
         // design doc §2.2/§2.3. Same generic error as a wrong password so account state isn't
         // enumerable from the login response.
-        if ("pending".equals(hubUser.getRole()) || "ws_system".equals(hubUser.getRole())) {
+        if (!Role.canLogin(hubUser.getRole())) {
             ctx.render("templates/login.pebble", Map.of(
                 "redirect", redirect != null ? redirect : "",
-                "error", "pending".equals(hubUser.getRole()) ? "auth.error.pending.approval" : "auth.error.invalid.credentials"
+                "error", Role.PEN.equals(hubUser.getRole()) ? "auth.error.pending.approval" : "auth.error.invalid.credentials"
             ));
             return;
         }
@@ -291,20 +292,20 @@ public class AuthController {
             hubUser.setLastLoginAt(LocalDateTime.now());
             session.getMapper(HubUserMapper.class).updateLastLoginAt(hubUser);
             // Defensive integrity check (e2eEncryption design doc §9): a real, logged-in
-            // 'usr'/'ws_adm' member is supposed to always hold a HUB_WS_KEY wrap - approval-time
+            // 'usr'/'wsa' member is supposed to always hold a HUB_WS_KEY wrap - approval-time
             // bundling (§5) and workspace founding (§4) both create it in the same transaction as
             // the role/account itself, so this should never actually fire. If it does (e.g. a
             // hand-edited DB, or a bug in one of those paths), the user isn't locked out - their
             // own 'private' content still works via their personal key - but they silently can't
             // decrypt any 'public'/'collabo' content, which is confusing without a trace. Just log
             // for now rather than auto-reconcile (no browser is available server-side to mint a
-            // fresh wrap, and only a ws_adm's browser could ever re-wrap the real workspace key).
-            if (AppHome.isWorkspaceMode() && ("usr".equals(hubUser.getRole()) || "ws_adm".equals(hubUser.getRole()))) {
+            // fresh wrap, and only a wsa's browser could ever re-wrap the real workspace key).
+            if (AppHome.isWorkspaceMode() && (Role.USR.equals(hubUser.getRole()) || Role.WSA.equals(hubUser.getRole()))) {
                 var wsKey = session.getMapper(WsKeyMapper.class).findByWsNoAndUserNo(hubUser.getWsNo(), hubUser.getUserNo());
                 if (wsKey == null) {
                     logger.warn("Integrity check failed: user '{}' (userNo={}, wsNo={}) has no HUB_WS_KEY wrap - "
                         + "they will be unable to decrypt workspace-shared (public/collabo) content until a "
-                        + "ws_adm re-wraps the workspace key for them.", userId, hubUser.getUserNo(), hubUser.getWsNo());
+                        + "wsa re-wraps the workspace key for them.", userId, hubUser.getUserNo(), hubUser.getWsNo());
                 }
             }
             session.commit();
@@ -438,7 +439,7 @@ public class AuthController {
 
         // Single rule, no oe.mode branching on the ROLE OUTCOME (cloudGroupService design doc
         // §2.3/§2.7, e2eEncryption design doc §5): only the person founding a new workspace
-        // becomes its ws_adm immediately, everyone else starts 'pending'. What DOES depend on
+        // becomes its wsa immediately, everyone else starts 'pending'. What DOES depend on
         // mode is which of those two paths this form even offers - self-hosted has exactly one
         // workspace by construction, so it never creates a new one or takes an invite code here.
         boolean workspaceMode = AppHome.isWorkspaceMode();
@@ -455,7 +456,7 @@ public class AuthController {
                     renderRegisterError(ctx, "auth.error.invite.invalid", userId);
                     return;
                 }
-                user.setRole("pending");
+                user.setRole(Role.PEN);
                 user.setWsNo(invite.getWsNo());
                 // A team-scoped invite (cloudGroupService design doc §2.8/§2.9) auto-assigns the
                 // new member to that team at signup - null when the invite didn't specify one.
@@ -498,7 +499,7 @@ public class AuthController {
                 workspace.setUpdatedAt(now);
                 wsMapper.insert(workspace);
 
-                user.setRole("ws_adm");
+                user.setRole(Role.WSA);
                 user.setWsNo(workspace.getWsNo());
                 userMapper.insert(user);
                 userMapper.selfReferenceAudit(user.getUserNo());
@@ -516,12 +517,12 @@ public class AuthController {
 
                 // Non-login, workspace-owned system account for orphaned-resource ownership later
                 // (cloudGroupService design doc §2.2) - created alongside every new workspace, the
-                // same as SetupController.processSetup's self-hosted bootstrap, so a "no ws_system
+                // same as SetupController.processSetup's self-hosted bootstrap, so a "no wss
                 // yet" state never exists here either.
                 var wsSystemUser = new HubUser();
                 wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
                 wsSystemUser.setPassword(PasswordUtil.hash(java.util.UUID.randomUUID().toString()));
-                wsSystemUser.setRole("ws_system");
+                wsSystemUser.setRole(Role.WSS);
                 wsSystemUser.setWsNo(workspace.getWsNo());
                 wsSystemUser.setCreatedBy(user.getUserNo());
                 wsSystemUser.setUpdatedBy(user.getUserNo());
@@ -542,7 +543,7 @@ public class AuthController {
                 renderRegisterError(ctx, "auth.error.no.workspace", userId);
                 return;
             }
-            user.setRole("pending");
+            user.setRole(Role.PEN);
             user.setWsNo(workspace.getWsNo());
             userMapper.insert(user);
             userMapper.selfReferenceAudit(user.getUserNo());
@@ -682,16 +683,6 @@ public class AuthController {
 
     public static HubUser currentUser(Context ctx) {
         return ctx.attribute(ATTR_USER);
-    }
-
-    // A user can manage their own workspace's members if they hold 'ws_adm', or - only in
-    // self-hosted, which never assigns 'ws_adm' at all (cloudGroupService design doc §2.7's
-    // simplification) - the instance-wide 'adm'. In workspace mode 'adm' is deliberately excluded:
-    // the instance operator must not manage workspace-internal user data (design doc §2.5).
-    public static boolean isWorkspaceAdmin(HubUser user) {
-        if (user == null) return false;
-        if ("ws_adm".equals(user.getRole())) return true;
-        return !tricatch.oe.hub.config.AppHome.isWorkspaceMode() && "adm".equals(user.getRole());
     }
 
     private HubUser findUser(String userId) {

@@ -20,7 +20,7 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves the "last ws_adm" safety net (cloudGroupService design doc §2.5 "안전장치", §3 item 1):
+ * Proves the "last wsa" safety net (cloudGroupService design doc §2.5 "안전장치", §3 item 1):
  * a workspace must never be left with zero admins. While it's the sole admin, demoting or deleting
  * it must be refused; once a second admin exists, either one becomes free to demote/delete again
  * (going from N to N-1 admins is fine, only reaching zero is blocked).
@@ -81,10 +81,10 @@ class LastAdminGuardTest {
     }
 
     private String createInvite(Page adminPage) {
-        adminPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        adminPage.navigate(server.baseUrl() + "/wsa/users");
         Object code = adminPage.evaluate("""
             async () => {
-                const r = await fetch('/api/admin/invites', { method: 'POST' });
+                const r = await fetch('/api/wsa/invites', { method: 'POST' });
                 return (await r.json()).inviteCode;
             }
             """);
@@ -92,7 +92,7 @@ class LastAdminGuardTest {
     }
 
     private void approveOnlyPending(Page adminPage) {
-        adminPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        adminPage.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = adminPage.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         pendingRow.locator(".btn-approve-pending").click();
@@ -102,7 +102,7 @@ class LastAdminGuardTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> findMember(Page adminPage, String userId) {
         var users = (List<?>) adminPage.evaluate(
-            "async () => await (await fetch('/api/admin/users')).json()");
+            "async () => await (await fetch('/api/wsa/users')).json()");
         return users.stream()
             .map(o -> (Map<String, Object>) o)
             .filter(m -> userId.equals(m.get("userId")))
@@ -117,7 +117,7 @@ class LastAdminGuardTest {
         return (Map<String, Object>) adminPage.evaluate(String.format(
             """
             async () => {
-                const r = await fetch('/api/admin/users/%d/role', {
+                const r = await fetch('/api/wsa/users/%d/role', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ role: '%s' })
@@ -134,7 +134,7 @@ class LastAdminGuardTest {
         return (Map<String, Object>) adminPage.evaluate(String.format(
             """
             async () => {
-                const r = await fetch('/api/admin/users/%d', { method: 'DELETE' });
+                const r = await fetch('/api/wsa/users/%d', { method: 'DELETE' });
                 let body = null;
                 try { body = await r.json(); } catch (e) {}
                 return { status: r.status, body: body };
@@ -168,10 +168,10 @@ class LastAdminGuardTest {
         approveOnlyPending(founderPage);
         login(memberPage, MEMBER_ID, MEMBER_PW);
 
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         var founder = findMember(founderPage, FOUNDER_ID);
         var member = findMember(founderPage, MEMBER_ID);
-        assertThat((String) founder.get("role")).isEqualTo("ws_adm");
+        assertThat((String) founder.get("role")).isEqualTo("wsa");
         assertThat((String) member.get("role")).isEqualTo("usr");
         founderUserNo = ((Number) founder.get("userNo")).longValue();
         memberUserNo = ((Number) member.get("userNo")).longValue();
@@ -187,7 +187,7 @@ class LastAdminGuardTest {
         assertThat((String) body.get("error")).isEqualTo("last_ws_admin");
 
         var founder = findMember(founderPage, FOUNDER_ID);
-        assertThat((String) founder.get("role")).isEqualTo("ws_adm");
+        assertThat((String) founder.get("role")).isEqualTo("wsa");
     }
 
     @Test
@@ -197,16 +197,16 @@ class LastAdminGuardTest {
         assertThat((Integer) result.get("status")).isEqualTo(400);
 
         var users = (List<?>) founderPage.evaluate(
-            "async () => await (await fetch('/api/admin/users')).json()");
+            "async () => await (await fetch('/api/wsa/users')).json()");
         assertThat(users.stream().map(o -> (Map<?, ?>) o).anyMatch(m -> FOUNDER_ID.equals(m.get("userId")))).isTrue();
     }
 
     @Test
     @Order(4)
     void oncePromoted_eitherAdminCanBeDemotedFreely() {
-        var promote = patchRole(founderPage, memberUserNo, "ws_adm");
+        var promote = patchRole(founderPage, memberUserNo, "wsa");
         assertThat((Integer) promote.get("status")).isEqualTo(200);
-        assertThat((String) findMember(founderPage, MEMBER_ID).get("role")).isEqualTo("ws_adm");
+        assertThat((String) findMember(founderPage, MEMBER_ID).get("role")).isEqualTo("wsa");
 
         // Now two admins exist - a NON-self demotion of the founder, issued from the member's own
         // authenticated session (not the founder's - a self-attempt would hit a different guard
@@ -214,28 +214,28 @@ class LastAdminGuardTest {
         // reaching 0 is blocked.
         var demoteFounder = patchRole(memberPage, founderUserNo, "usr");
         assertThat((Integer) demoteFounder.get("status")).isEqualTo(200);
-        // The founder just lost ws_adm, so the member's session (the only one left with admin
+        // The founder just lost wsa, so the member's session (the only one left with admin
         // API access) is used to verify both roles from here on.
         assertThat((String) findMember(memberPage, FOUNDER_ID).get("role")).isEqualTo("usr");
-        assertThat((String) findMember(memberPage, MEMBER_ID).get("role")).isEqualTo("ws_adm");
+        assertThat((String) findMember(memberPage, MEMBER_ID).get("role")).isEqualTo("wsa");
     }
 
     @Test
     @Order(5)
     void oncePromoted_eitherAdminCanBeDeletedFreely() {
-        // Re-promote the founder (member is now the sole ws_adm, so this call is issued from the
+        // Re-promote the founder (member is now the sole wsa, so this call is issued from the
         // member's session) so two admins exist again, then have the founder delete the member -
         // a non-self deletion that must succeed outright now that neither one is the sole admin.
-        var rePromote = patchRole(memberPage, founderUserNo, "ws_adm");
+        var rePromote = patchRole(memberPage, founderUserNo, "wsa");
         assertThat((Integer) rePromote.get("status")).isEqualTo(200);
-        assertThat((String) findMember(founderPage, FOUNDER_ID).get("role")).isEqualTo("ws_adm");
+        assertThat((String) findMember(founderPage, FOUNDER_ID).get("role")).isEqualTo("wsa");
 
         var delete = deleteUser(founderPage, memberUserNo);
         assertThat((Integer) delete.get("status")).isEqualTo(200);
 
         var users = (List<?>) founderPage.evaluate(
-            "async () => await (await fetch('/api/admin/users')).json()");
+            "async () => await (await fetch('/api/wsa/users')).json()");
         assertThat(users.stream().map(o -> (Map<?, ?>) o).anyMatch(m -> MEMBER_ID.equals(m.get("userId")))).isFalse();
-        assertThat((String) findMember(founderPage, FOUNDER_ID).get("role")).isEqualTo("ws_adm");
+        assertThat((String) findMember(founderPage, FOUNDER_ID).get("role")).isEqualTo("wsa");
     }
 }

@@ -156,7 +156,7 @@
             {# Generate tab #}
             <div class="tab-pane fade {% if caActiveTab != "import" %}show active{% endif %}"
                  id="caGeneratePane" role="tabpanel">
-              <form method="post" action="/oehub/settings/ca/generate" autocomplete="off">
+              <form method="post" action="/adm/settings/ca/generate" autocomplete="off">
                 <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                 <div class="mb-3">
                   <label class="form-label">{{ msg['settings.ca.name.label'] }}</label>
@@ -173,7 +173,7 @@
             {# Import tab #}
             <div class="tab-pane fade {% if caActiveTab == "import" %}show active{% endif %}"
                  id="caImportPane" role="tabpanel">
-              <form method="post" action="/oehub/settings/ca/import"
+              <form method="post" action="/adm/settings/ca/import"
                     enctype="multipart/form-data" autocomplete="off">
                 <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                 <div class="mb-3">
@@ -357,7 +357,7 @@
 <script src="/js/preset-table.js"></script>
 <script nonce="{{ cspNonce }}">
   initUaPresetTable({
-    apiBase: '/api/admin/hosts/ua',
+    apiBase: '/api/adm/hosts/ua',
     deleteTooltipKey: 'tooltip.ua.delete',
     savedToastKey: 'toast.ua.saved',
     deletedToastKey: 'toast.ua.deleted'
@@ -366,7 +366,7 @@
 
 <script nonce="{{ cspNonce }}">
   initUrlPresetTable({
-    apiBase: '/api/admin/hosts/url',
+    apiBase: '/api/adm/hosts/url',
     deleteTooltipKey: 'tooltip.url.delete',
     savedToastKey: 'toast.url.saved',
     deletedToastKey: 'toast.url.deleted'
@@ -374,7 +374,7 @@
 
   document.getElementById('btnSaveOidDomainDefault').addEventListener('click', async () => {
     const domainList = document.getElementById('oidDomainDefault').value;
-    const res = await fetch('/api/admin/settings/oid-domain-default', {
+    const res = await fetch('/api/adm/settings/oid-domain-default', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({domainList})
     });
@@ -383,7 +383,7 @@
 
   document.getElementById('btnSaveFwdproxyWhitelist').addEventListener('click', async () => {
     const whitelist = document.getElementById('fwdproxyWhitelist').value;
-    const res = await fetch('/api/admin/settings/fwdproxy-whitelist', {
+    const res = await fetch('/api/adm/settings/fwdproxy-whitelist', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({whitelist})
     });
@@ -392,7 +392,7 @@
 
   document.getElementById('btnSaveBackupInterval').addEventListener('click', async () => {
     const intervalHours = document.getElementById('backupIntervalHours').value;
-    const res = await fetch('/api/admin/settings/backup-interval', {
+    const res = await fetch('/api/adm/settings/backup-interval', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({intervalHours: parseInt(intervalHours, 10)})
     });
@@ -401,7 +401,7 @@
 
   document.getElementById('identifierIp').addEventListener('change', async e => {
     const ipEnabled = e.target.checked;
-    const res = await fetch('/api/admin/settings/identifier', {
+    const res = await fetch('/api/adm/settings/identifier', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ipEnabled})
     });
@@ -411,7 +411,7 @@
 
   document.getElementById('trustInternalCert').addEventListener('change', async e => {
     const enabled = e.target.checked;
-    const res = await fetch('/api/admin/settings/trust-internal-cert', {
+    const res = await fetch('/api/adm/settings/trust-internal-cert', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({enabled})
     });

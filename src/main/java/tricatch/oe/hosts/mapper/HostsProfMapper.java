@@ -142,14 +142,14 @@ public interface HostsProfMapper {
     void deleteByUserNo(Long userNo);
 
     // 'public' rows survive account deletion (cloudGroupService design doc §2.5 orphan handling)
-    // - fetched before the delete below so the caller can reassign them to ws_system first.
+    // - fetched before the delete below so the caller can reassign them to wss first.
     @Select("SELECT hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order, visibility, parent_id, created_by, updated_by, create_at, updated_at FROM HOSTS_PFILE WHERE user_no = #{userNo} AND visibility = 'public'")
     List<HostsProf> findPublicByUserNo(Long userNo);
 
     // created_by is left untouched - it's the immutable "who actually made this" audit trail
     // (CLAUDE.md's created_by/updated_by rule); only current ownership (user_no) and the
     // hosts_profile name (to dodge a uq_hosts_pfile_user_profile collision under the new owner)
-    // move to ws_system.
+    // move to wss.
     @Update("UPDATE HOSTS_PFILE SET user_no = #{newOwnerUserNo}, hosts_profile = #{newProfileName}, updated_by = #{newOwnerUserNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId}")
     void reassignOwner(@Param("hostsId") String hostsId, @Param("newOwnerUserNo") Long newOwnerUserNo, @Param("newProfileName") String newProfileName, @Param("updatedAt") java.time.LocalDateTime updatedAt);
 
@@ -164,7 +164,7 @@ public interface HostsProfMapper {
 
     // Workspace-key rotation (e2eEncryption design doc §7, member-departure auto-rotation): every
     // row across the WHOLE workspace (not just the caller's own) whose DEK is wrapped by the
-    // (about to be superseded) workspace key, so the rotating ws_adm's browser can unwrap each
+    // (about to be superseded) workspace key, so the rotating wsa's browser can unwrap each
     // with the old key and re-wrap with the new one. Reference rows (parent_id set) never carry
     // their own wrapped_content_key (setAsCollaboRef nulls it), so the NOT NULL filter alone
     // already excludes them - only parses/hosts_content are relevant, hostsId+wrappedContentKey
@@ -181,7 +181,7 @@ public interface HostsProfMapper {
 
     // Rotation-only re-wrap: the DEK itself never changes (design doc §7), so this deliberately
     // leaves updated_by/updated_at untouched - a key rotation isn't a content edit and shouldn't
-    // look like one in the UI. The wsNo-scoped EXISTS subquery keeps a rotating ws_adm from being
+    // look like one in the UI. The wsNo-scoped EXISTS subquery keeps a rotating wsa from being
     // able to touch another workspace's rows even if hostsId were guessed/forged.
     @Update("""
         UPDATE HOSTS_PFILE

@@ -69,6 +69,12 @@ public class WorkspaceController {
         }
 
         var currentUser = AuthController.currentUser(ctx);
+        // The instance admin belongs to one workspace themselves; suspending that one bumps their
+        // own token_version and blocks their next login, leaving nobody who can reactivate it.
+        if (wsNo.equals(currentUser.getWsNo())) {
+            ctx.status(400).result("Cannot change the status of your own workspace");
+            return;
+        }
         var now = LocalDateTime.now();
         try (var session = sqlSessionFactory.openSession()) {
             var wsMapper = session.getMapper(WorkspaceMapper.class);
@@ -85,7 +91,7 @@ public class WorkspaceController {
                 session.getMapper(HubUserMapper.class).bumpTokenVersionByWsNo(wsNo);
             }
             // Logged under the TARGET workspace's ws_no, not the instance admin's own - so that
-            // workspace's own ws_adm can see "who suspended us and when" in their own audit view,
+            // workspace's own wsa can see "who suspended us and when" in their own audit view,
             // even though the instance admin has no audit view of their own into this table
             // (isolation principle, design doc §2.5).
             AuditLogger.record(session, wsNo, "workspace.status_change", "workspace", String.valueOf(wsNo),

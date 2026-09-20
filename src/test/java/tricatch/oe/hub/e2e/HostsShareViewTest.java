@@ -173,10 +173,10 @@ class HostsShareViewTest {
     @Test
     @Order(6)
     void sameWorkspaceMember_canViewViaSearchResults_throughTheNewViewEndpoint() {
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         var inviteCode = (String) founderPage.evaluate("""
             async () => {
-                const r = await fetch('/api/admin/invites', { method: 'POST' });
+                const r = await fetch('/api/wsa/invites', { method: 'POST' });
                 const data = await r.json();
                 return data.inviteCode;
             }
@@ -193,7 +193,7 @@ class HostsShareViewTest {
         assertThat(memberPage.locator("#recoveryCodeModal.show")).isVisible();
         memberPage.locator("#btnRecoveryCodeContinue").click();
 
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = founderPage.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         pendingRow.locator(".btn-approve-pending").click();

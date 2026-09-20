@@ -43,7 +43,7 @@ public interface TeamMapper {
     void clearFromInvites(Long teamNo);
 
     // Deletion choice: refuse while any member still references this team, rather than nulling
-    // HUB_USR.team_no out from under them - a ws_adm who wants to disband a team should reassign
+    // HUB_USR.team_no out from under them - a wsa who wants to disband a team should reassign
     // its members first, so the member list is never silently changed by a delete elsewhere. The
     // NOT EXISTS guard also keeps this atomic (no separate "is it in use" check that could race
     // with a concurrent team assignment) and doubles as the wsNo scope check (mirrors the

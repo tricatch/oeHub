@@ -52,7 +52,7 @@ public class ReverseProxyServer {
     private static SqlSessionFactory sqlSessionFactory = null;
 
     // OID identification (X-OeHub-Oid header) is always available; IP-based identification
-    // is a fallback that an admin can disable via /oehub/settings when it's unreliable
+    // is a fallback that an admin can disable via /adm/settings when it's unreliable
     // (e.g. clients sitting behind a shared/NATed IP).
     private static final String KEY_IP_IDENTIFIER_ENABLED = "identifier.ip.enabled";
     private static volatile boolean ipIdentifierEnabled = true;

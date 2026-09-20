@@ -47,7 +47,7 @@ erDiagram
 
 ## `HUB_TEAM` — 팀(부서) 라벨
 
-워크스페이스 아래 한 단계짜리 조직 라벨. 검색·공유 범위와는 무관한 순수 필터/표시용이다(`HOSTS_PFILE.visibility`가 그 역할을 계속 전담). `ws_adm` 누구나 생성/이름변경/삭제할 수 있고, 소속 멤버가 있는 팀은 삭제가 거부된다(먼저 재배정해야 함). `HUB_USR`보다 먼저 생성돼야 `HUB_USR.team_no`의 FK가 성립한다.
+워크스페이스 아래 한 단계짜리 조직 라벨. 검색·공유 범위와는 무관한 순수 필터/표시용이다(`HOSTS_PFILE.visibility`가 그 역할을 계속 전담). `wsa` 누구나 생성/이름변경/삭제할 수 있고, 소속 멤버가 있는 팀은 삭제가 거부된다(먼저 재배정해야 함). `HUB_USR`보다 먼저 생성돼야 `HUB_USR.team_no`의 FK가 성립한다.
 
 | 컬럼 | 설명 |
 |---|---|
@@ -66,7 +66,7 @@ erDiagram
 | `user_no` | 기본키 (`1000000000`부터 시작) |
 | `user_id` | 로그인 ID (유일) |
 | `password` | 비밀번호 해시 (bcrypt) |
-| `role` | `adm` / `ws_adm` / `usr` / `ws_system` / `pending` |
+| `role` | `adm` / `wsa` / `usr` / `wss` / `pen` |
 | `ws_no` | 소속 워크스페이스 (FK → `HUB_WS`) |
 | `team_no` | 소속 팀 (FK → `HUB_TEAM`, nullable) |
 | `token_version` | JWT 무효화 카운터 |
@@ -80,11 +80,11 @@ erDiagram
 | `updated_at` | 마지막 수정 일시 |
 | `last_login_at` | 마지막 로그인 일시 (nullable) |
 
-- `role` — `adm`(인스턴스 관리자) / `ws_adm`(워크스페이스 관리자, 한 워크스페이스에 여러 명 가능) / `usr`(일반 구성원) / `ws_system`(로그인 불가능한 워크스페이스 소유 계정 — [소유자를 잃은 리소스](04-deployment-modes.md#계정-삭제와-소유자를-잃은-리소스)의 새 주인) / `pending`(승인 대기, 로그인 불가).
+- `role` — 3글자 코드(`VARCHAR(3)`). `adm`(인스턴스 관리자) / `wsa`(워크스페이스 관리자, 한 워크스페이스에 여러 명 가능) / `usr`(일반 구성원) / `wss`(로그인 불가능한 워크스페이스 소유 계정 — [소유자를 잃은 리소스](04-deployment-modes.md#계정-삭제와-소유자를-잃은-리소스)의 새 주인) / `pen`(승인 대기, 로그인 불가).
 - `team_no` — nullable. 팀 미배정도 정상 상태다.
 - `token_version` — 비밀번호 변경, 워크스페이스 정지 등으로 증가하며, 그 시점 이전에 발급된 JWT를 전부 무효화한다.
 - `public_key`/`wrapped_private_key`/`wrapped_private_key_recovery`/`recovery_verifier` — 종단간 암호화의 개인키/복구 자료([05-end-to-end-encryption.md](05-end-to-end-encryption.md) 참고). `self-hosted` 모드에서는 공개키만 실제 값이고 나머지 세 컬럼은 고정 더미 문자열이다 — 아무도 그 계정의 콘텐츠를 암호화하지 않으므로 실제 키 자료를 만들 필요가 없다.
-- `last_login_at` — 휴면 계정을 찾아 정리하는 용도(별도 상태 플래그 없이, `ws_adm`이 직접 보고 삭제하는 방식).
+- `last_login_at` — 휴면 계정을 찾아 정리하는 용도(별도 상태 플래그 없이, `wsa`이 직접 보고 삭제하는 방식).
 
 ## `HUB_WS_INVITE` — 초대 코드
 
@@ -104,7 +104,7 @@ erDiagram
 
 ## `HUB_WS_KEY` — 워크스페이스키 wrap
 
-워크스페이스 공유 대칭키(하나)를 멤버마다 그 사람의 개인 공개키로 감싼 것 — 그래서 기본키가 `(ws_no, user_no)` 복합키다. 새 멤버가 승인될 때, 승인하는 `ws_adm`의 브라우저가 자신이 캐시해 둔 워크스페이스키를 새 멤버의 공개키로 다시 감싸 이 테이블에 한 행 추가한다(서버는 감싸지지 않은 원본 키를 한 번도 보지 않는다). `HUB_USR`에 대한 FK는 실제 제약으로 걸려 있다(소프트 레퍼런스가 아님) — 계정 삭제 시 이 테이블의 행을 먼저 지워야 한다.
+워크스페이스 공유 대칭키(하나)를 멤버마다 그 사람의 개인 공개키로 감싼 것 — 그래서 기본키가 `(ws_no, user_no)` 복합키다. 새 멤버가 승인될 때, 승인하는 `wsa`의 브라우저가 자신이 캐시해 둔 워크스페이스키를 새 멤버의 공개키로 다시 감싸 이 테이블에 한 행 추가한다(서버는 감싸지지 않은 원본 키를 한 번도 보지 않는다). `HUB_USR`에 대한 FK는 실제 제약으로 걸려 있다(소프트 레퍼런스가 아님) — 계정 삭제 시 이 테이블의 행을 먼저 지워야 한다.
 
 | 컬럼 | 설명 |
 |---|---|
@@ -158,7 +158,7 @@ erDiagram
 보안/접근권한에 관련된 액션(Tier-1)만 남기는 append-only 이력. 무기한 보관하며 별도 자동 삭제가
 없다. `ws_no`는 `NOT NULL`이다 — `self-hosted`는 워크스페이스가 하나뿐이라 항상 그 값이고,
 인스턴스 admin이 다른 워크스페이스에 하는 액션(워크스페이스 상태 변경 등)은 **행위자가 아니라
-대상 워크스페이스**의 `ws_no`로 기록되어, 그 워크스페이스의 `ws_adm`이 자기 로그에서 볼 수 있다.
+대상 워크스페이스**의 `ws_no`로 기록되어, 그 워크스페이스의 `wsa`이 자기 로그에서 볼 수 있다.
 조회는 항상 호출자 자신의 `ws_no`로만 스코프되며, 어떤 액션이 기록되는지는
 [08-api-reference.md](08-api-reference.md)의 감사 로그 섹션을 참고.
 
@@ -169,7 +169,7 @@ erDiagram
 | `action` | 액션 코드 (예: `user.role_change`, `settings.ca.generate`) |
 | `target_type` | 대상 종류 (예: `user`, `workspace`), nullable |
 | `target_id` | 대상 식별자 (문자열로 저장), nullable |
-| `detail` | 작은 평면 JSON (예: `{"from":"usr","to":"ws_adm"}`), nullable |
+| `detail` | 작은 평면 JSON (예: `{"from":"usr","to":"wsa"}`), nullable |
 | `created_by` | 행위자 `user_no` (소프트 레퍼런스) |
 | `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스, 항상 `created_by`와 동일 — 행을 수정하지 않으므로) |
 | `create_at` | 생성 일시 |
@@ -199,7 +199,7 @@ erDiagram
 - `parent_id` — `collabo` 공유의 참조 행. `HOSTS_PFILE` 자기 자신을 가리키는 자기참조 FK.
 - `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`public`은 워크스페이스키로 감싼다. `workspace`가 아닌 `self-hosted`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
 - `link_content`/`wrapped_link_key` — "살아있는 공개 링크" 기능 전용([05-end-to-end-encryption.md](05-end-to-end-encryption.md) "공개 링크 공유" 참고). 링크 발급 여부와 무관하게 `hosts_content`/`wrapped_content_key`는 전혀 건드리지 않는다 — 완전히 별개의 암호문 계열이다.
-- `uq_hosts_pfile_user_profile` — 같은 소유자 안에서 프로필 이름 중복 방지. 소유자가 `ws_system`으로 바뀌는 재할당 시 이름이 충돌하면 자동으로 뒤에 번호를 붙여 회피한다.
+- `uq_hosts_pfile_user_profile` — 같은 소유자 안에서 프로필 이름 중복 방지. 소유자가 `wss`으로 바뀌는 재할당 시 이름이 충돌하면 자동으로 뒤에 번호를 붙여 회피한다.
 
 ## `HOSTS_CONF` — oeHosts 개인 설정
 

@@ -22,11 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Covers the "teams" (department) feature end to end under oe.mode=workspace (cloudGroupService design
- * doc §2.9): a ws_adm creates/renames a team from the member-management screen, an invite code can
- * pre-assign a team so a joiner is auto-assigned at signup, a ws_adm can reassign a member's team
+ * doc §2.9): a wsa creates/renames a team from the member-management screen, an invite code can
+ * pre-assign a team so a joiner is auto-assigned at signup, a wsa can reassign a member's team
  * manually (including clearing it back to "no team"), team deletion is refused while a member still
  * references it and succeeds once that member is reassigned away, and a team belongs to exactly one
- * workspace - a different workspace's ws_adm can neither touch nor delete it.
+ * workspace - a different workspace's wsa can neither touch nor delete it.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -110,7 +110,7 @@ class TeamManagementTest {
     @Test
     @Order(3)
     void founderCreatesTwoTeams_theyAppearInTheTeamListAndSelectors() {
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         assertThat(founderPage.locator("#teamsTbody tr[data-team-no]")).hasCount(0);
 
         createTeamViaUi("Engineering");
@@ -147,7 +147,7 @@ class TeamManagementTest {
 
         // Fetch the teamNo values now, for the API-level assertions further down.
         @SuppressWarnings("unchecked")
-        var teams = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/admin/teams').then(r => r.json())");
+        var teams = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/wsa/teams').then(r => r.json())");
         for (var t : teams) {
             if ("Eng Team".equals(t.get("teamName"))) engineeringTeamNo = ((Number) t.get("teamNo")).longValue();
             if ("Marketing".equals(t.get("teamName"))) marketingTeamNo = ((Number) t.get("teamNo")).longValue();
@@ -186,7 +186,7 @@ class TeamManagementTest {
     @Test
     @Order(7)
     void founderApprovesJoiner_whoEndsUpAssignedToTheInvitesTeam() {
-        founderPage.navigate(server.baseUrl() + "/oehub/admin/users");
+        founderPage.navigate(server.baseUrl() + "/wsa/users");
         var pendingRow = founderPage.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         assertThat(pendingRow).containsText(JOINER_ID);
@@ -196,7 +196,7 @@ class TeamManagementTest {
         // The invite's team_no (cloudGroupService design doc §2.8/§2.9) must have carried through
         // to the new HUB_USR row automatically - no manual assignment step should be needed.
         @SuppressWarnings("unchecked")
-        var users = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/admin/users').then(r => r.json())");
+        var users = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/wsa/users').then(r => r.json())");
         var joiner = users.stream().filter(u -> JOINER_ID.equals(u.get("userId"))).findFirst().orElseThrow();
         assertThat(joiner.get("teamName")).isEqualTo("Eng Team");
         joinerUserNo = ((Number) joiner.get("userNo")).longValue();
@@ -231,7 +231,7 @@ class TeamManagementTest {
 
     private void assertTeamNoViaApi(long userNo, Long expectedTeamNo) {
         @SuppressWarnings("unchecked")
-        var users = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/admin/users').then(r => r.json())");
+        var users = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/wsa/users').then(r => r.json())");
         var user = users.stream().filter(u -> ((Number) u.get("userNo")).longValue() == userNo).findFirst().orElseThrow();
         Object teamNo = user.get("teamNo");
         if (expectedTeamNo == null) {
@@ -252,7 +252,7 @@ class TeamManagementTest {
         assertTeamNoViaApi(joinerUserNo, engineeringTeamNo);
 
         int statusWhileInUse = ((Number) founderPage.evaluate(
-            "(teamNo) => fetch('/api/admin/teams/' + teamNo, { method: 'DELETE' }).then(r => r.status)",
+            "(teamNo) => fetch('/api/wsa/teams/' + teamNo, { method: 'DELETE' }).then(r => r.status)",
             String.valueOf(engineeringTeamNo))).intValue();
         assertThat(statusWhileInUse).isEqualTo(409);
         // Still present in the team list and the member's dropdown after the refused delete.
@@ -263,7 +263,7 @@ class TeamManagementTest {
         assertTeamNoViaApi(joinerUserNo, null);
 
         int statusAfterReassign = ((Number) founderPage.evaluate(
-            "(teamNo) => fetch('/api/admin/teams/' + teamNo, { method: 'DELETE' }).then(r => r.status)",
+            "(teamNo) => fetch('/api/wsa/teams/' + teamNo, { method: 'DELETE' }).then(r => r.status)",
             String.valueOf(engineeringTeamNo))).intValue();
         assertThat(statusAfterReassign).isEqualTo(204);
     }
@@ -288,20 +288,20 @@ class TeamManagementTest {
         otherFounderPage.waitForURL(server.baseUrl() + "/");
 
         // Marketing belongs to "Team Co" (the first founder's workspace) - the second workspace's
-        // ws_adm must not be able to rename, delete, or assign a member to it.
+        // wsa must not be able to rename, delete, or assign a member to it.
         int renameStatus = ((Number) otherFounderPage.evaluate(
-            "(teamNo) => fetch('/api/admin/teams/' + teamNo, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({teamName: 'Hijacked'}) }).then(r => r.status)",
+            "(teamNo) => fetch('/api/wsa/teams/' + teamNo, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({teamName: 'Hijacked'}) }).then(r => r.status)",
             String.valueOf(marketingTeamNo))).intValue();
         assertThat(renameStatus).isEqualTo(404);
 
         int deleteStatus = ((Number) otherFounderPage.evaluate(
-            "(teamNo) => fetch('/api/admin/teams/' + teamNo, { method: 'DELETE' }).then(r => r.status)",
+            "(teamNo) => fetch('/api/wsa/teams/' + teamNo, { method: 'DELETE' }).then(r => r.status)",
             String.valueOf(marketingTeamNo))).intValue();
         assertThat(deleteStatus).isEqualTo(404);
 
         // Marketing must still exist, untouched, from the original workspace's point of view.
         @SuppressWarnings("unchecked")
-        var teams = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/admin/teams').then(r => r.json())");
+        var teams = (List<Map<String, Object>>) founderPage.evaluate("() => fetch('/api/wsa/teams').then(r => r.json())");
         assertThat(teams).anySatisfy(t -> {
             assertThat(((Number) t.get("teamNo")).longValue()).isEqualTo(marketingTeamNo);
             assertThat(t.get("teamName")).isEqualTo("Marketing");

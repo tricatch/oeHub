@@ -200,10 +200,10 @@ class HubUserMapperTest extends MapperTestBase {
     void findAll_excludesPendingAndWsSystem() {
         insertUser("u1");
         var pending = insertUser("u2");
-        pending.setRole("pending");
+        pending.setRole("pen");
         pending.setUpdatedAt(LocalDateTime.now());
         var wsSystem = insertUser("u3");
-        wsSystem.setRole("ws_system");
+        wsSystem.setRole("wss");
         wsSystem.setUpdatedAt(LocalDateTime.now());
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HubUserMapper.class);
@@ -219,7 +219,7 @@ class HubUserMapperTest extends MapperTestBase {
     void searchByUserId_excludesPendingAndWsSystem() {
         insertUser("alice");
         var pending = insertUser("alicia");
-        pending.setRole("pending");
+        pending.setRole("pen");
         pending.setUpdatedAt(LocalDateTime.now());
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HubUserMapper.class);
@@ -261,7 +261,7 @@ class HubUserMapperTest extends MapperTestBase {
     @Test
     void findAllPendingByWsNo_returnsOnlyPendingInThatWorkspace() {
         var pending = insertUser("waiting");
-        pending.setRole("pending");
+        pending.setRole("pen");
         pending.setUpdatedAt(LocalDateTime.now());
         insertUser("active");
         try (var session = FACTORY.openSession(true)) {

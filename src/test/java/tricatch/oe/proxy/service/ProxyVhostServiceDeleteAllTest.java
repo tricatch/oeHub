@@ -19,7 +19,7 @@ class ProxyVhostServiceDeleteAllTest extends MapperTestBase {
         var wsSystem = new HubUser();
         wsSystem.setUserId("__ws_system_" + wsNo + "_" + newId().substring(0, 6));
         wsSystem.setPassword(PasswordUtil.hash(newId()));
-        wsSystem.setRole("ws_system");
+        wsSystem.setRole("wss");
         wsSystem.setWsNo(wsNo);
         wsSystem.setCreateAt(now);
         wsSystem.setUpdatedAt(now);

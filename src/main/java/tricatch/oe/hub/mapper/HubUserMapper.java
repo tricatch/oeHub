@@ -1,6 +1,7 @@
 package tricatch.oe.hub.mapper;
 
 import org.apache.ibatis.annotations.*;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.model.HubUser;
 
 import java.time.LocalDateTime;
@@ -21,40 +22,40 @@ public interface HubUserMapper {
     // The non-login, workspace-owned account that orphaned public resources get reassigned to on
     // account deletion (cloudGroupService design doc §2.2/§2.5) - exactly one per workspace,
     // created alongside it (SetupController.processSetup, AuthController.processRegister).
-    @Select("SELECT " + COLS + " FROM HUB_USR u WHERE u.ws_no = #{wsNo} AND u.role = 'ws_system'")
+    @Select("SELECT " + COLS + " FROM HUB_USR u WHERE u.ws_no = #{wsNo} AND u.role = '" + Role.WSS + "'")
     HubUser findWsSystemByWsNo(Long wsNo);
 
     // Excludes 'pending' (not yet approved, shown separately - see findAllPendingByWsNo) and
-    // 'ws_system' (non-login workspace-owned account, not a manageable member) - see
-    // cloudGroupService design doc §2.2/§2.8. Scoped to one workspace so a ws_adm never sees
+    // 'wss' (non-login workspace-owned account, not a manageable member) - see
+    // cloudGroupService design doc §2.2/§2.8. Scoped to one workspace so a wsa never sees
     // another workspace's members - a no-op filter in self-hosted (exactly one workspace) but a
     // real tenant boundary once a second workspace exists (design doc §2.5 isolation).
     // LEFT JOIN HUB_TEAM for the member list's team column/dropdown (design doc §2.9) - a member
     // with no team (team_no NULL) still needs to appear, hence LEFT not INNER.
     @Select("SELECT " + COLS + ", t.team_name FROM HUB_USR u LEFT JOIN HUB_TEAM t ON t.team_no = u.team_no "
-        + "WHERE u.role NOT IN ('pending', 'ws_system') AND u.ws_no = #{wsNo} ORDER BY u.user_no")
+        + "WHERE u.role NOT IN ('" + Role.PEN + "', '" + Role.WSS + "') AND u.ws_no = #{wsNo} ORDER BY u.user_no")
     List<HubUser> findAll(Long wsNo);
 
     @Select("SELECT " + COLS + ", t.team_name FROM HUB_USR u LEFT JOIN HUB_TEAM t ON t.team_no = u.team_no "
-        + "WHERE u.role NOT IN ('pending', 'ws_system') AND u.ws_no = #{wsNo} AND LOWER(u.user_id) LIKE LOWER(CONCAT('%', #{keyword}, '%')) ORDER BY u.user_no")
+        + "WHERE u.role NOT IN ('" + Role.PEN + "', '" + Role.WSS + "') AND u.ws_no = #{wsNo} AND LOWER(u.user_id) LIKE LOWER(CONCAT('%', #{keyword}, '%')) ORDER BY u.user_no")
     List<HubUser> searchByUserId(@Param("wsNo") Long wsNo, @Param("keyword") String keyword);
 
     // Approval-pending members of one workspace - the "가입 승인 대기" list (cloudGroupService
     // design doc §2.8 UI). Scoped by ws_no even though self-hosted has exactly one workspace, so
     // the query is already correct once a second workspace can exist.
-    @Select("SELECT " + COLS + " FROM HUB_USR u WHERE u.role = 'pending' AND u.ws_no = #{wsNo} ORDER BY u.user_no")
+    @Select("SELECT " + COLS + " FROM HUB_USR u WHERE u.role = '" + Role.PEN + "' AND u.ws_no = #{wsNo} ORDER BY u.user_no")
     List<HubUser> findAllPendingByWsNo(Long wsNo);
 
-    // "Last ws_adm" guard (cloudGroupService design doc §2.5 "안전장치"): a role='ws_adm' row is
-    // never 'pending' or 'ws_system' by construction (only processRegister's founder path and
+    // "Last wsa" guard (cloudGroupService design doc §2.5 "안전장치"): a role='wsa' row is
+    // never 'pending' or 'wss' by construction (only processRegister's founder path and
     // apiSetRole ever assign this role value), so no extra status filter is needed here.
-    @Select("SELECT COUNT(*) FROM HUB_USR WHERE ws_no = #{wsNo} AND role = 'ws_adm'")
+    @Select("SELECT COUNT(*) FROM HUB_USR WHERE ws_no = #{wsNo} AND role = '" + Role.WSA + "'")
     int countWsAdmins(Long wsNo);
 
     // Instance-admin workspace console (cloudGroupService design doc §2.5): a plain headcount only
     // - never names/details - for the isolation boundary that screen must respect. Excludes only
-    // 'ws_system' (not a real member); 'pending' is included since they did sign up.
-    @Select("SELECT COUNT(*) FROM HUB_USR WHERE ws_no = #{wsNo} AND role != 'ws_system'")
+    // 'wss' (not a real member); 'pending' is included since they did sign up.
+    @Select("SELECT COUNT(*) FROM HUB_USR WHERE ws_no = #{wsNo} AND role != '" + Role.WSS + "'")
     int countMembersByWsNo(Long wsNo);
 
     // Suspension (cloudGroupService design doc §2.5 "워크스페이스 정지 처리") must invalidate every

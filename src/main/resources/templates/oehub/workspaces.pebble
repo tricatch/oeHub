@@ -61,11 +61,14 @@
 (function () {
 
   function loadWorkspaces() {
-    fetch('/api/admin/workspaces')
+    fetch('/api/adm/workspaces')
       .then(function (r) { return r.json(); })
       .then(renderWorkspaces)
       .catch(function () {});
   }
+
+  // The admin's own workspace can't be suspended (the server rejects it too) - no action button.
+  var OWN_WS_NO = '{{ user.wsNo }}';
 
   function statusHtml(status) {
     var isActive = status === 'active';
@@ -95,7 +98,7 @@
         '<td class="text-center">' + statusHtml(w.status) + '</td>' +
         '<td class="text-center small text-muted">' + (w.memberCount != null ? w.memberCount : '') + '</td>' +
         '<td class="small text-muted">' + escHtml(w.createAt) + '</td>' +
-        '<td class="text-end">' + actionHtml(w.status) + '</td>' +
+        '<td class="text-end">' + (String(w.wsNo) === OWN_WS_NO ? '' : actionHtml(w.status)) + '</td>' +
         '</tr>';
     }).join('');
     tbody.querySelectorAll('.btn-toggle-ws-status').forEach(function (btn) {
@@ -111,7 +114,7 @@
     var confirmMsg = newStatus === 'suspended' ? MSG['confirm.suspend.workspace'] : MSG['confirm.reactivate.workspace'];
     if (!confirm(confirmMsg)) return;
     btn.disabled = true;
-    fetch('/api/admin/workspaces/' + wsNo + '/status', {
+    fetch('/api/adm/workspaces/' + wsNo + '/status', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus })
