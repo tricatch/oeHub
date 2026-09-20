@@ -154,19 +154,31 @@ class MultiDomainCertKeyManagerTest {
     @Test
     void noSniHandshake_failsGracefully_withoutThrowingOutOfChooseServerAlias() throws Exception {
         // SSLCertificateCreator can't build a certificate for a null domain (BouncyCastle rejects
-        // a null SAN) — that's pre-existing, not something this change alters. What this change
-        // must preserve is that the failure is caught and logged inside chooseServerAlias rather
-        // than propagating out and crashing the handshake thread. getCertificateChain(null) and
-        // getPrivateKey(null) both stay null, exactly as before this class switched to
-        // ConcurrentHashMap (which forbids null keys) for the real per-domain cache.
+        // a null SAN, and only after generating a full RSA key pair). A handshake without SNI must
+        // therefore end with "no certificate" - without throwing out of chooseServerAlias, without
+        // attempting generation, and without logging an error for what is an ordinary client
+        // behaviour (connecting by IP address). getCertificateChain(null) and getPrivateKey(null)
+        // stay null.
         CertificateKeyPair root = new RootCertificateCreator().generateRootCertificate("test-root-ca");
         MultiDomainCertKeyManager manager = new MultiDomainCertKeyManager(root.getCertificate(), root.getPrivateKey());
 
-        SSLSocket socket = new FakeSslSocket(new FakeNoSniSession());
-        String alias = manager.chooseServerAlias("RSA", null, socket);
+        var managerLogger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MultiDomainCertKeyManager.class);
+        var captured = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        captured.start();
+        managerLogger.addAppender(captured);
+        try {
+            SSLSocket socket = new FakeSslSocket(new FakeNoSniSession());
+            for (int i = 0; i < 3; i++) {
+                assertThat(manager.chooseServerAlias("RSA", null, socket)).isNull();
+            }
+        } finally {
+            managerLogger.detachAppender(captured);
+        }
 
-        assertThat(alias).isNull();
         assertThat(manager.getCertificateChain(null)).isNull();
         assertThat(manager.getPrivateKey(null)).isNull();
+        assertThat(captured.list)
+            .as("a no-SNI handshake is not an error")
+            .noneMatch(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN));
     }
 }

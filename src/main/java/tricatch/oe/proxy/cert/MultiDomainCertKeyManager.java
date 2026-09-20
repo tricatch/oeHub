@@ -35,15 +35,13 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
     // so a handshake for an already-cached domain never blocks behind another domain's (CPU-bound
     // RSA keygen + signing) generation — unlike a single manager-wide lock, which would serialize
     // every concurrent handshake behind whichever one happens to be generating a cert.
-    // ConcurrentHashMap forbids null keys, so the no-SNI case (domain == null) is handled
-    // separately via noSniCertificate below instead of as a map entry.
+    // ConcurrentHashMap forbids null keys; the no-SNI case (domain == null) never has a certificate
+    // to cache - see chooseServerAlias.
     private final Map<String, CertificateKeyPair> certificates = new ConcurrentHashMap<>();
     // Insertion order for the (best-effort, approximately-FIFO) eviction below. Appended to only
     // from inside the computeIfAbsent mapping function, so it grows exactly once per distinct
     // domain — repeated lookups of an already-cached domain never touch it.
     private final Queue<String> insertionOrder = new ConcurrentLinkedQueue<>();
-    private volatile CertificateKeyPair noSniCertificate;
-    private final Object noSniLock = new Object();
 
     private final X509Certificate rootCertificate;
     private final PrivateKey rootPrivateKey;
@@ -68,8 +66,13 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
             }
         }
 
+        // No SNI (a client connecting by IP address, an old client, a scanner): there is no name to
+        // issue a certificate for, and SSLCertificateCreator cannot build one for a null domain -
+        // it generates a full RSA key pair first and only then fails on the null SAN. Answering
+        // "no certificate" straight away ends the handshake the same way, without that cost being
+        // paid (and serialized) on every attempt.
         if (domain == null) {
-            ensureNoSniCertificate();
+            if (logger.isDebugEnabled()) logger.debug("TLS handshake without SNI - no certificate to offer");
             return null;
         }
 
@@ -95,18 +98,6 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
             String oldest = insertionOrder.poll();
             if (oldest == null) break;
             certificates.remove(oldest);
-        }
-    }
-
-    private void ensureNoSniCertificate() {
-        if (noSniCertificate != null) return;
-        synchronized (noSniLock) {
-            if (noSniCertificate != null) return;
-            try {
-                noSniCertificate = generateCertificate(null);
-            } catch (GenerationFailedException e) {
-                logger.error("errorGenCert-" + e.getCause().getMessage(), e.getCause());
-            }
         }
     }
 
@@ -136,14 +127,14 @@ public class MultiDomainCertKeyManager extends X509ExtendedKeyManager {
 
 
     public X509Certificate[] getCertificateChain(String alias) {
-        CertificateKeyPair pair = alias == null ? noSniCertificate : certificates.get(alias);
+        CertificateKeyPair pair = alias == null ? null : certificates.get(alias);
         if (pair == null) return null;
         return new X509Certificate[]{ pair.getCertificate() };
     }
 
 	@Override
 	public PrivateKey getPrivateKey(String alias) {
-		CertificateKeyPair pair = alias == null ? noSniCertificate : certificates.get(alias);
+		CertificateKeyPair pair = alias == null ? null : certificates.get(alias);
 		return pair == null ? null : pair.getPrivateKey();
 	}
 
