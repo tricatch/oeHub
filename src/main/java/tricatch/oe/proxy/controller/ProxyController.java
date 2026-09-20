@@ -54,6 +54,7 @@ public class ProxyController {
         model.put("localSvr", localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp);
         model.put("oid", hubUser.getOid());
         model.put("ipIdentifierEnabled", ipIdentifierEnabled);
+        model.put("internalOnlyUpstream", ReverseProxyServer.isInternalOnlyUpstream());
         model.put("ipClaimedBySelf", claimedBySelf);
         model.put("ipClaimedByUserId", claimedByUserId);
         ctx.render("templates/oehub/proxy.pebble", model);
@@ -199,6 +200,7 @@ public class ProxyController {
             // The draft content above was still saved successfully; only pushing it live as part
             // of the merged config failed. Return it anyway (with a 400) so the client can tell
             // the two apart instead of reporting this as a plain save failure.
+            flagUpstreamRejection(ctx);
             ctx.status(400).json(updated);
             return;
         }
@@ -220,6 +222,7 @@ public class ProxyController {
         if (updated == null) { ctx.status(404); return; }
         if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
             // The selection toggle itself was still saved; only the resulting merge was rejected.
+            flagUpstreamRejection(ctx);
             ctx.status(400).json(updated);
             return;
         }
@@ -355,6 +358,7 @@ public class ProxyController {
             try {
                 applyAndPersistVhostConfig(confService, hubUser.getUserNo(), ctx.ip(), value);
             } catch (VhostApplyException e) {
+                flagUpstreamRejection(ctx);
                 ctx.status(400).result("Invalid vhost configuration: " + e.getCause().getMessage());
                 return;
             }
@@ -363,6 +367,7 @@ public class ProxyController {
             // *before* persisting, so a value that fails to apply never ends up saved (same
             // validate-before-persist rule as the "vhost" branch above).
             if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip(), value)) {
+                flagUpstreamRejection(ctx);
                 ctx.status(400).result("Invalid vhost configuration");
                 return;
             }
@@ -443,6 +448,7 @@ public class ProxyController {
     // localSvrOverride, when non-null, is used instead of the persisted "local_svr" conf value —
     // lets a candidate override be validated (via setVirtualHosts) before it's saved to the DB.
     private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml, String localSvrOverride) throws VhostApplyException {
+        upstreamRejected.remove();
         try {
             if (vhostYaml != null && !vhostYaml.isBlank()) {
                 var localSvr = resolveLocalSvr(confService, userNo, routeIp, localSvrOverride);
@@ -453,8 +459,19 @@ public class ProxyController {
             confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "", userNo);
         } catch (Exception e) {
             logger.warn("Failed to apply vhost config for user {}: {}", userNo, e.getMessage());
+            if (e instanceof tricatch.oe.proxy.exception.UpstreamNotInternalException) upstreamRejected.set(Boolean.TRUE);
             throw new VhostApplyException(e);
         }
+    }
+
+    // Set (on the request's own thread) when the apply that just failed was refused because a backend
+    // is outside the internal network, so the handler can tell the page - which otherwise only sees
+    // "400" - to explain that instead of a generic failure. Reset at the start of every apply.
+    private static final ThreadLocal<Boolean> upstreamRejected = new ThreadLocal<>();
+
+    private static void flagUpstreamRejection(Context ctx) {
+        if (Boolean.TRUE.equals(upstreamRejected.get())) ctx.header("X-Oe-Reason", "upstream-internal-only");
+        upstreamRejected.remove();
     }
 
     private static class VhostApplyException extends Exception {

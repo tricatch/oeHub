@@ -254,6 +254,12 @@ class WorkspaceAdminConsoleTest {
                 "async () => (await fetch('/api/adm/settings/allowed-domains', {method: 'POST', "
                     + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({domains: 'hub.example.com'})})).status");
             assertThat(saveStatus).isEqualTo(200);
+            // Same for the upstream-address restriction: an oeProxy setting, offered only here.
+            assertThat(page.locator("#internalOnlyUpstream")).hasCount(1);
+            var upstreamStatus = (Integer) page.evaluate(
+                "async () => (await fetch('/api/adm/settings/internal-only-upstream', {method: 'POST', "
+                    + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: true})})).status");
+            assertThat(upstreamStatus).isEqualTo(200);
 
             page.close();
         }
@@ -314,6 +320,11 @@ class WorkspaceAdminConsoleTest {
             "async () => (await fetch('/api/adm/settings/allowed-domains', {method: 'POST', "
                 + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({domains: 'x.example.com'})})).status");
         assertThat(apiStatus).isEqualTo(404);
+        assertThat(instAdminPage.locator("#internalOnlyUpstream")).hasCount(0);
+        var upstreamStatus = (Integer) instAdminPage.evaluate(
+            "async () => (await fetch('/api/adm/settings/internal-only-upstream', {method: 'POST', "
+                + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: false})})).status");
+        assertThat(upstreamStatus).isEqualTo(404);
         assertThat(scriptErrors).isEmpty();
     }
 

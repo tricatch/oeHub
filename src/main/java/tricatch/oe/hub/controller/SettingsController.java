@@ -108,6 +108,15 @@ public class SettingsController {
         ctx.json(Map.of("enabled", enabled));
     }
 
+    // ── oeProxy upstream address restriction ───────────────────────────────────
+
+    public void apiSaveInternalOnlyUpstream(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var enabled = Boolean.TRUE.equals(body.get("enabled"));
+        ReverseProxyServer.setInternalOnlyUpstream(enabled, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("enabled", enabled));
+    }
+
     // ── allowed domains (forward proxy relay + PROXY_SVR lookups) ─────────────────────────────────
 
     public void apiSaveAllowedDomains(Context ctx) throws IOException {
@@ -295,6 +304,7 @@ public class SettingsController {
         model.put("oidDomainDefault", getOidDomainDefault());
         model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
         model.put("trustInternalCertEnabled", ReverseProxyServer.isTrustInternalCertEnabled());
+        model.put("internalOnlyUpstream", ReverseProxyServer.isInternalOnlyUpstream());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("allowedDomains", ForwardProxyServer.getWhitelist());
         model.put("backupIntervalHours", BackupService.getIntervalHours());

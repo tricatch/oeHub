@@ -379,6 +379,7 @@ public class OeHubApplication {
                 config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
                 config.routes.post("/api/adm/settings/allowed-domains",    settings::apiSaveAllowedDomains);
                 config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
+                config.routes.post("/api/adm/settings/internal-only-upstream", settings::apiSaveInternalOnlyUpstream);
                 config.routes.post("/adm/settings/ca/generate", settings::generateCa);
                 config.routes.post("/adm/settings/ca/import",   settings::importCa);
             }

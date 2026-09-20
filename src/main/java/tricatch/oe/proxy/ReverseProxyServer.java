@@ -19,6 +19,8 @@ import tricatch.oe.proxy.cfg.VirtualHost;
 import tricatch.oe.proxy.event.HttpEventManager;
 import tricatch.oe.proxy.exception.ConfigException;
 import tricatch.oe.proxy.exception.NotFoundProxyVirtualHostsException;
+import tricatch.oe.proxy.server.VirtualHosts;
+import tricatch.oe.proxy.util.SocketUtils;
 import tricatch.oe.proxy.exception.NotReadyCaException;
 import tricatch.oe.proxy.mapper.ProxyVhostMapper;
 import tricatch.oe.proxy.model.ProxyVhost;
@@ -65,6 +67,14 @@ public class ReverseProxyServer {
     private static final String KEY_TRUST_INTERNAL_CERT_ENABLED = "cert.trust.internal.enabled";
     private static volatile boolean trustInternalCertEnabled = true;
 
+    // Where a virtual host's backend may live. On (the default): only internal-network addresses
+    // (loopback, private, link-local), so a logged-in member cannot use the reverse proxy to reach
+    // arbitrary hosts from the server. Off: no restriction. Enforced when a config is applied
+    // (setVirtualHosts, for backends that resolve right now) and again when the proxy connects
+    // (SocketUtils), which is the check that cannot be dodged by a name that resolves later.
+    private static final String KEY_INTERNAL_ONLY_UPSTREAM = "upstream.internal.only";
+    private static volatile boolean internalOnlyUpstream = true;
+
     // Server-only secret behind X-OeHub-Oid — see OidUtil. Generated once and persisted the same
     // way JwtService persists its signing key, so it survives restarts but never leaves this server.
     private static final String KEY_OID_SECRET = "oid.secret";
@@ -75,6 +85,8 @@ public class ReverseProxyServer {
         ipIdentifierEnabled = !"false".equals(stored);
         var storedTrustInternal = new ProxyConfService(factory).get(KEY_TRUST_INTERNAL_CERT_ENABLED, null);
         trustInternalCertEnabled = !"false".equals(storedTrustInternal);
+        var storedInternalOnly = new ProxyConfService(factory).get(KEY_INTERNAL_ONLY_UPSTREAM, null);
+        internalOnlyUpstream = !"false".equals(storedInternalOnly);
         OidUtil.init(loadOrCreateOidSecret(factory));
     }
 
@@ -120,6 +132,45 @@ public class ReverseProxyServer {
     public static void setTrustInternalCertEnabled(boolean enabled, Long actorUserNo) {
         trustInternalCertEnabled = enabled;
         new ProxyConfService(sqlSessionFactory).set(KEY_TRUST_INTERNAL_CERT_ENABLED, null, String.valueOf(enabled), actorUserNo);
+    }
+
+    public static boolean isInternalOnlyUpstream() {
+        return internalOnlyUpstream;
+    }
+
+    public static void setInternalOnlyUpstream(boolean enabled, Long actorUserNo) {
+        internalOnlyUpstream = enabled;
+        new ProxyConfService(sqlSessionFactory).set(KEY_INTERNAL_ONLY_UPSTREAM, null, String.valueOf(enabled), actorUserNo);
+    }
+
+    /**
+     * Rejects a config whose backend resolves, right now, to an address outside the internal
+     * network while that restriction is on. A name that does not resolve yet is let through (a
+     * dev backend that is simply down must still be saveable); the connect-time check in
+     * SocketUtils covers it once it does resolve.
+     */
+    static void requireInternalUpstreams(VirtualHosts virtualHosts, boolean internalOnly) {
+        if (!internalOnly) return;
+        var checked = new java.util.HashSet<String>();
+        for (var entry : virtualHosts.entrySet()) {
+            for (var path : entry.getValue()) {
+                var host = path.getTarget().getHost();
+                if (!checked.add(host)) continue;
+                java.net.InetAddress[] addresses;
+                try {
+                    addresses = java.net.InetAddress.getAllByName(host);
+                } catch (java.net.UnknownHostException e) {
+                    continue;
+                }
+                for (var address : addresses) {
+                    if (!SocketUtils.isInternalAddress(address)) {
+                        throw new tricatch.oe.proxy.exception.UpstreamNotInternalException("domain '" + entry.getKey() + "': backend '" + host
+                                + "' resolves to " + address.getHostAddress()
+                                + ", which is not an internal-network address");
+                    }
+                }
+            }
+        }
     }
 
     // Exposed so ForwardProxyServer can recognize a ${PROXY_SVR} self-loop connection (its own
@@ -224,7 +275,9 @@ public class ReverseProxyServer {
         VirtualHost virtualHost = yamlVirtualHost.load(virtualHostsConfigYaml);
 
         String oid = OidUtil.encode(userNo);
-        oidVirtualHostsMap.put(oid, VirtualHostUtil.convert(virtualHost.getVirtual()));
+        var converted = VirtualHostUtil.convert(virtualHost.getVirtual());
+        requireInternalUpstreams(converted, internalOnlyUpstream);
+        oidVirtualHostsMap.put(oid, converted);
     }
 
     // Drops only the routing table. An IP claim is a deliberate, user-initiated action (see

@@ -17,8 +17,17 @@ public class SocketUtils {
     private static final Logger logger = LoggerFactory.getLogger(SocketUtils.class);
 
     public static Socket createHttp(String host, int port, int connectTimeout, int readTimeout) throws IOException {
+        return createHttp(host, port, connectTimeout, readTimeout, false);
+    }
+
+    // internalOnly reflects the admin-configured "internal-network backends only" setting
+    // (ReverseProxyServer.isInternalOnlyUpstream()): the address the name resolves to is checked
+    // before connecting, and the connection is then made to that very address, so a name that
+    // later resolves elsewhere (DNS rebinding) cannot slip past the check.
+    public static Socket createHttp(String host, int port, int connectTimeout, int readTimeout, boolean internalOnly) throws IOException {
 
         InetSocketAddress endpoint = new InetSocketAddress(host, port);
+        requireInternalIfRestricted(endpoint, internalOnly);
 
         Socket socket = new Socket();
         try {
@@ -43,8 +52,13 @@ public class SocketUtils {
     // used to skip validation against a public backend; that still fails loudly (PKIX path
     // building failed) exactly as before.
     public static Socket createHttps(String domain, String host, int port, int connectTimeout, int readTimeout, boolean trustInternal) throws IOException {
+        return createHttps(domain, host, port, connectTimeout, readTimeout, trustInternal, false);
+    }
+
+    public static Socket createHttps(String domain, String host, int port, int connectTimeout, int readTimeout, boolean trustInternal, boolean internalOnly) throws IOException {
 
         InetSocketAddress endpoint = new InetSocketAddress(host, port);
+        requireInternalIfRestricted(endpoint, internalOnly);
 
         Socket tcpSocket = new Socket();
         Socket socket = null;
@@ -125,6 +139,22 @@ public class SocketUtils {
                 return new X509Certificate[0];
             }
         };
+    }
+
+    private static void requireInternalIfRestricted(InetSocketAddress endpoint, boolean internalOnly) throws IOException {
+        if (!internalOnly) return;
+        var address = endpoint.getAddress(); // null when the name does not resolve; connect() reports that itself
+        if (address != null && !isInternalAddress(address)) {
+            throw new IOException("Backend " + endpoint.getHostString() + " resolves to " + address.getHostAddress()
+                    + ", which is not an internal-network address (internal-network backends only is on)");
+        }
+    }
+
+    /** Loopback, link-local, RFC 1918 / RFC 4193 private space, or the wildcard address (which a
+     *  connect() reaches as this host itself): where a backend may live when the "internal-network
+     *  backends only" setting is on. */
+    public static boolean isInternalAddress(java.net.InetAddress address) {
+        return address.isAnyLocalAddress() || isPrivateNetworkAddress(address);
     }
 
     /** RFC 1918 / RFC 4193 private ranges plus loopback and link-local - the address space a
