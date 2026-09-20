@@ -113,7 +113,7 @@ public class RelayWebSocket {
 
         if (payloadLength == 126) {
             extendedPayloadLengthBytes = new byte[2];
-            if (in.read(extendedPayloadLengthBytes) != 2) {
+            if (!readFully(in, extendedPayloadLengthBytes)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("WebSocket readFrame: Failed to read extended payload length (126)");
                 }
@@ -122,7 +122,7 @@ public class RelayWebSocket {
             payloadLength = ((extendedPayloadLengthBytes[0] & 0xFF) << 8) | (extendedPayloadLengthBytes[1] & 0xFF);
         } else if (payloadLength == 127) {
             extendedPayloadLengthBytes = new byte[8];
-            if (in.read(extendedPayloadLengthBytes) != 8) {
+            if (!readFully(in, extendedPayloadLengthBytes)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("WebSocket readFrame: Failed to read extended payload length (127)");
                 }
@@ -147,7 +147,7 @@ public class RelayWebSocket {
 
         if (masked) {
             maskingKey = new byte[4];
-            if (in.read(maskingKey) != 4) {
+            if (!readFully(in, maskingKey)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("WebSocket readFrame: Failed to read masking key");
                 }
@@ -156,21 +156,31 @@ public class RelayWebSocket {
         }
 
         byte[] payload = new byte[payloadLength];
-        int readTotal = 0;
-        while (readTotal < payloadLength) {
-            int r = in.read(payload, readTotal, payloadLength - readTotal);
-            if (r == -1) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("WebSocket readFrame: End of stream while reading payload (read: {}, expected: {})", readTotal, payloadLength);
-                }
-                return null;
+        if (!readFully(in, payload)) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("WebSocket readFrame: End of stream while reading payload (expected: {})", payloadLength);
             }
-            readTotal += r;
+            return null;
         }
 
 
 
         return new WebSocketFrame(finAndOpcode, maskAndPayloadLen, extendedPayloadLengthBytes, maskingKey, payload);
+    }
+
+    /**
+     * Fills {@code b} completely. A single read() returns whatever is buffered (possibly fewer bytes
+     * than asked for when a TCP segment ends mid-header), which is not end of stream.
+     * @return false only if the stream ended before {@code b} was full
+     */
+    private static boolean readFully(HttpStreamReader in, byte[] b) throws IOException {
+        int total = 0;
+        while (total < b.length) {
+            int r = in.read(b, total, b.length - total);
+            if (r == -1) return false;
+            total += r;
+        }
+        return true;
     }
 
     public static void writeFrame(HttpStreamWriter out, WebSocketFrame frame) throws IOException {
