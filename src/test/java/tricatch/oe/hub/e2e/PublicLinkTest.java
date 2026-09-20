@@ -228,7 +228,10 @@ class PublicLinkTest {
         // link (the editor's browser would fail to unwrap it with the new workspace key).
         page.navigate(server.baseUrl() + "/oehub/admin/users");
         page.onceDialog(com.microsoft.playwright.Dialog::accept);
-        page.locator("#btnRotateWsKey").click();
+        // The button is hidden in the UI (display:none), so dispatch the click directly rather than
+        // through Playwright's actionable click, which requires visibility - same as
+        // WorkspaceKeyRotationTest.
+        page.locator("#btnRotateWsKey").dispatchEvent("click");
         assertThat(page.locator("#toast")).containsText("Workspace key rotated.",
                 new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
 
