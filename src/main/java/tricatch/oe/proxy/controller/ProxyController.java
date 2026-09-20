@@ -297,19 +297,17 @@ public class ProxyController {
         var hubUser    = AuthController.currentUser(ctx);
         var merge   = "true".equals(ctx.queryParam("merge"));
         var body    = objectMapper.readValue(ctx.body(), Map.class);
-        var raw     = (List<Map<String, Object>>) body.get("vhosts");
-        if (raw == null) { ctx.status(400).result("Missing 'vhosts' field"); return; }
-        var entries = raw.stream().map(m -> {
-            var v = new ProxyVhost();
-            v.setVhostProfile((String) m.get("vhostProfile"));
-            v.setVhostContent((String) m.get("vhostContent"));
-            v.setSelected(Boolean.TRUE.equals(m.get("selected")));
-            v.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
-            // Import creates standalone entries, never collabo refs, and a file that doesn't say
-            // "public" must not make the row public - see VisibilityUtil.forImport.
-            v.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
-            return v;
-        }).toList();
+        if (body.get("vhosts") == null) { ctx.status(400).result("Missing 'vhosts' field"); return; }
+
+        // Validated in full before anything is written (a replace-import deletes first).
+        List<ProxyVhost> entries;
+        try {
+            entries = ProxyVhostService.entriesFromImport(body.get("vhosts"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).result(e.getMessage());
+            return;
+        }
+
         var imported = vhostService.importVhosts(hubUser.getUserNo(), entries, merge);
         // A replace-import deletes the previous vhosts, so their routes must go too; a merge only
         // adds, so a failed apply there just leaves the current routing untouched.

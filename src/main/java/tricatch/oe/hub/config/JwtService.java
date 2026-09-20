@@ -71,16 +71,17 @@ public class JwtService {
     public record VerifiedToken(Long userNo, int tokenVersion) {}
 
     public String issue(Long userNo, int tokenVersion, boolean rememberMe) {
-        var now    = new Date();
-        var expiry = rememberMe
-            ? new Date(now.getTime() + REMEMBER_ME_SECONDS * 1000)
-            : new Date(now.getTime() + SESSION_ONLY_SECONDS * 1000);
+        return issueAt(userNo, tokenVersion, new Date(),
+            rememberMe ? REMEMBER_ME_SECONDS : SESSION_ONLY_SECONDS);
+    }
 
+    // The clock is a parameter so a test can mint a token that is already expired.
+    String issueAt(Long userNo, int tokenVersion, Date issuedAt, long ttlSeconds) {
         return Jwts.builder()
             .subject(String.valueOf(userNo))
             .claim("tv", tokenVersion)
-            .issuedAt(now)
-            .expiration(expiry)
+            .issuedAt(issuedAt)
+            .expiration(new Date(issuedAt.getTime() + ttlSeconds * 1000))
             .signWith(privateKey)
             .compact();
     }
@@ -99,8 +100,14 @@ public class JwtService {
             // version 0, which matches the DEFAULT 0 every existing user row already has.
             Integer tv = claims.get("tv", Integer.class);
             return new VerifiedToken(userNo, tv != null ? tv : 0);
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            // Routine: sessions last 24 hours (30 days with "remember me"), so an expired cookie
+            // shows up on ordinary use and is not worth a warning or a stack trace.
+            if (logger.isDebugEnabled()) logger.debug("auth cookie expired: {}", e.getMessage());
         } catch (JwtException | IllegalArgumentException e) {
-            logger.warn("errorJwtVerify - {}", e.getMessage(), e);
+            // A bad signature or malformed token is worth noticing, but the message says it all -
+            // no stack trace.
+            logger.warn("errorJwtVerify - {}", e.getMessage());
         }
         return null;
     }

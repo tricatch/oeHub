@@ -324,6 +324,28 @@ public class ProxyVhostService {
         }
     }
 
+    /**
+     * The rows described by an import/restore file's list of vhosts. The whole list is validated
+     * before anything is written, so a bad entry can't leave a replace-import half applied.
+     *
+     * @throws IllegalArgumentException (message safe to show) if the list or an entry is malformed
+     */
+    public static List<ProxyVhost> entriesFromImport(Object raw) {
+        var entries = new java.util.ArrayList<ProxyVhost>();
+        for (var m : tricatch.oe.hub.util.ImportFields.maps(raw, "vhosts")) {
+            var v = new ProxyVhost();
+            v.setVhostProfile(tricatch.oe.hub.util.ImportFields.requiredText(m, "vhostProfile"));
+            v.setVhostContent(tricatch.oe.hub.util.ImportFields.text(m, "vhostContent", ""));
+            v.setSelected(Boolean.TRUE.equals(m.get("selected")));
+            v.setSortOrder(tricatch.oe.hub.util.ImportFields.intValue(m, "sortOrder", 0));
+            // Import creates standalone entries, never collabo refs, and a file that doesn't say
+            // "public" must not make the row public - see VisibilityUtil.forImport.
+            v.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
+            entries.add(v);
+        }
+        return entries;
+    }
+
     public String getOwnerUsername(String vhostId) {
         try (var session = sqlSessionFactory.openSession()) {
             var vhost = session.getMapper(ProxyVhostMapper.class).findByVhostId(vhostId);

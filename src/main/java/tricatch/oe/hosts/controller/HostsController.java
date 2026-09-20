@@ -350,30 +350,23 @@ public class HostsController {
         var hubUser = AuthController.currentUser(ctx);
         var merge = "true".equals(ctx.queryParam("merge"));
         var body = objectMapper.readValue(ctx.body(), Map.class);
-        var hostsRaw = (List<Map<String, Object>>) body.get("hosts");
-        if (hostsRaw == null) { ctx.status(400).result("Missing 'hosts' field"); return; }
-        var entries = hostsRaw.stream().map(m -> {
-            var h = new HostsProf();
-            h.setHostsProfile((String) m.get("hostsProfile"));
-            h.setHostsContent((String) m.get("hostsContent"));
-            // Round-tripping the same account's own export back in: apiExport (below) serializes
-            // the row's wrapped_content_key verbatim, and it stays valid here unchanged - re-import
-            // never touches the DEK or which key wraps it (only visibility can be downgraded just
-            // below, and collabo/public share the identical workspace-key wrap anyway, e2eEncryption
-            // design doc §6). Without this, an encrypted row's hostsContent (ciphertext) would land
-            // with no key at all and get treated/displayed as if it were plaintext.
-            h.setWrappedContentKey((String) m.get("wrappedContentKey"));
-            h.setSelected(Boolean.TRUE.equals(m.get("selected")));
-            h.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
-            // Import creates standalone entries, never collabo refs, and a file that doesn't say
-            // "public" must not make the row public - see VisibilityUtil.forImport.
-            h.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
-            return h;
-        }).toList();
+        if (body.get("hosts") == null) { ctx.status(400).result("Missing 'hosts' field"); return; }
+
+        // Everything is validated before anything is written - a replace-import must not delete the
+        // user's profiles and then fail halfway through a malformed file.
+        java.util.List<HostsProf> entries;
+        Map<String, String> settings = null;
+        try {
+            entries = HostsProfService.entriesFromImport(body.get("hosts"));
+            if (body.get("settings") != null) settings = tricatch.oe.hub.util.ImportFields.textMap(body.get("settings"), "settings");
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).result(e.getMessage());
+            return;
+        }
+
         var updated = hostsProfService.importProfiles(hubUser.getUserNo(), entries, merge);
-        var settingsRaw = (Map<String, String>) body.get("settings");
-        if (settingsRaw != null) {
-            settingsRaw.forEach((k, v) -> hostConfService.set(hubUser.getUserNo(), k, v));
+        if (settings != null) {
+            settings.forEach((k, v) -> hostConfService.set(hubUser.getUserNo(), k, v));
         }
         ctx.json(updated);
     }

@@ -138,7 +138,6 @@ public class UserController {
            .result(objectMapper.writeValueAsString(backup));
     }
 
-    @SuppressWarnings("unchecked")
     public void apiRestore(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
         var userNo = hubUser.getUserNo();
@@ -146,60 +145,44 @@ public class UserController {
 
         var body = objectMapper.readValue(ctx.body(), Map.class);
 
-        var hostsSection = (Map<String, Object>) body.get("hosts");
-        if (hostsSection != null) {
-            var hostsRaw = (List<Map<String, Object>>) hostsSection.get("profiles");
-            if (hostsRaw != null) {
-                var entries = hostsRaw.stream().map(m -> {
-                    var h = new HostsProf();
-                    h.setHostsProfile((String) m.get("hostsProfile"));
-                    h.setHostsContent((String) m.get("hostsContent"));
-                    // Same round-trip reasoning as HostsController.apiImport: apiBackup serialized
-                    // wrapped_content_key verbatim and it's still valid unchanged on restore into
-                    // the same account (e2eEncryption design doc §9) - without this, an encrypted
-                    // row's ciphertext would land with no key and be shown as if it were plaintext.
-                    h.setWrappedContentKey((String) m.get("wrappedContentKey"));
-                    h.setSelected(Boolean.TRUE.equals(m.get("selected")));
-                    h.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
-                    // Was missing entirely (every restored row silently became 'public' via
-                    // importProfiles' null-visibility default) - harmless bookkeeping drift in
-                    // self-hosted, but paired with wrappedContentKey above it matters for real in
-                    // workspace mode: a restored 'private' row's wrap is personal-key-wrapped, and
-                    // claiming 'public' would make decryptProfileInPlace try to unwrap it with the
-                    // workspace key instead, failing (same "private" vs "collabo" limits as
-                    // apiImport's identical comment above - collabo can't be reconstructed either).
-                    h.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
-                    return h;
-                }).toList();
-                hostsProfService.importProfiles(userNo, entries, merge);
+        // Every part of the file is validated before anything is written: a replace-restore deletes
+        // the hosts first, and must not do that and then fail on a malformed vhost further down.
+        java.util.List<HostsProf> hostEntries = null;
+        Map<String, String> hostSettings = null;
+        java.util.List<ProxyVhost> vhostEntries = null;
+        try {
+            if (body.get("hosts") != null) {
+                var hostsSection = tricatch.oe.hub.util.ImportFields.map(body.get("hosts"), "hosts");
+                if (hostsSection.get("profiles") != null) {
+                    hostEntries = HostsProfService.entriesFromImport(hostsSection.get("profiles"));
+                }
+                if (hostsSection.get("settings") != null) {
+                    hostSettings = tricatch.oe.hub.util.ImportFields.textMap(hostsSection.get("settings"), "hosts.settings");
+                }
             }
-            var settingsRaw = (Map<String, String>) hostsSection.get("settings");
-            if (settingsRaw != null) {
-                settingsRaw.forEach((k, v) -> hostConfService.set(userNo, k, v));
+            if (body.get("proxy") != null) {
+                var proxySection = tricatch.oe.hub.util.ImportFields.map(body.get("proxy"), "proxy");
+                if (proxySection.get("vhosts") != null) {
+                    vhostEntries = ProxyVhostService.entriesFromImport(proxySection.get("vhosts"));
+                }
             }
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).result(e.getMessage());
+            return;
         }
 
-        var proxySection = (Map<String, Object>) body.get("proxy");
-        if (proxySection != null) {
-            var vhostsRaw = (List<Map<String, Object>>) proxySection.get("vhosts");
-            if (vhostsRaw != null) {
-                var entries = vhostsRaw.stream().map(m -> {
-                    var v = new ProxyVhost();
-                    v.setVhostProfile((String) m.get("vhostProfile"));
-                    v.setVhostContent((String) m.get("vhostContent"));
-                    v.setSelected(Boolean.TRUE.equals(m.get("selected")));
-                    v.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
-                    // Was never read here, so every restored vhost silently became 'public' via the
-                    // service's null default - same rule as the hosts profiles above.
-                    v.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
-                    return v;
-                }).toList();
-                proxyVhostService.importVhosts(userNo, entries, merge);
-                // Same reasoning as ProxyController.apiImport: keep the live routing in step with
-                // what was just written. oeProxy doesn't run in workspace mode, so nothing to do there.
-                if (!tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
-                    tricatch.oe.proxy.controller.ProxyController.refreshLiveRouting(sqlSessionFactory, userNo, ctx.ip(), !merge);
-                }
+        if (hostEntries != null) {
+            hostsProfService.importProfiles(userNo, hostEntries, merge);
+        }
+        if (hostSettings != null) {
+            hostSettings.forEach((k, v) -> hostConfService.set(userNo, k, v));
+        }
+        if (vhostEntries != null) {
+            proxyVhostService.importVhosts(userNo, vhostEntries, merge);
+            // Same reasoning as ProxyController.apiImport: keep the live routing in step with
+            // what was just written. oeProxy doesn't run in workspace mode, so nothing to do there.
+            if (!tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
+                tricatch.oe.proxy.controller.ProxyController.refreshLiveRouting(sqlSessionFactory, userNo, ctx.ip(), !merge);
             }
         }
 

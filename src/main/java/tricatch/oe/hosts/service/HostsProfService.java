@@ -403,6 +403,34 @@ public class HostsProfService {
         }
     }
 
+    /**
+     * The rows described by an import/restore file's list of profiles. The whole list is validated
+     * before anything is written, so a bad entry can't leave a replace-import half applied.
+     *
+     * @throws IllegalArgumentException (message safe to show) if the list or an entry is malformed
+     */
+    public static List<HostsProf> entriesFromImport(Object raw) {
+        var entries = new java.util.ArrayList<HostsProf>();
+        for (var m : tricatch.oe.hub.util.ImportFields.maps(raw, "hosts")) {
+            var h = new HostsProf();
+            h.setHostsProfile(tricatch.oe.hub.util.ImportFields.requiredText(m, "hostsProfile"));
+            h.setHostsContent(tricatch.oe.hub.util.ImportFields.text(m, "hostsContent", ""));
+            // Round-tripping the same account's own export/backup back in: it serializes the row's
+            // wrapped_content_key verbatim, and it stays valid here unchanged - re-import never touches
+            // the DEK or which key wraps it (collabo/public share the identical workspace-key wrap,
+            // e2eEncryption design doc §6/§9). Without this, an encrypted row's hostsContent
+            // (ciphertext) would land with no key at all and be shown as if it were plaintext.
+            h.setWrappedContentKey(tricatch.oe.hub.util.ImportFields.text(m, "wrappedContentKey", null));
+            h.setSelected(Boolean.TRUE.equals(m.get("selected")));
+            h.setSortOrder(tricatch.oe.hub.util.ImportFields.intValue(m, "sortOrder", 0));
+            // Import creates standalone entries, never collabo refs, and a file that doesn't say
+            // "public" must not make the row public - see VisibilityUtil.forImport.
+            h.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
+            entries.add(h);
+        }
+        return entries;
+    }
+
     public String getOwnerUserId(String hostId) {
         try (var session = sqlSessionFactory.openSession()) {
             var hostsProf = session.getMapper(HostsProfMapper.class).findByHostsId(hostId);

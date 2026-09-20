@@ -78,13 +78,13 @@ public class AuthController {
     private static final java.time.Duration REGISTER_WINDOW = java.time.Duration.ofHours(1);
     private static final java.time.Duration REGISTER_LOCKOUT_DURATION = java.time.Duration.ofHours(1);
 
-    private static final class RegisterAttempts {
-        int count;
-        java.time.Instant windowStart;
-        java.time.Instant lockedUntil;
-    }
-
-    private final java.util.concurrent.ConcurrentHashMap<String, RegisterAttempts> registerAttemptsByIp = new java.util.concurrent.ConcurrentHashMap<>();
+    // Size-bounded and expiring like loginAttemptsByUser: a plain map would keep one entry per client
+    // address forever, which a client cycling through addresses (IPv6 makes that cheap) could use to
+    // grow memory without limit. An entry outlives its own lockout (each write refreshes its expiry).
+    private final Cache<String, Attempt> registerAttemptsByIp = Caffeine.newBuilder()
+            .expireAfterWrite(REGISTER_WINDOW.plus(REGISTER_LOCKOUT_DURATION))
+            .maximumSize(10_000)
+            .build();
 
     private final SqlSessionFactory sqlSessionFactory;
     private final JwtService        jwtService;
@@ -121,27 +121,29 @@ public class AuthController {
         loginAttemptsByUser.invalidate(attemptUserKey(userId));
     }
 
-    private boolean isRegisterLocked(String ip) {
-        var a = registerAttemptsByIp.get(ip);
-        if (a == null) return false;
-        synchronized (a) {
-            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
-        }
+    boolean isRegisterLocked(String ip) {
+        var a = registerAttemptsByIp.getIfPresent(ip);
+        return a != null && a.lockedUntil() != null && java.time.Instant.now().isBefore(a.lockedUntil());
     }
 
-    private void recordRegisterAttempt(String ip) {
-        var a = registerAttemptsByIp.computeIfAbsent(ip, k -> new RegisterAttempts());
-        synchronized (a) {
-            var now = java.time.Instant.now();
-            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(REGISTER_WINDOW) > 0) {
-                a.windowStart = now;
-                a.count = 0;
-            }
-            a.count++;
-            if (a.count >= MAX_REGISTRATIONS_PER_WINDOW) {
-                a.lockedUntil = now.plus(REGISTER_LOCKOUT_DURATION);
-            }
-        }
+    // compute() runs atomically per key and counts as a write, which refreshes the entry's expiry.
+    void recordRegisterAttempt(String ip) {
+        var now = java.time.Instant.now();
+        registerAttemptsByIp.asMap().compute(ip, (k, cur) -> {
+            boolean sameWindow = cur != null
+                    && java.time.Duration.between(cur.windowStart(), now).compareTo(REGISTER_WINDOW) <= 0;
+            int count = sameWindow ? cur.count() + 1 : 1;
+            var windowStart = sameWindow ? cur.windowStart() : now;
+            var lockedUntil = count >= MAX_REGISTRATIONS_PER_WINDOW ? now.plus(REGISTER_LOCKOUT_DURATION)
+                    : (cur != null ? cur.lockedUntil() : null);
+            return new Attempt(count, windowStart, lockedUntil);
+        });
+    }
+
+    /** Number of client addresses the registration throttle currently tracks (for tests). */
+    long trackedRegisterIps() {
+        registerAttemptsByIp.cleanUp();
+        return registerAttemptsByIp.estimatedSize();
     }
 
     /** Issues a JWT for hubUser and sets the oe_auth cookie - shared by processLogin and
@@ -576,9 +578,30 @@ public class AuthController {
             userMapper.insert(user);
             userMapper.selfReferenceAudit(user.getUserNo());
             session.commit();
+        } catch (org.apache.ibatis.exceptions.PersistenceException e) {
+            // Two sign-ups racing for the same user id (or workspace name) both pass the existence
+            // checks above and one of them loses at the UNIQUE constraint. Show the error the check
+            // would have shown, not a 500; the transaction has already been rolled back.
+            var errorKey = uniqueViolationError(e);
+            if (errorKey == null) throw e;
+            renderRegisterError(ctx, errorKey, userId);
+            return;
         }
 
         ctx.redirect("/login?registered=pending");
+    }
+
+    /** The sign-up error for a UNIQUE-constraint violation (SQLState 23505) anywhere in e's cause
+     *  chain - the workspace name or the user id, told apart by the column in H2's message - or
+     *  null when e is something else. */
+    static String uniqueViolationError(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql && "23505".equals(sql.getSQLState())) {
+                var message = String.valueOf(sql.getMessage()).toUpperCase(java.util.Locale.ROOT);
+                return message.contains("WS_NAME") ? "auth.error.wsname.exists" : "auth.error.userid.exists";
+            }
+        }
+        return null;
     }
 
     private void renderRegisterError(Context ctx, String error, String userId) {
@@ -718,7 +741,8 @@ public class AuthController {
         return ctx.attribute(ATTR_USER);
     }
 
-    private HubUser findUser(String userId) {
+    // Package-visible so a test can stand in for the "no such user yet" answer of a racing sign-up.
+    HubUser findUser(String userId) {
         if (userId == null) return null;
         try (var session = sqlSessionFactory.openSession()) {
             return session.getMapper(HubUserMapper.class).findByUserId(userId);
