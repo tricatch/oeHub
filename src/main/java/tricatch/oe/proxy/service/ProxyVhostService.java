@@ -305,7 +305,7 @@ public class ProxyVhostService {
                 entry.setUpdatedBy(userNo);
                 entry.setCreateAt(now);
                 entry.setUpdatedAt(now);
-                if (entry.getVisibility() == null) entry.setVisibility("public");
+                if (entry.getVisibility() == null) entry.setVisibility("private");
                 mapper.insert(entry);
             }
             session.commit();

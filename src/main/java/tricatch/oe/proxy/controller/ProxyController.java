@@ -305,10 +305,9 @@ public class ProxyController {
             v.setVhostContent((String) m.get("vhostContent"));
             v.setSelected(Boolean.TRUE.equals(m.get("selected")));
             v.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
-            // "collabo" only makes sense with a live parent reference, which an import can't
-            // recreate, so treat anything but an explicit "private" as public (import creates
-            // standalone entries, never collabo refs).
-            v.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
+            // Import creates standalone entries, never collabo refs, and a file that doesn't say
+            // "public" must not make the row public - see VisibilityUtil.forImport.
+            v.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
             return v;
         }).toList();
         var imported = vhostService.importVhosts(hubUser.getUserNo(), entries, merge);

@@ -167,7 +167,7 @@ public class UserController {
                     // claiming 'public' would make decryptProfileInPlace try to unwrap it with the
                     // workspace key instead, failing (same "private" vs "collabo" limits as
                     // apiImport's identical comment above - collabo can't be reconstructed either).
-                    h.setVisibility("private".equals(m.get("visibility")) ? "private" : "public");
+                    h.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
                     return h;
                 }).toList();
                 hostsProfService.importProfiles(userNo, entries, merge);
@@ -188,6 +188,9 @@ public class UserController {
                     v.setVhostContent((String) m.get("vhostContent"));
                     v.setSelected(Boolean.TRUE.equals(m.get("selected")));
                     v.setSortOrder(m.get("sortOrder") != null ? ((Number) m.get("sortOrder")).intValue() : 0);
+                    // Was never read here, so every restored vhost silently became 'public' via the
+                    // service's null default - same rule as the hosts profiles above.
+                    v.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
                     return v;
                 }).toList();
                 proxyVhostService.importVhosts(userNo, entries, merge);
