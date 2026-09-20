@@ -4,8 +4,11 @@
 // plain JS variable would be lost on every navigation. IndexedDB is used instead of
 // sessionStorage/localStorage because it's the only browser storage that can hold a CryptoKey
 // object directly (structured-clone) - the raw key bytes are never exported to a serializable
-// form, so a non-extractable private key stays non-extractable even at rest here. Cleared on
-// logout (see OE_SESSION_KEYS.clearAll(), wired into the logout link).
+// form, so a non-extractable key stays non-extractable even at rest here. The private key is cached
+// non-extractable (login.pebble): a script in the page can use it during the session but cannot
+// export it. The workspace key is cached extractable because approving a new member wraps it for
+// that member's public key. Cleared on logout (see OE_SESSION_KEYS.clearAll(), wired into the
+// logout link).
 //
 // Idle expiry (below): these are exactly what a client-side compromise (XSS, malware, a shared
 // machine left unlocked) would go after, since they're the one place the workspace's real

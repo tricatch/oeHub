@@ -118,14 +118,18 @@ const OE_CRYPTO = (function () {
     return { iv: bufToBase64(iv), wrapped: bufToBase64(wrapped) };
   }
 
-  async function unwrapPrivateKey(record, kek) {
+  // extractable: true only for a key that is about to be re-wrapped (wrapPrivateKey needs to export
+  // it) and is dropped right afterwards - password change, recovery-code reissue, recovery reset.
+  // The copy cached for the session (login) passes false, so a script running in the page can use
+  // it to unwrap keys during the session but cannot export the raw private key and keep it.
+  async function unwrapPrivateKey(record, kek, extractable = true) {
     return crypto.subtle.unwrapKey(
       'pkcs8',
       base64ToBuf(record.wrapped),
       kek,
       { name: 'AES-GCM', iv: base64ToBuf(record.iv) },
       { name: 'RSA-OAEP', hash: 'SHA-256' },
-      true,
+      extractable,
       ['unwrapKey']
     );
   }

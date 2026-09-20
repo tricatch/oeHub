@@ -39,6 +39,28 @@ public final class AuthKey {
         return value != null && WELL_FORMED.matcher(value).matches();
     }
 
+    /**
+     * Whether {@code json} is a real wrapped-key record: an object with text {@code iv} and
+     * {@code wrapped} fields (and {@code salt} for a password wrap, which the login KDF needs).
+     * The change-password and recovery-reissue requests carry a placeholder instead when the
+     * caller's current password did not unwrap the key (see auth-keys.js); such a request is turned
+     * away after the password is checked, so a placeholder can never overwrite a stored wrap.
+     */
+    public static boolean isWellFormedWrap(String json, boolean withSalt) {
+        if (json == null) return false;
+        try {
+            JsonNode node = JSON.readTree(json);
+            if (node == null || !node.isObject()) return false;
+            for (var field : withSalt ? new String[] {"salt", "iv", "wrapped"} : new String[] {"iv", "wrapped"}) {
+                var value = node.get(field);
+                if (value == null || !value.isTextual() || value.asText().isBlank()) return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** The salt inside a stored wrapped-private-key record ({salt, iv, wrapped} JSON), or null. */
     public static String saltOf(String wrappedPrivateKeyJson) {
         if (wrappedPrivateKeyJson == null) return null;

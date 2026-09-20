@@ -49,4 +49,19 @@ class AuthKeyTest {
         assertThat(Base64.getDecoder().decode(salt)).hasSize(16);
         assertThat(AuthKey.decoySalt(secret, null)).isEqualTo(AuthKey.decoySalt(secret, ""));
     }
+
+    @Test
+    void wellFormedWrap_needsRealTextFields_andASaltOnlyForAPasswordWrap() {
+        assertThat(AuthKey.isWellFormedWrap("{\"salt\":\"s\",\"iv\":\"i\",\"wrapped\":\"w\"}", true)).isTrue();
+        assertThat(AuthKey.isWellFormedWrap("{\"iv\":\"i\",\"wrapped\":\"w\"}", false)).isTrue();
+        assertThat(AuthKey.isWellFormedWrap("{\"iv\":\"i\",\"wrapped\":\"w\"}", true)).isFalse(); // no salt
+        assertThat(AuthKey.isWellFormedWrap("{}", false)).isFalse(); // the browser's placeholder
+        assertThat(AuthKey.isWellFormedWrap("{}", true)).isFalse();
+        assertThat(AuthKey.isWellFormedWrap("{\"iv\":\"i\",\"wrapped\":\"\"}", false)).isFalse();
+        assertThat(AuthKey.isWellFormedWrap("{\"iv\":1,\"wrapped\":\"w\"}", false)).isFalse();
+        assertThat(AuthKey.isWellFormedWrap("[]", false)).isFalse();
+        assertThat(AuthKey.isWellFormedWrap("self-hosted", false)).isFalse();
+        assertThat(AuthKey.isWellFormedWrap("", false)).isFalse();
+        assertThat(AuthKey.isWellFormedWrap(null, false)).isFalse();
+    }
 }

@@ -161,8 +161,29 @@ class RecoveryKeyReissueTest {
         assertThat(unwrappedAlgo).isEqualTo("AES-KW");
     }
 
+    /** The private key is re-wrapped from an extractable copy unwrapped with the current password, not
+     *  from the (non-extractable) copy cached for the session - so this works with the cache empty. */
     @Test
     @Order(4)
+    void reissuingDoesNotDependOnTheSessionKeyCache() {
+        page.evaluate("async () => { await OE_SESSION_KEYS.clearAll(); }");
+        assertThat((Object) page.evaluate("async () => await OE_SESSION_KEYS.loadPrivateKey()")).isNull();
+
+        page.locator("[data-bs-toggle=dropdown]").first().click();
+        page.locator("#navBtnReissueRecovery").click();
+        assertThat(page.locator("#reissueConfirmModal.show")).isVisible(
+            new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
+        page.locator("#rrCurrentPassword").fill(FOUNDER_PW);
+        page.locator("#btnReissueConfirm").click();
+
+        assertThat(page.locator("#reissueRecoveryModal.show")).isVisible(
+            new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
+        assertThat(page.locator("#reissueRecoveryCodeValue")).not().hasValue("");
+        page.locator("#btnReissueRecoveryContinue").click();
+    }
+
+    @Test
+    @Order(5)
     void fiveWrongPasswordAttempts_forceLogsOutTheAccount() {
         // The successful reissue in Order(3) already reset the failure counter server-side, so
         // this starts fresh - exactly 5 wrong attempts in a row (not 4, not 6) must be what trips it.

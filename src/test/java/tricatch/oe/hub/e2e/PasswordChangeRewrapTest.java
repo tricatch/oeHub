@@ -123,6 +123,19 @@ class PasswordChangeRewrapTest {
         page.navigate(server.baseUrl() + "/oehub/hosts");
         Object privType = page.evaluate("async () => { const k = await OE_SESSION_KEYS.loadPrivateKey(); return k ? k.type : null; }");
         assertThat((String) privType).isEqualTo("private");
+
+        // The key cached for the session cannot be exported: a script in the page can use it to unwrap
+        // other keys, but cannot take the raw private key away.
+        var cached = (java.util.Map<?, ?>) page.evaluate("""
+            async () => {
+                const k = await OE_SESSION_KEYS.loadPrivateKey();
+                let exported = true;
+                try { await crypto.subtle.exportKey('pkcs8', k); } catch (e) { exported = false; }
+                return { extractable: k.extractable, exported: exported };
+            }
+            """);
+        assertThat(cached.get("extractable")).isEqualTo(false);
+        assertThat(cached.get("exported")).isEqualTo(false);
     }
 
     /**

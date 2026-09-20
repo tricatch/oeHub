@@ -196,8 +196,8 @@ public class UserController {
         var currentPassword = (String) body.get("currentPassword");
         var newPassword     = (String) body.get("newPassword");
         var confirmPassword = (String) body.get("confirmPassword");
-        // Produced client-side from this session's already-unwrapped private key, re-wrapped for
-        // the new password's KEK (e2eEncryption design doc §3) - the old wrap becomes unusable
+        // Produced client-side by unwrapping the private key with the current password and re-wrapping
+        // it for the new password's KEK (e2eEncryption design doc §3) - the old wrap becomes unusable
         // the instant the password changes, so this must land in the same request/transaction as
         // the password itself, never as a separate follow-up call.
         var newWrappedPrivateKey = (String) body.get("newWrappedPrivateKey");
@@ -223,6 +223,13 @@ public class UserController {
             if (target == null) { ctx.status(404); return; }
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
                 rejectWrongPasswordConfirm(ctx, mapper, session, hubUser.getUserNo());
+                return;
+            }
+            // Only once the password is proven is the wrap itself looked at: a client whose current
+            // password didn't unwrap the key sends a placeholder so the attempt above is still
+            // counted, and that placeholder must never replace the stored wrap.
+            if (tricatch.oe.hub.config.AppHome.isWorkspaceMode() && !AuthKey.isWellFormedWrap(newWrappedPrivateKey, true)) {
+                ctx.status(400).json(Map.of("error", "crypto_required"));
                 return;
             }
             passwordConfirmFailuresByUserNo.invalidate(hubUser.getUserNo());
@@ -257,13 +264,18 @@ public class UserController {
             var mapper = session.getMapper(HubUserMapper.class);
             var target = mapper.findByUserNo(hubUser.getUserNo());
             if (target == null) { ctx.status(404); return; }
-            // Re-wrapping itself needs no password (it uses this session's already-unwrapped
-            // private key, same as change-password) - this check exists purely so a hijacked
-            // session cookie can't silently mint a lasting recovery code without ever knowing the
-            // account's actual password. Same convention (and shared attempt budget) as
-            // apiChangePassword above.
+            // The browser needs the current password to unwrap the private key it re-wraps under the
+            // new recovery code, and this check keeps a hijacked session cookie from silently
+            // minting a lasting recovery code without knowing the account's actual password. Same
+            // convention (and shared attempt budget) as apiChangePassword above.
             if (currentPassword == null || !PasswordUtil.matches(currentPassword, target.getPassword())) {
                 rejectWrongPasswordConfirm(ctx, mapper, session, hubUser.getUserNo());
+                return;
+            }
+            // See apiChangePassword: a placeholder wrap (wrong current password) is refused only
+            // after the attempt has been counted, and is never stored.
+            if (tricatch.oe.hub.config.AppHome.isWorkspaceMode() && !AuthKey.isWellFormedWrap(wrappedPrivateKeyRecovery, false)) {
+                ctx.status(400).json(Map.of("error", "crypto_required"));
                 return;
             }
             passwordConfirmFailuresByUserNo.invalidate(hubUser.getUserNo());

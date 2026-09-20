@@ -309,9 +309,8 @@
 
     // wrapped_private_key must be re-wrapped for the new password in the same request - the old
     // wrap becomes unusable the moment the password changes (e2eEncryption design doc §3). The
-    // already-unwrapped private key comes from this session's own cache (from login), not by
-    // re-deriving from currentPassword - simpler, and works the same way regardless of how the
-    // key got into the cache.
+    // private key to re-wrap is unwrapped from the account's own wrapped key with the current
+    // password (OE_AUTH.currentSecrets): the copy cached for the session is not extractable.
     var newWrappedPrivateKey;
     // What the server receives for the passwords: the typed values in self-hosted, but in
     // workspace mode only authKeys derived from them (auth-keys.js) - the server never sees a
@@ -319,19 +318,22 @@
     var sentCurrent = current, sentNext = next, sentConfirm = confirmVal;
     if (!window.OE_WORKSPACE_MODE) {
       // self-hosted never had a real wrap to begin with (dummy identity crypto - e2eEncryption
-      // design doc §1), so there is nothing to re-wrap and no session-cached key to require.
+      // design doc §1), so there is nothing to re-wrap.
       newWrappedPrivateKey = 'self-hosted';
     } else {
-      var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
-      if (!privateKey) {
-        showChangePasswordError(MSG['change.password.error.no.cached.key']);
-        return;
-      }
       try {
-        sentCurrent = await OE_AUTH.currentAuthKey(current);
+        var currentSecrets = await OE_AUTH.currentSecrets(current);
+        sentCurrent = currentSecrets.authKey;
         var newKeys = await OE_AUTH.keysForNewPassword(next);
-        var wrap = await OE_CRYPTO.wrapPrivateKey(privateKey, newKeys.kek);
-        newWrappedPrivateKey = JSON.stringify({ salt: newKeys.salt, iv: wrap.iv, wrapped: wrap.wrapped });
+        if (currentSecrets.privateKey) {
+          var wrap = await OE_CRYPTO.wrapPrivateKey(currentSecrets.privateKey, newKeys.kek);
+          newWrappedPrivateKey = JSON.stringify({ salt: newKeys.salt, iv: wrap.iv, wrapped: wrap.wrapped });
+        } else {
+          // The current password didn't unwrap the key, so it is wrong: send the request anyway so
+          // the server counts the attempt and reports the remaining ones. It verifies the password
+          // before it would store a wrap, and refuses this placeholder.
+          newWrappedPrivateKey = OE_AUTH.UNUSABLE_WRAP;
+        }
         sentNext = newKeys.authKey;
         sentConfirm = newKeys.authKey;
       } catch (err) {
@@ -401,14 +403,13 @@
   document.getElementById('btnReissueConfirm').addEventListener('click', async function() {
     var currentPassword = document.getElementById('rrCurrentPassword').value;
 
-    var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
-    if (!privateKey) { showReissueConfirmError(MSG['change.password.error.no.cached.key']); return; }
-
     // Reissue is workspace-mode only; the server verifies the authKey derived from the password,
-    // never the password itself (auth-keys.js).
-    var currentAuthKey;
+    // never the password itself (auth-keys.js). The private key to re-wrap under the new recovery
+    // code is unwrapped from the account's own wrapped key with the current password: the copy
+    // cached for the session is not extractable.
+    var currentSecrets;
     try {
-      currentAuthKey = await OE_AUTH.currentAuthKey(currentPassword);
+      currentSecrets = await OE_AUTH.currentSecrets(currentPassword);
     } catch (err) {
       console.error('Key derivation failed:', err);
       showReissueConfirmError(MSG['toast.recovery.reissue.failed']);
@@ -416,16 +417,23 @@
     }
 
     var recoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
-    var recoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
-    var recoveryWrap = await OE_CRYPTO.wrapPrivateKey(privateKey, recoveryKek);
-    var wrappedPrivateKeyRecovery = JSON.stringify({ iv: recoveryWrap.iv, wrapped: recoveryWrap.wrapped });
+    var wrappedPrivateKeyRecovery;
+    if (currentSecrets.privateKey) {
+      var recoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
+      var recoveryWrap = await OE_CRYPTO.wrapPrivateKey(currentSecrets.privateKey, recoveryKek);
+      wrappedPrivateKeyRecovery = JSON.stringify({ iv: recoveryWrap.iv, wrapped: recoveryWrap.wrapped });
+    } else {
+      // Wrong current password: send the request anyway so the server counts the attempt; it refuses
+      // this placeholder (see OE_AUTH.UNUSABLE_WRAP).
+      wrappedPrivateKeyRecovery = OE_AUTH.UNUSABLE_WRAP;
+    }
     var recoveryVerifier = await OE_CRYPTO.deriveRecoveryVerifier(recoveryBytes);
     pendingReissuedRecoveryCode = OE_CRYPTO.formatRecoveryDisplayCode(recoveryBytes);
 
     var res = await fetch('/api/user/recovery-key', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        currentPassword: currentAuthKey,
+        currentPassword: currentSecrets.authKey,
         wrappedPrivateKeyRecovery: wrappedPrivateKeyRecovery, recoveryVerifier: recoveryVerifier
       })
     });

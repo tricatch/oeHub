@@ -43,16 +43,33 @@ const OE_AUTH = (function () {
     return { salt: OE_CRYPTO.bufToBase64(salt), authKey: keys.authKey, kek: keys.kek };
   }
 
-  // authKey for the CURRENT password of the logged-in account (the "confirm your password" gate of
-  // change-password and recovery-code reissue): the salt comes from the account's own wrapped key.
-  async function currentAuthKey(password) {
+  // What re-wrapping the private key needs from the CURRENT password of the logged-in account (the
+  // "confirm your password" step of change-password and recovery-code reissue): its authKey, and the
+  // private key unwrapped from the account's own wrapped key - extractable, held in memory only
+  // until it has been re-wrapped. The key cached for the session is deliberately not extractable,
+  // so it can't be used for this; the password is at hand here anyway.
+  //
+  // privateKey is null when the password doesn't unwrap the key, i.e. it is wrong. The caller must
+  // still send the request (with UNUSABLE_WRAP) so the server counts the attempt and answers.
+  async function currentSecrets(password) {
     const res = await fetch('/api/user/crypto-keys');
     if (!res.ok) throw new Error('crypto-keys lookup failed: ' + res.status);
     const data = await res.json();
     const record = JSON.parse(data.wrappedPrivateKey);
     const keys = await OE_CRYPTO.deriveKeys(password, new Uint8Array(OE_CRYPTO.base64ToBuf(record.salt)));
-    return keys.authKey;
+    let privateKey = null;
+    try {
+      privateKey = await OE_CRYPTO.unwrapPrivateKey(record, keys.kek, true);
+    } catch (e) {
+      privateKey = null; // GCM authentication failed: wrong password
+    }
+    return { authKey: keys.authKey, privateKey };
   }
+
+  // Stands in for a re-wrapped key when the current password turned out to be wrong. The server
+  // verifies the password before it would ever store a wrap, and rejects one that isn't a real
+  // {iv, wrapped} record, so this can never overwrite the account's real key.
+  const UNUSABLE_WRAP = '{}';
 
   // Submits a classic <form> with the authKey standing in for the password field(s). The visible
   // inputs lose their name (so the typed password can't be submitted) and are cleared; hidden
@@ -73,5 +90,5 @@ const OE_AUTH = (function () {
     form.submit();
   }
 
-  return { passwordErrorKey, fetchSalt, keysForLogin, keysForNewPassword, currentAuthKey, submitWithAuthKey };
+  return { passwordErrorKey, fetchSalt, keysForLogin, keysForNewPassword, currentSecrets, UNUSABLE_WRAP, submitWithAuthKey };
 })();

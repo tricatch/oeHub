@@ -158,7 +158,9 @@
 
     var record = JSON.parse(data.wrappedPrivateKey);
     var passwordKek = keys.kek;
-    var privateKey = await OE_CRYPTO.unwrapPrivateKey(record, passwordKek);
+    // Not extractable: this copy stays in the browser for the session and is only ever used to unwrap
+    // other keys (re-wrapping the private key unwraps a fresh, extractable one - see OE_AUTH.currentSecrets).
+    var privateKey = await OE_CRYPTO.unwrapPrivateKey(record, passwordKek, false);
     await OE_SESSION_KEYS.savePrivateKey(privateKey);
 
     if (data.wrappedWsKey) {
