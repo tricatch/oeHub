@@ -11,6 +11,7 @@ import tricatch.oe.hosts.model.HostsUa;
 import tricatch.oe.hosts.model.HostsUrl;
 import tricatch.oe.hub.config.AuthKey;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.UserIdRules;
 import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
@@ -103,6 +104,10 @@ public class SetupController {
             ctx.render("templates/setup.pebble", buildModel("auth.error.userid.invalid.chars", "", "generate"));
             return;
         }
+        if (UserIdRules.isReserved(userId)) {
+            ctx.render("templates/setup.pebble", buildModel("auth.error.userid.reserved", "", "generate"));
+            return;
+        }
         if (password == null || password.isBlank()) {
             ctx.render("templates/setup.pebble", buildModel("auth.error.password.required", "", "generate"));
             return;
@@ -187,11 +192,10 @@ public class SetupController {
 
                 // Non-login, workspace-owned system account for orphaned-resource ownership later
                 // (cloudGroupService design doc §2.2) - created alongside the workspace so a "no
-                // wss yet" state never exists. userId uses '_', which processRegister's
-                // validation (`[A-Za-z0-9._-]+` minus leading/reserved forms handled there) never
-                // produces for a real signup, so it can't collide with a chosen userId.
+                // wss yet" state never exists. Its id starts with UserIdRules.RESERVED_PREFIX,
+                // which sign-up and setup refuse, so it can't collide with a chosen userId.
                 var wsSystemUser = new HubUser();
-                wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
+                wsSystemUser.setUserId(UserIdRules.wsSystemUserId(workspace.getWsNo()));
                 wsSystemUser.setPassword(PasswordUtil.hash(java.util.UUID.randomUUID().toString()));
                 wsSystemUser.setRole(Role.WSS);
                 wsSystemUser.setWsNo(workspace.getWsNo());

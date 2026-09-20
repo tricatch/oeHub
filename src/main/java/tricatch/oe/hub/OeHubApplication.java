@@ -190,7 +190,7 @@ public class OeHubApplication {
                 if (token == null || token.isBlank()) {
                     token = generateCsrfToken();
                     var sb = new StringBuilder(CSRF_COOKIE_NAME).append('=').append(token).append("; Path=/; SameSite=Lax");
-                    if ("https".equalsIgnoreCase(ctx.scheme())) sb.append("; Secure");
+                    if (tricatch.oe.hub.config.CookieSecurity.isSecure(ctx.scheme())) sb.append("; Secure");
                     ctx.res().addHeader("Set-Cookie", sb.toString());
                 }
                 ctx.attribute("csrfToken", token);
@@ -310,6 +310,11 @@ public class OeHubApplication {
                 // would otherwise allow clickjacking (e.g. an invisible overlay tricking a
                 // logged-in admin into clicking "grant admin" or "delete user").
                 ctx.header("X-Frame-Options", "DENY");
+                // Only where the site is known to be served over HTTPS: browsers ignore HSTS on plain
+                // HTTP, and a stray header there would only mislead.
+                if (tricatch.oe.hub.config.CookieSecurity.isSecure(ctx.scheme())) {
+                    ctx.header("Strict-Transport-Security", "max-age=31536000");
+                }
                 var path = ctx.path();
                 if (!path.startsWith("/css/") && !path.startsWith("/icon/") && !path.startsWith("/logo/") && !path.startsWith("/js/")) {
                     ctx.header("Cache-Control", "no-cache, no-store, must-revalidate");

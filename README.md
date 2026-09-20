@@ -91,6 +91,7 @@ oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습�
 | `-Doe.data.dir` | `<oe.home>/data` | H2 데이터베이스 파일, 생성되는 비밀번호 파일(`.h2-password`), 예약 백업(`backups/`)이 저장되는 디렉터리. 지정하면 이 디렉터리를 그대로 사용하며, `-Doe.home`과 별개로 DB 데이터만 다른 볼륨에 두고 싶을 때 사용하세요. 파일명 자체(`oeHub-h2` / workspace 모드의 `oeHub-h2-ws`)는 이 옵션으로 바꿀 수 없습니다. |
 | `-Doe.mode` | `self-hosted` | 배포 모드 — `self-hosted` 또는 `workspace`. 아래 [배포 모드](#배포-모드) 참고. |
 | `-Doe.dev` | `false` | 개발 모드. `true`이면 정적 파일과 Pebble 템플릿을 jar에 번들된 classpath 리소스 대신 `src/main/resources`의 실제 파일에서 직접 읽고 템플릿 캐시를 꺼서, 서버 재시작 없이 수정 내용이 바로 반영됩니다. `./gradlew run`이 자동으로 켜서 실행하며, 배포용 jar 실행 시에는 지정하지 마세요. |
+| `-Doe.secure.cookie` | `false` | `true`이면 인증·CSRF 쿠키에 항상 `Secure`를 붙이고 응답에 `Strict-Transport-Security`를 보냅니다. 앞단 프록시가 TLS를 끝내서 oeHub가 요청을 항상 HTTP로 보는 배포(예: `workspace` 모드 클라우드 배포)에서 켜세요. 기본값에서는 HTTPS로 들어온 요청에만 붙습니다. |
 | `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선 사용. 위 실행 예시처럼 항상 켜서 실행하기를 권장합니다. |
 | `-Dlogback.configurationFile` | jar에 번들된 `logback.xml` | 재빌드 없이 로깅 설정을 재정의합니다. 자세한 내용은 아래 [로깅](#로깅) 참고. |
 

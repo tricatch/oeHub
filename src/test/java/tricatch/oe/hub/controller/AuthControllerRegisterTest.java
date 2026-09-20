@@ -86,4 +86,26 @@ class AuthControllerRegisterTest extends MapperTestBase {
             assertThat(response.body().string()).isEqualTo("auth.error.userid.exists");
         });
     }
+
+    // ── reserved user ids ───────────────────────────────────────────────────
+
+    /** Ids starting with "__" are the ones oeHub generates (a workspace's system account); a
+     *  sign-up must not be able to take one before that workspace exists. */
+    @Test
+    void aSignUpUnderAReservedId_isRefused() {
+        var auth = new AuthController(FACTORY, null);
+        var app = Javalin.create(config -> {
+            config.fileRenderer((path, model, ctx) -> String.valueOf(model.get("error")));
+            config.routes.post("/register", auth::processRegister);
+        });
+
+        JavalinTest.test(app, (server, client) -> {
+            var form = "userId=__wss_500&password=correct-horse&confirmPassword=correct-horse"
+                + "&publicKey=k&wrappedPrivateKey=k&wrappedPrivateKeyRecovery=k&recoveryVerifier=k";
+            var response = client.post("/register", form,
+                req -> req.header("Content-Type", "application/x-www-form-urlencoded"));
+
+            assertThat(response.body().string()).isEqualTo("auth.error.userid.reserved");
+        });
+    }
 }

@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AuthKey;
+import tricatch.oe.hub.config.CookieSecurity;
+import tricatch.oe.hub.config.UserIdRules;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.config.PasswordUtil;
@@ -344,15 +346,14 @@ public class AuthController {
 
     /**
      * Builds the oe_auth Set-Cookie header value. maxAgeSeconds null = session cookie (no
-     * Max-Age); non-null (including 0, used to clear the cookie) sets it explicitly. Adds
-     * "Secure" only when this request itself arrived over HTTPS - unconditionally adding it would
-     * make the cookie silently stop being sent on a plain-HTTP deployment of oeHub itself.
+     * Max-Age); non-null (including 0, used to clear the cookie) sets it explicitly. "Secure" is
+     * decided by {@link CookieSecurity}.
      */
     private static String authCookieHeader(Context ctx, String value, Long maxAgeSeconds) {
         var sb = new StringBuilder(COOKIE_NAME).append('=').append(value).append("; Path=/");
         if (maxAgeSeconds != null) sb.append("; Max-Age=").append(maxAgeSeconds);
         sb.append("; HttpOnly; SameSite=Lax");
-        if ("https".equalsIgnoreCase(ctx.scheme())) sb.append("; Secure");
+        if (CookieSecurity.isSecure(ctx.scheme())) sb.append("; Secure");
         return sb.toString();
     }
 
@@ -416,6 +417,10 @@ public class AuthController {
         }
         if (!userId.matches("[A-Za-z0-9._-]+")) {
             renderRegisterError(ctx, "auth.error.userid.invalid.chars", userId);
+            return;
+        }
+        if (UserIdRules.isReserved(userId)) {
+            renderRegisterError(ctx, "auth.error.userid.reserved", userId);
             return;
         }
         if (password == null || password.isBlank()) {
@@ -550,7 +555,7 @@ public class AuthController {
                 // same as SetupController.processSetup's self-hosted bootstrap, so a "no wss
                 // yet" state never exists here either.
                 var wsSystemUser = new HubUser();
-                wsSystemUser.setUserId("__ws_system_" + workspace.getWsNo());
+                wsSystemUser.setUserId(UserIdRules.wsSystemUserId(workspace.getWsNo()));
                 wsSystemUser.setPassword(PasswordUtil.hash(java.util.UUID.randomUUID().toString()));
                 wsSystemUser.setRole(Role.WSS);
                 wsSystemUser.setWsNo(workspace.getWsNo());

@@ -354,7 +354,7 @@ public abstract class MapperTestBase {
     protected HubUser insertWsSystem(Long wsNo) {
         var now = LocalDateTime.now();
         var wsSystem = new HubUser();
-        wsSystem.setUserId("__ws_system_" + wsNo + "_" + newId().substring(0, 6));
+        wsSystem.setUserId("__wss_" + wsNo + "_" + newId().substring(0, 6));
         wsSystem.setPassword(PasswordUtil.hash(newId()));
         wsSystem.setRole("wss");
         wsSystem.setWsNo(wsNo);
