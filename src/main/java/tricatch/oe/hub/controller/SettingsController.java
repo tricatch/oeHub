@@ -107,13 +107,13 @@ public class SettingsController {
         ctx.json(Map.of("enabled", enabled));
     }
 
-    // ── forward proxy relay whitelist ─────────────────────────────────────────
+    // ── allowed domains (forward proxy relay + PROXY_SVR lookups) ─────────────────────────────────
 
-    public void apiSaveFwdProxyWhitelist(Context ctx) throws IOException {
+    public void apiSaveAllowedDomains(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
-        var whitelist = ((String) body.getOrDefault("whitelist", "")).trim();
-        ForwardProxyServer.setWhitelist(whitelist, AuthController.currentUser(ctx).getUserNo());
-        ctx.json(Map.of("whitelist", whitelist));
+        var domains = ((String) body.getOrDefault("domains", "")).trim();
+        ForwardProxyServer.setWhitelist(domains, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("domains", domains));
     }
 
     // ── database backup ───────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ public class SettingsController {
         model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
         model.put("trustInternalCertEnabled", ReverseProxyServer.isTrustInternalCertEnabled());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
-        model.put("fwdproxyWhitelist", ForwardProxyServer.getWhitelist());
+        model.put("allowedDomains", ForwardProxyServer.getWhitelist());
         model.put("backupIntervalHours", BackupService.getIntervalHours());
         model.put("backupLastAt", formatBackupLastAt(BackupService.getLastBackupAtDisplay()));
         model.put("ca", loadCaInfo());

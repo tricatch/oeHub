@@ -28,7 +28,15 @@ public class HostsProfService {
     }
 
     private static String exampleContent() {
-        return "ko".equals(LocaleContext.get()) ? EXAMPLE_KO : EXAMPLE_EN;
+        var example = "ko".equals(LocaleContext.get()) ? EXAMPLE_KO : EXAMPLE_EN;
+        // The sample shows the ${PROXY_SVR} placeholder (oeProxy's address), which means nothing in
+        // workspace mode - it has no oeProxy - so that line is left out there.
+        if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
+            return example.lines()
+                .filter(line -> !line.contains("${PROXY_SVR}"))
+                .collect(Collectors.joining("\n", "", "\n"));
+        }
+        return example;
     }
 
     private final SqlSessionFactory sqlSessionFactory;

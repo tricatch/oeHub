@@ -94,6 +94,8 @@ class PublicLinkTest {
         page.navigate(server.baseUrl() + "/oehub/hosts");
         page.locator("#btnAdd").click();
         assertThat(page.locator("#hostsEditorBody")).isVisible();
+        // PROXY_SVR is oeProxy's address; workspace mode has no oeProxy, so the badge isn't shown.
+        assertThat(page.locator(".oe-editor-meta-ip")).hasCount(0);
         hostsId = (String) page.evaluate(
             "() => document.querySelector('#profileList .oe-list-item').dataset.hostsId");
         assertThat(hostsId).isNotBlank();
@@ -176,6 +178,7 @@ class PublicLinkTest {
         anonPage.navigate(linkUrl);
         assertThat(anonPage.locator("#rawContent")).containsText(PROBE_LINE,
                 new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+        assertThat(anonPage.locator(".oe-myip-badge")).hasCount(0); // no PROXY_SVR badge in workspace mode
         anonContext.close();
     }
 

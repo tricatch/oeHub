@@ -38,10 +38,9 @@ public class HostsController {
     private final SettingsController settingsController;
     private final ObjectMapper objectMapper;
 
-    // apiShare (below) is public/unauthenticated and resolves the caller-supplied Host header via
-    // DNS. Bounding that lookup by a timeout on its own virtual thread keeps a slow/unresponsive
-    // domain in the Host header from tying up a request-handling thread indefinitely (a trivial
-    // DoS otherwise, since this endpoint requires no login).
+    // Hosts pages resolve the caller-supplied Host header via DNS (proxyIpFor below), but only for
+    // names on the allowed-domains list (ProxyIpResolver). Bounding that lookup by a timeout on its own
+    // virtual thread keeps a slow/unresponsive domain from tying up a request-handling thread.
     private static final ExecutorService DNS_RESOLVER = Executors.newVirtualThreadPerTaskExecutor();
     private static final long DNS_RESOLVE_TIMEOUT_MS = 500;
 
@@ -56,7 +55,7 @@ public class HostsController {
     public void showHosts(Context ctx) {
         var model = new HashMap<String, Object>();
         model.put("user", AuthController.currentUser(ctx));
-        model.put("proxyIp", extractProxyIp(ctx));
+        model.put("proxyIp", proxyIpFor(ctx));
         ctx.render("templates/oehub/hosts.pebble", model);
     }
 
@@ -219,7 +218,7 @@ public class HostsController {
         model.put("owner", owner != null ? owner : "");
         model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getHostsContent())));
         model.put("wrappedContentKeyJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getWrappedContentKey())));
-        model.put("proxyIp", extractProxyIp(ctx));
+        model.put("proxyIp", proxyIpFor(ctx));
         model.put("workspaceMode", workspaceMode);
         model.put("linkMode", false);
         ctx.render("templates/oehub/hosts-share.pebble", model);
@@ -265,7 +264,7 @@ public class HostsController {
         model.put("owner", owner != null ? owner : "");
         model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(hosts.getLinkContent())));
         model.put("wrappedContentKeyJson", "null");
-        model.put("proxyIp", extractProxyIp(ctx));
+        model.put("proxyIp", proxyIpFor(ctx));
         model.put("workspaceMode", tricatch.oe.hub.config.AppHome.isWorkspaceMode());
         model.put("linkMode", true);
         ctx.render("templates/oehub/hosts-share.pebble", model);
@@ -648,24 +647,28 @@ public class HostsController {
         ctx.status(204);
     }
 
-    private static String extractProxyIp(Context ctx) {
-        var host = ctx.header("Host");
-        if (host == null || host.isBlank()) {
-            return ctx.req().getLocalAddr();
-        }
-        String hostname;
-        if (host.startsWith("[")) {
-            var end = host.indexOf(']');
-            hostname = end > 0 ? host.substring(1, end) : host;
-        } else {
-            var colon = host.indexOf(':');
-            hostname = colon > 0 ? host.substring(0, colon) : host;
-        }
+    // PROXY_SVR shown on hosts pages. The address comes from a DNS lookup of the Host header's name,
+    // which the caller controls - so only names on the admin's allowed-domains list (Settings) are
+    // looked up, for every caller; everything else falls back to this server's own address. See
+    // ProxyIpResolver. Workspace mode has no oeProxy and does no lookups at all.
+    private String proxyIpFor(Context ctx) {
+        return proxyIpFor(ctx.header("Host"), ctx.req().getLocalAddr(), HostsController::lookupWithTimeout);
+    }
+
+    // The lookup is a parameter so a test can observe which names would be resolved.
+    String proxyIpFor(String hostHeader, String localAddress, java.util.function.Function<String, String> lookup) {
+        // oeProxy doesn't run in workspace mode, so PROXY_SVR means nothing there: never look anything up.
+        if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) return localAddress;
+        return ProxyIpResolver.resolve(hostHeader, localAddress, ForwardProxyServer::isWhitelisted, lookup);
+    }
+
+    // Bounded on its own virtual thread so a slow or unresponsive name can't tie up a request thread.
+    private static String lookupWithTimeout(String hostname) {
         try {
             var future = DNS_RESOLVER.submit(() -> InetAddress.getByName(hostname).getHostAddress());
             return future.get(DNS_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
-            return ctx.req().getLocalAddr();
+            return null;
         }
     }
 }

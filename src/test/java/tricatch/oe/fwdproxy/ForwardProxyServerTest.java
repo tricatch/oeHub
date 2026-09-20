@@ -91,9 +91,9 @@ class ForwardProxyServerTest extends MapperTestBase {
     // ── isWhitelisted() ─────────────────────────────────────────────────────
 
     @Test
-    void isWhitelisted_emptyList_allowsAnyHost() {
+    void isWhitelisted_emptyList_allowsNothing() {
         ForwardProxyServer.setWhitelist("", 0L);
-        assertThat(ForwardProxyServer.isWhitelisted("example.com")).isTrue();
+        assertThat(ForwardProxyServer.isWhitelisted("example.com")).isFalse();
     }
 
     @Test
@@ -200,6 +200,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_loopbackDestination_isAllowedWhenClientIsAlsoLoopback() {
+        ForwardProxyServer.setWhitelist("127.0.0.1", 0L); // an empty whitelist allows nothing
         // A client that's already connecting from 127.0.0.1 gains nothing from this SSRF pivot -
         // it already has direct network access to this machine's loopback-bound ports - so the
         // guard is exempted for it (see overrideFor()'s class-level reasoning).
@@ -211,6 +212,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_hostsProfileEntryPointingAtLoopback_isAllowedWhenClientIsAlsoLoopback() {
+        ForwardProxyServer.setWhitelist("foo.oe", 0L); // an empty whitelist allows nothing
         var userId = "fwdloopback-" + newId();
         var user = insertUserWithPassword(userId, "correct-horse-battery");
 

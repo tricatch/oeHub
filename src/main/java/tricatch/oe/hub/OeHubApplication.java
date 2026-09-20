@@ -368,11 +368,12 @@ public class OeHubApplication {
             config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
             config.routes.post("/api/adm/settings/backup-interval", settings::apiSaveBackupInterval);
             if (!workspaceMode) {
-                // IP identifier / forward-proxy whitelist / CA are all oeProxy-only concerns -
-                // meaningless (and their backing servers non-existent) under workspace mode.
+                // IP identifier / allowed domains (forward-proxy relay whitelist, and the names looked
+                // up for PROXY_SVR) / CA are all oeProxy-only concerns - meaningless (and their
+                // backing servers non-existent) under workspace mode.
                 config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
+                config.routes.post("/api/adm/settings/allowed-domains",    settings::apiSaveAllowedDomains);
                 config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
-                config.routes.post("/api/adm/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
                 config.routes.post("/adm/settings/ca/generate", settings::generateCa);
                 config.routes.post("/adm/settings/ca/import",   settings::importCa);
             }

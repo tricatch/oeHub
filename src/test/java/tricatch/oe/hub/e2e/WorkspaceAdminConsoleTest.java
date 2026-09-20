@@ -246,6 +246,15 @@ class WorkspaceAdminConsoleTest {
                 "async () => (await fetch('/api/adm/workspaces')).status");
             assertThat(apiStatus).isEqualTo(404);
 
+            // The allowed-domains list (forward proxy relay + PROXY_SVR lookups) belongs to oeProxy,
+            // which only self-hosted has: the section is shown and its API works here.
+            page.navigate(selfHosted.baseUrl() + "/adm/settings");
+            assertThat(page.locator("#allowedDomains")).hasCount(1);
+            var saveStatus = (Integer) page.evaluate(
+                "async () => (await fetch('/api/adm/settings/allowed-domains', {method: 'POST', "
+                    + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({domains: 'hub.example.com'})})).status");
+            assertThat(saveStatus).isEqualTo(200);
+
             page.close();
         }
     }
@@ -288,6 +297,24 @@ class WorkspaceAdminConsoleTest {
         } finally {
             anon.dispose();
         }
+    }
+
+    /** oeProxy (and with it the allowed-domains list) doesn't exist in workspace mode: the settings
+     *  page has no such section, still loads and works without script errors, and the API is unrouted. */
+    @Test
+    @Order(9)
+    void allowedDomainsSettingIsNotOfferedInWorkspaceMode() {
+        var scriptErrors = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        instAdminPage.onPageError(scriptErrors::add);
+        instAdminPage.navigate(server.baseUrl() + "/adm/settings");
+
+        assertThat(instAdminPage.locator("#allowedDomains")).hasCount(0);
+        assertThat(instAdminPage.locator("#btnSaveBackupInterval")).hasCount(1);
+        var apiStatus = (Integer) instAdminPage.evaluate(
+            "async () => (await fetch('/api/adm/settings/allowed-domains', {method: 'POST', "
+                + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({domains: 'x.example.com'})})).status");
+        assertThat(apiStatus).isEqualTo(404);
+        assertThat(scriptErrors).isEmpty();
     }
 
     /** Suspending the workspace the instance admin belongs to would block their own next login

@@ -71,9 +71,10 @@ public class ForwardProxyServer {
     // substitution used for --host-resolver-rules never runs for this proxy path.
     private static final String PROXY_SVR_PLACEHOLDER = "${PROXY_SVR}";
 
-    // Relay whitelist: when non-empty, only destinations matching one of these patterns may be
-    // relayed through the forward proxy — everything else gets a 403. Empty (the default) means
-    // unrestricted, preserving prior behavior. A pattern may be a bare domain ("foo.com") or
+    // Allowed domains (whitelist): only destinations matching one of these patterns may be relayed
+    // through the forward proxy — everything else gets a 403 — and only these names may be looked up
+    // in DNS for the PROXY_SVR address (see HostsController.proxyIpFor). Empty (the default) allows
+    // nothing: the forward proxy is meant for a known set of (typically internal) domains. A pattern may be a bare domain ("foo.com") or
     // wildcard-prefixed ("*.foo.com"); either form matches the domain itself and all subdomains,
     // mirroring the requestDomains semantics used by the oeOID Chrome extension (see background.js).
     private static final String KEY_WHITELIST = "fwdproxy.whitelist";
@@ -184,11 +185,10 @@ public class ForwardProxyServer {
                 .toList();
     }
 
-    /** True when the whitelist is empty (unrestricted) or host matches one of its patterns. */
-    static boolean isWhitelisted(String host) {
+    /** True only when host matches one of the whitelist's patterns; an empty whitelist allows nothing. */
+    public static boolean isWhitelisted(String host) {
         var patterns = whitelistPatterns;
-        if (patterns.isEmpty()) return true;
-        if (host == null || host.isBlank()) return false;
+        if (patterns.isEmpty() || host == null || host.isBlank()) return false;
         var h = host.toLowerCase();
         for (var base : patterns) {
             if (h.equals(base) || h.endsWith("." + base)) return true;

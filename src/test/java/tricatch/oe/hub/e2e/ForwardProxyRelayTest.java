@@ -123,6 +123,12 @@ class ForwardProxyRelayTest {
     @Test
     @Order(2)
     void savesAndSelectsHostsProfileOverridingTestDomain() throws Exception {
+        // The forward proxy only relays to allowed domains (an empty list allows nothing), so the
+        // test domain has to be on the list before anything below can be relayed.
+        var allowResponse = postJson("/api/adm/settings/allowed-domains",
+            objectMapper.writeValueAsString(Map.of("domains", OVERRIDE_DOMAIN)));
+        assertThat(allowResponse.statusCode()).isEqualTo(200);
+
         var createResponse = postJson("/api/hosts", "");
         assertThat(createResponse.statusCode()).isEqualTo(201);
         var hostsId = (String) objectMapper.readValue(createResponse.body(), Map.class).get("hostsId");

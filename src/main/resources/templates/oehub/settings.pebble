@@ -250,6 +250,36 @@
       </table>
     </div>
 
+    {# ── Allowed domains (forward proxy relay + PROXY_SVR lookups) - oeProxy is self-hosted only ── #}
+    {% if not workspaceMode %}
+    <div class="oe-info-section">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
+        <colgroup><col style="width:110px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th>{{ msg['settings.allowed.title'] }}</th>
+            <th class="text-end">
+              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveAllowedDomains" type="button" title="{{ msg['btn.save'] }}">
+                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.allowed.label'] }}</td>
+            <td>
+              <textarea id="allowedDomains" class="form-control form-control-sm" rows="4"
+                        placeholder="*.example.com&#10;hub.example.com">{{ allowedDomains }}</textarea>
+              <div class="form-text">{{ msg['settings.allowed.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {% endif %}
+
     {# ── Forward Proxy (LittleProxy) ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
@@ -257,11 +287,6 @@
         <thead>
           <tr>
             <th>{{ msg['settings.fwdproxy.title'] }}</th>
-            <th class="text-end">
-              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveFwdproxyWhitelist" type="button" title="{{ msg['btn.save'] }}">
-                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-              </button>
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -273,14 +298,6 @@
                 <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
               </div>
               <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
-            </td>
-          </tr>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.fwdproxy.whitelist.label'] }}</td>
-            <td>
-              <textarea id="fwdproxyWhitelist" class="form-control form-control-sm" rows="4"
-                        placeholder="*.example.com&#10;api.example.com">{{ fwdproxyWhitelist }}</textarea>
-              <div class="form-text">{{ msg['settings.fwdproxy.whitelist.help'] }}</div>
             </td>
           </tr>
         </tbody>
@@ -381,14 +398,16 @@
     if (res.ok) showToast(MSG['settings.saved']);
   });
 
-  document.getElementById('btnSaveFwdproxyWhitelist').addEventListener('click', async () => {
-    const whitelist = document.getElementById('fwdproxyWhitelist').value;
-    const res = await fetch('/api/adm/settings/fwdproxy-whitelist', {
+  {% if not workspaceMode %}
+  document.getElementById('btnSaveAllowedDomains').addEventListener('click', async () => {
+    const domains = document.getElementById('allowedDomains').value;
+    const res = await fetch('/api/adm/settings/allowed-domains', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({whitelist})
+      body: JSON.stringify({domains})
     });
     if (res.ok) showToast(MSG['settings.saved']);
   });
+  {% endif %}
 
   document.getElementById('btnSaveBackupInterval').addEventListener('click', async () => {
     const intervalHours = document.getElementById('backupIntervalHours').value;

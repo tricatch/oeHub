@@ -83,7 +83,8 @@
     </div>
     <div class="oe-editor-meta" id="editorMeta">
       <span><span id="metaUpdated"></span> / <span id="metaCreator"></span><span id="metaEditor"></span></span>
-      <span class="oe-myip-badge oe-editor-meta-ip">PROXY_SVR: {{ proxyIp }}</span>
+      {# PROXY_SVR is oeProxy's address - meaningless in workspace mode, which has no oeProxy #}
+      {% if not workspaceMode %}<span class="oe-myip-badge oe-editor-meta-ip">PROXY_SVR: {{ proxyIp }}</span>{% endif %}
     </div>
   </div>
 

@@ -162,6 +162,8 @@ class SetupToOeProxyScenarioTest {
     void oeHostsAddsRenamesEditsAndDeletesProfile() {
         page.locator("a.oe-tool-card[href='/oehub/hosts']").click();
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/oehub/hosts"));
+        // Self-hosted has oeProxy, so the hosts page shows its PROXY_SVR address (unlike workspace mode).
+        assertThat(page.locator(".oe-editor-meta-ip")).containsText("PROXY_SVR:");
         assertThat(page.locator(".oe-navbar")).containsText(USER_ID);
         dismissGuideModalIfShown();
 

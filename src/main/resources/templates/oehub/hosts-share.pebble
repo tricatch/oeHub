@@ -37,7 +37,8 @@
   <div class="share-section">
     <div class="share-section-header-row">
       <div class="share-section-header">{{ msg['hosts.chrome.launcher'] }}</div>
-      <span class="oe-myip-badge">PROXY_SVR: {{ proxyIp }}</span>
+      {# PROXY_SVR is oeProxy's address - meaningless in workspace mode, which has no oeProxy #}
+      {% if not workspaceMode %}<span class="oe-myip-badge">PROXY_SVR: {{ proxyIp }}</span>{% endif %}
     </div>
 
     <div class="hosts-browser-options">
