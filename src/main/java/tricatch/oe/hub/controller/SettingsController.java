@@ -21,6 +21,7 @@ import tricatch.oe.proxy.service.ProxyConfService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
@@ -187,10 +188,7 @@ public class SettingsController {
         try {
             byte[] certBytes = certFile.content().readAllBytes();
             byte[] keyBytes  = keyFile.content().readAllBytes();
-            Files.createDirectories(caDir());
-            Files.write(caCertPath(), certBytes);
-            Files.write(caKeyPath(), keyBytes);
-            AppHome.restrictToOwner(caKeyPath());
+            installCaPair(certBytes, keyBytes);
             logger.info("CA certificate imported.");
             startProxyServer();
             logAuditEvent(ctx, "settings.ca.import", null);
@@ -207,11 +205,57 @@ public class SettingsController {
     }
 
     /** Used by SetupCaController to import CA during initial setup. */
-    public void importCaToDir(byte[] certBytes, byte[] keyBytes) throws IOException {
+    public void importCaToDir(byte[] certBytes, byte[] keyBytes) throws Exception {
+        installCaPair(certBytes, keyBytes);
+    }
+
+    /**
+     * Installs an uploaded CA certificate + private key, but only if they load and belong together.
+     * The pair is staged and checked in a scratch directory first, so a bad upload (wrong file,
+     * mismatched pair, garbage) is refused with the CA currently in use left exactly as it was,
+     * instead of overwriting it and then failing when the proxy next tries to read it.
+     */
+    void installCaPair(byte[] certBytes, byte[] keyBytes) throws Exception {
         Files.createDirectories(caDir());
-        Files.write(caCertPath(), certBytes);
-        Files.write(caKeyPath(), keyBytes);
-        AppHome.restrictToOwner(caKeyPath());
+        Path staging = Files.createTempDirectory(caDir(), ".import-");
+        try {
+            Files.write(staging.resolve("ca.cer"), certBytes);
+            Files.write(staging.resolve("ca.pfx"), keyBytes);
+
+            var keyTool = new KeyTool();
+            var cert = keyTool.readCertificate(staging.toString(), "ca.cer");
+            var key = keyTool.readPrivateKey(staging.toString(), "ca.pfx");
+            requireMatchingPair(cert.getPublicKey(), key);
+
+            AppHome.restrictToOwner(staging.resolve("ca.pfx"));
+            Files.move(staging.resolve("ca.pfx"), caKeyPath(), StandardCopyOption.REPLACE_EXISTING);
+            Files.move(staging.resolve("ca.cer"), caCertPath(), StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            try (var leftovers = Files.walk(staging)) {
+                leftovers.sorted(java.util.Comparator.reverseOrder()).forEach(f -> f.toFile().delete());
+            }
+        }
+    }
+
+    /** Signs a probe with the private key and verifies it with the certificate's public key. */
+    private static void requireMatchingPair(java.security.PublicKey publicKey, java.security.PrivateKey privateKey)
+            throws java.security.GeneralSecurityException {
+        String algorithm = switch (publicKey.getAlgorithm()) {
+            case "EC" -> "SHA256withECDSA";
+            case "RSA" -> "SHA256withRSA";
+            default -> throw new java.security.InvalidKeyException("Unsupported CA key type: " + publicKey.getAlgorithm());
+        };
+        byte[] probe = "oeHub-ca-import-check".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var signer = java.security.Signature.getInstance(algorithm);
+        signer.initSign(privateKey);
+        signer.update(probe);
+        byte[] signature = signer.sign();
+        var verifier = java.security.Signature.getInstance(algorithm);
+        verifier.initVerify(publicKey);
+        verifier.update(probe);
+        if (!verifier.verify(signature)) {
+            throw new java.security.InvalidKeyException("CA certificate and private key do not match");
+        }
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
