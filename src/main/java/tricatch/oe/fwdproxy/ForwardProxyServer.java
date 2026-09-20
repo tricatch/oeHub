@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.proxy.ReverseProxyServer;
@@ -132,18 +133,26 @@ public class ForwardProxyServer {
     // only userName/password, no client IP, so — unlike AuthController's per-IP login lockout —
     // this is keyed by the attempted userId. Otherwise bcrypt cost is the only thing slowing an
     // online brute-force attempt against any HUB_USR account through this always-on, 0.0.0.0-bound
-    // proxy port. In-memory only, same trade-off as AuthController's lockout.
+    // proxy port. In-memory only, same trade-off as AuthController's lockout. Backed by a
+    // size-bounded, expiring cache (like AuthController's) so attempts against random userIds can't
+    // grow memory without limit; each write refreshes an entry's expiry, so it outlives its lockout.
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final java.time.Duration ATTEMPT_WINDOW = java.time.Duration.ofMinutes(15);
     private static final java.time.Duration LOCKOUT_DURATION = java.time.Duration.ofMinutes(15);
 
-    private static final class AuthAttempts {
-        int count;
-        java.time.Instant windowStart;
-        java.time.Instant lockedUntil;
-    }
+    private record AuthAttempts(int count, java.time.Instant windowStart, java.time.Instant lockedUntil) {}
 
-    private static final ConcurrentHashMap<String, AuthAttempts> authAttemptsByUser = new ConcurrentHashMap<>();
+    private static final com.github.benmanes.caffeine.cache.Cache<String, AuthAttempts> authAttemptsByUser =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(ATTEMPT_WINDOW.plus(LOCKOUT_DURATION))
+                    .maximumSize(10_000)
+                    .build();
+
+    // userId is attacker-controlled and unbounded; the key only needs to tell accounts apart.
+    private static String attemptKey(String userId) {
+        var key = userId.toLowerCase();
+        return key.length() > 64 ? key.substring(0, 64) : key;
+    }
 
     // Same timing-parity rationale as AuthController.DUMMY_PASSWORD_HASH: without this, a
     // non-existent userId short-circuits before any bcrypt comparison, making account existence
@@ -350,7 +359,7 @@ public class ForwardProxyServer {
     // pure/testable logic (isWhitelisted, isLoopbackTarget, mergeHosts, hostOnly, overrideFor).
     static boolean authenticate(String userId, String password) {
         if (userId == null || password == null) return false;
-        var key = userId.toLowerCase();
+        var key = attemptKey(userId);
         if (isAuthLocked(key)) {
             logger.debug("Forward proxy auth blocked (locked out) for userId={}", userId);
             return false;
@@ -360,7 +369,9 @@ public class ForwardProxyServer {
             // Always run exactly one bcrypt comparison, real user or not - see DUMMY_PASSWORD_HASH.
             var hashToCheck = user != null ? user.getPassword() : DUMMY_PASSWORD_HASH;
             var isCorrectPassword = PasswordUtil.matches(password, hashToCheck);
-            if (user == null || !isCorrectPassword) {
+            // An account that may not hold a session (awaiting approval, suspended) must not get
+            // through here either: this proxy is a second door to the same accounts as the login page.
+            if (user == null || !isCorrectPassword || !Role.canLogin(user.getRole())) {
                 recordAuthFailure(key);
                 logger.debug("Forward proxy auth failed for userId={}", userId);
                 return false;
@@ -375,30 +386,30 @@ public class ForwardProxyServer {
     }
 
     private static boolean isAuthLocked(String key) {
-        var a = authAttemptsByUser.get(key);
-        if (a == null) return false;
-        synchronized (a) {
-            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
-        }
+        var a = authAttemptsByUser.getIfPresent(key);
+        return a != null && a.lockedUntil() != null && java.time.Instant.now().isBefore(a.lockedUntil());
     }
 
     private static void recordAuthFailure(String key) {
-        var a = authAttemptsByUser.computeIfAbsent(key, k -> new AuthAttempts());
-        synchronized (a) {
-            var now = java.time.Instant.now();
-            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
-                a.windowStart = now;
-                a.count = 0;
+        var now = java.time.Instant.now();
+        authAttemptsByUser.asMap().compute(key, (k, old) -> {
+            var windowStart = old == null ? null : old.windowStart();
+            var count = old == null ? 0 : old.count();
+            var lockedUntil = old == null ? null : old.lockedUntil();
+            if (windowStart == null || java.time.Duration.between(windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
+                windowStart = now;
+                count = 0;
             }
-            a.count++;
-            if (a.count >= MAX_FAILED_ATTEMPTS) {
-                a.lockedUntil = now.plus(LOCKOUT_DURATION);
+            count++;
+            if (count >= MAX_FAILED_ATTEMPTS) {
+                lockedUntil = now.plus(LOCKOUT_DURATION);
             }
-        }
+            return new AuthAttempts(count, windowStart, lockedUntil);
+        });
     }
 
     private static void recordAuthSuccess(String key) {
-        authAttemptsByUser.remove(key);
+        authAttemptsByUser.invalidate(key);
     }
 
     /** Recomputes and caches the given user's merged host->ip map from their selected oeHosts profiles. */

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.mapper.MapperTestBase;
@@ -34,11 +35,15 @@ class ForwardProxyServerTest extends MapperTestBase {
     }
 
     private HubUser insertUserWithPassword(String userId, String rawPassword) {
+        return insertUserWithPassword(userId, rawPassword, "usr");
+    }
+
+    private HubUser insertUserWithPassword(String userId, String rawPassword, String role) {
         var now = LocalDateTime.now();
         var user = new HubUser();
         user.setUserId(userId);
         user.setPassword(PasswordUtil.hash(rawPassword));
-        user.setRole("usr");
+        user.setRole(role);
         user.setWsNo(TEST_WS_NO);
         user.setCreateAt(now);
         user.setUpdatedAt(now);
@@ -55,6 +60,25 @@ class ForwardProxyServerTest extends MapperTestBase {
         var userId = "fwdauth-" + newId();
         insertUserWithPassword(userId, "correct-horse-battery");
         assertThat(ForwardProxyServer.authenticate(userId, "correct-horse-battery")).isTrue();
+    }
+
+    @Test
+    void authenticate_accountsThatMayLogIn_succeed_whateverTheirRole() {
+        for (var role : java.util.List.of(Role.ADM, Role.WSA, Role.USR)) {
+            var userId = "fwdrole-" + newId();
+            insertUserWithPassword(userId, "correct-horse-battery", role);
+            assertThat(ForwardProxyServer.authenticate(userId, "correct-horse-battery")).as(role).isTrue();
+        }
+    }
+
+    @Test
+    void authenticate_accountsThatMayNotLogIn_areRefused_evenWithTheRightPassword() {
+        // Awaiting approval / suspended: the login page turns these away, so this second door must too.
+        for (var role : java.util.List.of(Role.PEN, Role.WSS)) {
+            var userId = "fwdrole-" + newId();
+            insertUserWithPassword(userId, "correct-horse-battery", role);
+            assertThat(ForwardProxyServer.authenticate(userId, "correct-horse-battery")).as(role).isFalse();
+        }
     }
 
     @Test
