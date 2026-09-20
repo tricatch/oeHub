@@ -289,8 +289,8 @@ public class AdminUserController {
             targetUserId = target.getUserId();
             targetWsNo = target.getWsNo();
         }
-        hostsProfService.deleteAll(userNo);
-        proxyVhostService.deleteAll(userNo);
+        hostsProfService.deleteAllForAccountRemoval(userNo);
+        proxyVhostService.deleteAllForAccountRemoval(userNo);
         try (var session = sqlSessionFactory.openSession()) {
             session.getMapper(HostsConfMapper.class).deleteAllByUserNo(userNo);
             session.getMapper(ProxyConfMapper.class).deleteAllByUserNo(userNo);

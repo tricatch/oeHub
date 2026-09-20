@@ -82,13 +82,18 @@ class ProxyControllerStaleRoutingTest extends MapperTestBase {
     }
 
     @Test
-    void deletingAllVhosts_removesTheirLiveRoutes() throws Exception {
+    void deletingAllVhosts_removesTheirLiveRoutes_andTheVhostsThemselves() throws Exception {
+        var wsSystem = insertWsSystem(TEST_WS_NO);
         var user = userWithLiveRoute("stale-delete-all");
 
         JavalinTest.test(appAs(user), (server, client) ->
             assertThat(client.delete("/api/proxy/vhosts").code()).isEqualTo(204));
 
         assertNoLiveRoutes(user);
+        // The vhost was 'public' (the default); "delete all" must delete it, not hand it to the
+        // workspace's system account as account removal does.
+        assertThat(vhostService.list(user.getUserNo())).isEmpty();
+        assertThat(vhostService.list(wsSystem.getUserNo())).isEmpty();
     }
 
     @Test

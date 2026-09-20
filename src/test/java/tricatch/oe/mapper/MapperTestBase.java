@@ -7,6 +7,7 @@ import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.BeforeEach;
+import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.TeamMapper;
@@ -347,6 +348,24 @@ public abstract class MapperTestBase {
             user.setUpdatedBy(user.getUserNo());
         }
         return user;
+    }
+
+    /** The workspace's non-login system account (role wss) that inherits orphaned 'public' rows. */
+    protected HubUser insertWsSystem(Long wsNo) {
+        var now = LocalDateTime.now();
+        var wsSystem = new HubUser();
+        wsSystem.setUserId("__ws_system_" + wsNo + "_" + newId().substring(0, 6));
+        wsSystem.setPassword(PasswordUtil.hash(newId()));
+        wsSystem.setRole("wss");
+        wsSystem.setWsNo(wsNo);
+        wsSystem.setCreateAt(now);
+        wsSystem.setUpdatedAt(now);
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HubUserMapper.class);
+            mapper.insert(wsSystem);
+            mapper.selfReferenceAudit(wsSystem.getUserNo());
+        }
+        return wsSystem;
     }
 
     protected String newId() {

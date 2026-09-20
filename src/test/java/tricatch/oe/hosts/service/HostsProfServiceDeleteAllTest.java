@@ -1,39 +1,18 @@
 package tricatch.oe.hosts.service;
 
 import org.junit.jupiter.api.Test;
-import tricatch.oe.hub.config.PasswordUtil;
-import tricatch.oe.hub.mapper.HubUserMapper;
-import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.mapper.MapperTestBase;
-
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 // Account deletion must not silently destroy content the rest of the workspace still depends on
 // - cloudGroupService design doc §2.5's orphan-handling rule: 'public' survives (reassigned to
-// wss), 'private'/'collabo' still go away with the account.
+// wss), 'private'/'collabo' still go away with the account. A user-requested "delete all" is not
+// account deletion: it must really delete everything, public profiles included.
 class HostsProfServiceDeleteAllTest extends MapperTestBase {
 
-    private HubUser insertWsSystem(Long wsNo) {
-        var now = LocalDateTime.now();
-        var wsSystem = new HubUser();
-        wsSystem.setUserId("__ws_system_" + wsNo + "_" + newId().substring(0, 6));
-        wsSystem.setPassword(PasswordUtil.hash(newId()));
-        wsSystem.setRole("wss");
-        wsSystem.setWsNo(wsNo);
-        wsSystem.setCreateAt(now);
-        wsSystem.setUpdatedAt(now);
-        try (var session = FACTORY.openSession(true)) {
-            var mapper = session.getMapper(HubUserMapper.class);
-            mapper.insert(wsSystem);
-            mapper.selfReferenceAudit(wsSystem.getUserNo());
-        }
-        return wsSystem;
-    }
-
     @Test
-    void deleteAll_reassignsPublicProfilesToWsSystem_deletesPrivateAndCollabo() {
+    void deleteAllForAccountRemoval_reassignsPublicProfilesToWsSystem_deletesPrivateAndCollabo() {
         var wsSystem = insertWsSystem(TEST_WS_NO);
         var owner = insertUser("deleteAllOwner");
         var service = new HostsProfService(FACTORY);
@@ -42,7 +21,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
         var privateProfile = service.create(owner.getUserNo());
         service.updateVisibility(privateProfile.getHostsId(), owner.getUserNo(), "private", null);
 
-        service.deleteAll(owner.getUserNo());
+        service.deleteAllForAccountRemoval(owner.getUserNo());
 
         // 'public' survives, now owned by wss.
         var survived = service.get(publicProfile.getHostsId());
@@ -56,7 +35,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
     }
 
     @Test
-    void deleteAll_reassignedProfile_dedupesNameAgainstWsSystemsExisting() {
+    void deleteAllForAccountRemoval_reassignedProfile_dedupesNameAgainstWsSystemsExisting() {
         var wsSystem = insertWsSystem(TEST_WS_NO);
         var owner = insertUser("deleteAllDupeOwner");
         var service = new HostsProfService(FACTORY);
@@ -68,7 +47,7 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
         var ownersProfile = service.create(owner.getUserNo());
         service.updateProfile(ownersProfile.getHostsId(), owner.getUserNo(), "Default");
 
-        service.deleteAll(owner.getUserNo());
+        service.deleteAllForAccountRemoval(owner.getUserNo());
 
         var reassigned = service.get(ownersProfile.getHostsId());
         assertThat(reassigned.getUserNo()).isEqualTo(wsSystem.getUserNo());
@@ -76,15 +55,33 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
     }
 
     @Test
-    void deleteAll_noWsSystem_stillDeletesPrivateWithoutError() {
+    void deleteAllForAccountRemoval_noWsSystem_stillDeletesPrivateWithoutError() {
         // A workspace with no wss account (shouldn't happen in practice, but deleteAll must
         // degrade gracefully rather than throw) - public profiles are simply not preserved.
         var owner = insertUser("noWsSystemOwner");
         var service = new HostsProfService(FACTORY);
         var publicProfile = service.create(owner.getUserNo());
 
+        service.deleteAllForAccountRemoval(owner.getUserNo());
+
+        assertThat(service.get(publicProfile.getHostsId())).isNull();
+    }
+
+    @Test
+    void deleteAll_userRequested_deletesPublicProfilesToo_andHandsNothingToWsSystem() {
+        var wsSystem = insertWsSystem(TEST_WS_NO);
+        var owner = insertUser("userRequestedDeleteAll");
+        var service = new HostsProfService(FACTORY);
+
+        var publicProfile = service.create(owner.getUserNo()); // defaults to visibility='public'
+        var privateProfile = service.create(owner.getUserNo());
+        service.updateVisibility(privateProfile.getHostsId(), owner.getUserNo(), "private", null);
+
         service.deleteAll(owner.getUserNo());
 
         assertThat(service.get(publicProfile.getHostsId())).isNull();
+        assertThat(service.get(privateProfile.getHostsId())).isNull();
+        // Nothing was reassigned: the user asked for their profiles to be deleted, not handed over.
+        assertThat(service.list(wsSystem.getUserNo())).isEmpty();
     }
 }

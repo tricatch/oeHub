@@ -168,14 +168,30 @@ public class HostsProfService {
         }
     }
 
+    /**
+     * Removes everything the user owns because they asked for it ("delete all my profiles"): every
+     * profile goes, 'public' ones included - the same as deleting each one by hand, or a
+     * replace-import. Account removal is different, see {@link #deleteAllForAccountRemoval}.
+     */
     public void deleteAll(Long userNo) {
+        try (var session = sqlSessionFactory.openSession()) {
+            removeAllRows(session.getMapper(HostsProfMapper.class), userNo);
+            session.commit();
+        }
+    }
+
+    /**
+     * Removes a user's profiles because their ACCOUNT is being deleted. 'public' profiles are
+     * reassigned to the workspace's wss account rather than deleted with the account -
+     * 'private'/'collabo' still go away (cloudGroupService design doc §2.5 orphan handling), so
+     * shared resources the team depends on outlive whoever made them. Must not be used for a
+     * user-requested "delete all": that must really delete.
+     */
+    public void deleteAllForAccountRemoval(Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
 
-            // 'public' profiles are reassigned to the workspace's wss account rather than
-            // deleted with the account - 'private'/'collabo' still go away below, unchanged
-            // (cloudGroupService design doc §2.5 orphan handling). Must run before deleteByUserNo,
-            // which would otherwise delete these too.
+            // Must run before removeAllRows, which would otherwise delete these too.
             var deletedUser = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
             if (deletedUser != null) {
                 var wsSystem = session.getMapper(HubUserMapper.class).findWsSystemByWsNo(deletedUser.getWsNo());
@@ -191,16 +207,21 @@ public class HostsProfService {
                 }
             }
 
-            var refs = mapper.findReferencesByUserNo(userNo);
-            mapper.deleteByUserNo(userNo);
-            for (var ref : refs) {
-                if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
-                    mapper.deleteByHostsId(ref.getParentId());
-                }
-            }
-            mapper.deleteOrphanedParentsByCreator(userNo);
+            removeAllRows(mapper, userNo);
             session.commit();
         }
+    }
+
+    // Deletes every row the user owns, then any shared (collabo) parent left with no references.
+    private void removeAllRows(HostsProfMapper mapper, Long userNo) {
+        var refs = mapper.findReferencesByUserNo(userNo);
+        mapper.deleteByUserNo(userNo);
+        for (var ref : refs) {
+            if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
+                mapper.deleteByHostsId(ref.getParentId());
+            }
+        }
+        mapper.deleteOrphanedParentsByCreator(userNo);
     }
 
     public HostsProf copyProfile(Long userNo, String sourceHostId) {
@@ -353,16 +374,7 @@ public class HostsProfService {
     public List<HostsProf> importProfiles(Long userNo, List<HostsProf> entries, boolean merge) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
-            if (!merge) {
-                var refs = mapper.findReferencesByUserNo(userNo);
-                mapper.deleteByUserNo(userNo);
-                for (var ref : refs) {
-                    if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
-                        mapper.deleteByHostsId(ref.getParentId());
-                    }
-                }
-                mapper.deleteOrphanedParentsByCreator(userNo);
-            }
+            if (!merge) removeAllRows(mapper, userNo);
             var existingNames = existingNames(mapper, userNo);
             for (var entry : entries) {
                 entry.setHostsId(newId());
