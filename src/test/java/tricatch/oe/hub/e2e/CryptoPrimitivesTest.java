@@ -154,13 +154,13 @@ class CryptoPrimitivesTest {
             async () => {
                 const kp = await OE_CRYPTO.generateKeyPair();
                 const salt = OE_CRYPTO.randomBytes(16);
-                const kek = await OE_CRYPTO.deriveKeyFromPassword('correct horse battery staple', salt);
+                const kek = (await OE_CRYPTO.deriveKeys('correct horse battery staple', salt)).kek;
                 const record = await OE_CRYPTO.wrapPrivateKey(kp.privateKey, kek);
 
                 // Re-derive the KEK independently (as a real login would, from the same password
                 // and salt) rather than reusing the in-memory kek object, to prove the derivation
                 // itself is reproducible - not just that the same CryptoKey object works twice.
-                const kek2 = await OE_CRYPTO.deriveKeyFromPassword('correct horse battery staple', salt);
+                const kek2 = (await OE_CRYPTO.deriveKeys('correct horse battery staple', salt)).kek;
                 const unwrapped = await OE_CRYPTO.unwrapPrivateKey(record, kek2);
 
                 // Prove the unwrapped key is functionally the real private key: wrap a workspace
@@ -182,10 +182,10 @@ class CryptoPrimitivesTest {
             async () => {
                 const kp = await OE_CRYPTO.generateKeyPair();
                 const salt = OE_CRYPTO.randomBytes(16);
-                const kek = await OE_CRYPTO.deriveKeyFromPassword('right-password', salt);
+                const kek = (await OE_CRYPTO.deriveKeys('right-password', salt)).kek;
                 const record = await OE_CRYPTO.wrapPrivateKey(kp.privateKey, kek);
 
-                const wrongKek = await OE_CRYPTO.deriveKeyFromPassword('wrong-password', salt);
+                const wrongKek = (await OE_CRYPTO.deriveKeys('wrong-password', salt)).kek;
                 try {
                     await OE_CRYPTO.unwrapPrivateKey(record, wrongKek);
                     return false; // must not reach here

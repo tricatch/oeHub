@@ -105,6 +105,23 @@ public class JwtService {
         return null;
     }
 
+    /**
+     * A stable 32-byte secret for a purpose other than signing JWTs (e.g. the decoy KDF salts),
+     * derived from the persisted JWT private key so it survives restarts without another stored
+     * secret. The purpose string keeps secrets for different uses independent of each other; the
+     * JWT private key itself is never used directly outside this class.
+     */
+    public byte[] deriveSecret(String purpose) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            digest.update(("oeHub:" + purpose).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            return digest.digest(privateKey.getEncoded());
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
     private static KeyPair generateKeyPair() throws GeneralSecurityException {
         var gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048);

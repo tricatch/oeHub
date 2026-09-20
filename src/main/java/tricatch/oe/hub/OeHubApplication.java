@@ -277,6 +277,11 @@ public class OeHubApplication {
                 if ("/api/recover/verify".equals(ctx.path()) || "/api/recover/reset".equals(ctx.path())) {
                     return;
                 }
+                // The browser needs an account's KDF salt before it can log in (workspace mode -
+                // see AuthController.apiKdfSalt), so this one is deliberately anonymous too.
+                if ("/api/auth/kdf".equals(ctx.path())) {
+                    return;
+                }
                 if (AuthController.currentUser(ctx) == null) {
                     ctx.status(401).result("Unauthorized");
                     ctx.skipRemainingHandlers();
@@ -352,6 +357,9 @@ public class OeHubApplication {
             config.routes.get("/register", auth::showRegister);
             config.routes.post("/register", auth::processRegister);
             config.routes.get("/recover", auth::showRecover);
+            if (workspaceMode) {
+                config.routes.get("/api/auth/kdf", auth::apiKdfSalt);
+            }
             config.routes.post("/api/recover/verify", auth::apiRecoverVerify);
             config.routes.post("/api/recover/reset",  auth::apiRecoverReset);
 

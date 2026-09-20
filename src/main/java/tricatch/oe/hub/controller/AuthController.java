@@ -7,6 +7,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.ApiTokenUtil;
+import tricatch.oe.hub.config.AuthKey;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.config.PasswordUtil;
@@ -87,6 +88,9 @@ public class AuthController {
 
     private final SqlSessionFactory sqlSessionFactory;
     private final JwtService        jwtService;
+    // Derived on first use rather than in the constructor: only apiKdfSalt needs it, and tests
+    // construct this class without a JwtService.
+    private volatile byte[]         kdfDecoySecret;
 
     public AuthController(SqlSessionFactory sqlSessionFactory, JwtService jwtService) {
         this.sqlSessionFactory = sqlSessionFactory;
@@ -206,6 +210,24 @@ public class AuthController {
             ctx.attribute(ATTR_USER, user);
             tokenMapper.touchLastUsed(tokenRow.getTokenId(), now);
         }
+    }
+
+    /**
+     * Public, workspace mode only: the PBKDF2 salt behind an account's authKey, needed by the
+     * browser BEFORE it can log in (see auth-keys.js). Unknown ids - and accounts with no wrapped
+     * key, such as the system account - get a deterministic decoy, so the answer never tells a
+     * caller whether an id exists. The salt itself isn't secret; it is stored next to the wrapped
+     * key it protects.
+     */
+    public void apiKdfSalt(Context ctx) {
+        var userId = ctx.queryParam("userId");
+        var user = findUser(userId);
+        String salt = user != null ? AuthKey.saltOf(user.getWrappedPrivateKey()) : null;
+        if (salt == null) {
+            if (kdfDecoySecret == null) kdfDecoySecret = jwtService.deriveSecret("kdf-salt-decoy");
+            salt = AuthKey.decoySalt(kdfDecoySecret, userId);
+        }
+        ctx.json(Map.of("salt", salt));
     }
 
     public void showLogin(Context ctx) {
@@ -404,6 +426,12 @@ public class AuthController {
         }
         if (!password.equals(confirmPassword)) {
             renderRegisterError(ctx, "auth.error.password.mismatch", userId);
+            return;
+        }
+        // Workspace mode: the browser sends an authKey, never the password (crypto.js). Anything
+        // else is a client still sending the typed password, which must not be stored.
+        if (AppHome.isWorkspaceMode() && !AuthKey.isWellFormed(password)) {
+            renderRegisterError(ctx, "auth.error.crypto.required", userId);
             return;
         }
         if (findUser(userId) != null) {
@@ -651,6 +679,11 @@ public class AuthController {
         var passwordError = PasswordUtil.validateNewPassword(newPassword, confirmPassword);
         if (passwordError != null) {
             ctx.status(400).json(Map.of("error", passwordError));
+            return;
+        }
+        // Recovery only exists in workspace mode, where the value is an authKey (see processRegister).
+        if (AppHome.isWorkspaceMode() && !AuthKey.isWellFormed(newPassword)) {
+            ctx.status(400).json(Map.of("error", "crypto_required"));
             return;
         }
         if (newWrappedPrivateKey == null || newWrappedPrivateKey.isBlank()

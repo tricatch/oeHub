@@ -11,6 +11,13 @@
 필드, `oe_csrf` 쿠키와 대조)이 추가로 필요하다. `static/js/util.js`의 전역 `fetch` 래퍼가 같은
 오리진 요청에는 이 헤더를 자동으로 붙여준다.
 
+`workspace` 모드에서는 비밀번호를 받는 모든 필드(`/login`, `/register`, `/setup`의 `password`,
+`/api/user/change-password`의 `currentPassword`·`newPassword`, `/api/user/recovery-key`의
+`currentPassword`, `/api/recover/reset`의 `newPassword`)가 타이핑한 비밀번호가 아니라 브라우저가
+유도한 **authKey**(base64url 43자)를 담는다. 서버는 이를 불투명한 비밀값으로 다루며, 이 형식이 아닌
+값이 새 비밀번호 자리에 오면 `crypto_required`로 거부한다([05](05-end-to-end-encryption.md#로그인과-비밀번호)).
+`self-hosted` 모드는 예전처럼 비밀번호 자체를 보낸다.
+
 세션 쿠키가 없는 요청은 `/api/*` 전역 필터에서 `401 Unauthorized`로 거부된다. `self-hosted` /
 `workspace` 표시가 없는 항목은 두 배포 모드 모두에서 동작한다.
 
@@ -151,6 +158,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/api/recover/verify`\|`/api/recover/reset` | 비밀번호 찾기 복구 플로우 |
+| GET | `/api/auth/kdf?userId=` | 로그인 전에 필요한 PBKDF2 salt 조회 (`workspace` 전용). 없는 ID에는 결정적 가짜 salt를 돌려줌 |
 | GET | `/share/{hostsId}/oelink`\|`/text` | 로그인 필요 없는 워크스페이스 내부 공유 링크 |
 | GET | `/link/{hostsId}/oelink`\|`/oelink/text` | 완전 공개(비로그인) "살아있는 링크" |
 | GET | `/share/proxy/{vhostId}/view`\|`/text` | 가상 호스트 공유 링크 (self-hosted 전용) |

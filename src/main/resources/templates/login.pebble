@@ -75,7 +75,9 @@
 </div>
 <script nonce="{{ cspNonce }}">window.MSG = {{ msgJson | raw }};</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<script nonce="{{ cspNonce }}">window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
 <script src="/js/crypto.js"></script>
+<script src="/js/auth-keys.js"></script>
 <script src="/js/session-keys.js"></script>
 <script nonce="{{ cspNonce }}">
 (function () {
@@ -96,15 +98,26 @@
     submitBtn.disabled = true;
 
     var password = form.password.value;
+    var userId = form.userId.value;
     var body = new URLSearchParams();
     body.set('_csrf', form._csrf.value);
     body.set('redirect', form.redirect.value);
-    body.set('userId', form.userId.value);
-    body.set('password', password);
+    body.set('userId', userId);
     body.set('rememberMe', form.rememberMe.checked ? 'on' : '');
 
-    fetch('/login', { method: 'POST', body: body, redirect: 'follow' })
-      .then(async function (response) {
+    // Workspace mode never sends the password: the browser derives an authKey (and the KEK that
+    // unwraps the private key) from it, and the server only ever sees the authKey - see auth-keys.js.
+    var keysPromise = window.OE_WORKSPACE_MODE
+      ? OE_AUTH.keysForLogin(userId, password)
+      : Promise.resolve(null);
+
+    keysPromise.then(function (keys) {
+      body.set('password', keys ? keys.authKey : password);
+      return fetch('/login', { method: 'POST', body: body, redirect: 'follow' })
+        .then(function (response) { return { response: response, keys: keys }; });
+    })
+      .then(async function (result) {
+        var response = result.response;
         if (!response.redirected) {
           // processLogin re-renders login.pebble (200, no redirect) on any failure - pull the
           // error message out of that response rather than replacing the whole document.
@@ -117,7 +130,7 @@
 
         var landingUrl = response.url;
         try {
-          await unwrapAndCacheSessionKeys(password);
+          await unwrapAndCacheSessionKeys(result.keys);
         } catch (err) {
           // Login itself already succeeded server-side (the cookie is set) - a key-unwrap
           // failure here shouldn't strand the user on the login page, just leave content
@@ -134,15 +147,17 @@
       });
   });
 
-  async function unwrapAndCacheSessionKeys(password) {
+  async function unwrapAndCacheSessionKeys(keys) {
+    // Self-hosted has no real key wrap (the account's wrapped key is a placeholder), so there is
+    // nothing to unwrap and no derived KEK.
+    if (!keys) return;
     var res = await fetch('/api/user/crypto-keys');
     if (!res.ok) return;
     var data = await res.json();
     if (!data.wrappedPrivateKey) return; // pre-e2e accounts with no keypair yet
 
     var record = JSON.parse(data.wrappedPrivateKey);
-    var salt = new Uint8Array(OE_CRYPTO.base64ToBuf(record.salt));
-    var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(password, salt);
+    var passwordKek = keys.kek;
     var privateKey = await OE_CRYPTO.unwrapPrivateKey(record, passwordKek);
     await OE_SESSION_KEYS.savePrivateKey(privateKey);
 

@@ -99,6 +99,7 @@
 <script nonce="{{ cspNonce }}">window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <script src="/js/crypto.js"></script>
+<script src="/js/auth-keys.js"></script>
 <script src="/js/util.js"></script>
 <script src="/js/recovery-code-modal.js"></script>
 <script nonce="{{ cspNonce }}">
@@ -109,16 +110,26 @@
   var recoveryModalEl = document.getElementById('recoveryCodeModal');
   var recoveryModal = new bootstrap.Modal(recoveryModalEl);
   var pendingRecoveryCode = '';
+  // Workspace mode: the authKey that stands in for the password when the form is finally submitted.
+  var pendingAuthKey = '';
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     if (submitBtn.disabled) return;
 
     var password = form.password.value;
-    // Minimal client-side pre-check (mirrors AuthController's own rules) purely to avoid wasting
-    // an RSA-2048 keygen on an obviously-invalid submission - the server remains the sole source
-    // of truth and re-validates everything itself regardless.
-    if (!password || password.length < 8 || password !== form.confirmPassword.value) {
+    if (window.OE_WORKSPACE_MODE) {
+      // The server never sees the password in workspace mode (only the authKey derived from it),
+      // so it cannot judge the password itself - this check is the enforcement, and a bad password
+      // must never be submitted as-is for the server to complain about.
+      var passwordError = OE_AUTH.passwordErrorKey(password, form.confirmPassword.value);
+      if (passwordError) {
+        showToast(MSG[passwordError]);
+        return;
+      }
+    } else if (!password || password.length < 8 || password !== form.confirmPassword.value) {
+      // Self-hosted: minimal pre-check (mirrors AuthController's own rules) - the server remains
+      // the source of truth and re-validates everything, so just let it render the error.
       form.submit();
       return;
     }
@@ -153,11 +164,11 @@
       return;
     }
 
-    var salt = OE_CRYPTO.randomBytes(16);
-    var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(password, salt);
-    var passwordWrap = await OE_CRYPTO.wrapPrivateKey(keyPair.privateKey, passwordKek);
+    var passwordKeys = await OE_AUTH.keysForNewPassword(password);
+    pendingAuthKey = passwordKeys.authKey;
+    var passwordWrap = await OE_CRYPTO.wrapPrivateKey(keyPair.privateKey, passwordKeys.kek);
     var wrappedPrivateKeyRecord = {
-      salt: OE_CRYPTO.bufToBase64(salt), iv: passwordWrap.iv, wrapped: passwordWrap.wrapped
+      salt: passwordKeys.salt, iv: passwordWrap.iv, wrapped: passwordWrap.wrapped
     };
 
     var recoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
@@ -194,7 +205,9 @@
     recoveryModal.hide();
     submitBtn.disabled = true;
     submitBtn.textContent = MSG['auth.creating.account'];
-    form.submit();
+    // Only reached in workspace mode (self-hosted submits straight from generateIdentityAndSubmit):
+    // the typed password is swapped out for the authKey so it never leaves the browser.
+    OE_AUTH.submitWithAuthKey(form, ['password', 'confirmPassword'], pendingAuthKey);
   });
 })();
 </script>

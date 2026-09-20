@@ -10,6 +10,7 @@ import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AuditLogger;
+import tricatch.oe.hub.config.AuthKey;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
@@ -224,6 +225,11 @@ public class UserController {
             return;
         }
         if (newWrappedPrivateKey == null || newWrappedPrivateKey.isBlank()) {
+            ctx.status(400).json(Map.of("error", "crypto_required"));
+            return;
+        }
+        // Workspace mode: newPassword is an authKey, never the typed password (see AuthKey).
+        if (tricatch.oe.hub.config.AppHome.isWorkspaceMode() && !AuthKey.isWellFormed(newPassword)) {
             ctx.status(400).json(Map.of("error", "crypto_required"));
             return;
         }

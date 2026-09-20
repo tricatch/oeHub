@@ -9,6 +9,7 @@ import tricatch.oe.hosts.mapper.HostsUaMapper;
 import tricatch.oe.hosts.mapper.HostsUrlMapper;
 import tricatch.oe.hosts.model.HostsUa;
 import tricatch.oe.hosts.model.HostsUrl;
+import tricatch.oe.hub.config.AuthKey;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubConfMapper;
@@ -112,6 +113,12 @@ public class SetupController {
         }
         if (!password.equals(confirm)) {
             ctx.render("templates/setup.pebble", buildModel("auth.error.password.mismatch", "", "generate"));
+            return;
+        }
+
+        // Workspace mode: the browser sends an authKey, never the password (crypto.js).
+        if (tricatch.oe.hub.config.AppHome.isWorkspaceMode() && !AuthKey.isWellFormed(password)) {
+            ctx.render("templates/setup.pebble", buildModel("auth.error.crypto.required", "", "generate"));
             return;
         }
 

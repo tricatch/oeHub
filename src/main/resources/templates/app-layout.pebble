@@ -115,6 +115,7 @@
 <script nonce="{{ cspNonce }}">window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
 <script src="/js/util.js"></script>
 <script src="/js/crypto.js"></script>
+<script src="/js/auth-keys.js"></script>
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
 <script src="/js/recovery-code-modal.js"></script>
@@ -312,6 +313,10 @@
     // re-deriving from currentPassword - simpler, and works the same way regardless of how the
     // key got into the cache.
     var newWrappedPrivateKey;
+    // What the server receives for the passwords: the typed values in self-hosted, but in
+    // workspace mode only authKeys derived from them (auth-keys.js) - the server never sees a
+    // password, so the "confirm" value is the new authKey again (equality was checked above).
+    var sentCurrent = current, sentNext = next, sentConfirm = confirmVal;
     if (!window.OE_WORKSPACE_MODE) {
       // self-hosted never had a real wrap to begin with (dummy identity crypto - e2eEncryption
       // design doc §1), so there is nothing to re-wrap and no session-cached key to require.
@@ -322,16 +327,24 @@
         showChangePasswordError(MSG['change.password.error.no.cached.key']);
         return;
       }
-      var salt = OE_CRYPTO.randomBytes(16);
-      var kek = await OE_CRYPTO.deriveKeyFromPassword(next, salt);
-      var wrap = await OE_CRYPTO.wrapPrivateKey(privateKey, kek);
-      newWrappedPrivateKey = JSON.stringify({ salt: OE_CRYPTO.bufToBase64(salt), iv: wrap.iv, wrapped: wrap.wrapped });
+      try {
+        sentCurrent = await OE_AUTH.currentAuthKey(current);
+        var newKeys = await OE_AUTH.keysForNewPassword(next);
+        var wrap = await OE_CRYPTO.wrapPrivateKey(privateKey, newKeys.kek);
+        newWrappedPrivateKey = JSON.stringify({ salt: newKeys.salt, iv: wrap.iv, wrapped: wrap.wrapped });
+        sentNext = newKeys.authKey;
+        sentConfirm = newKeys.authKey;
+      } catch (err) {
+        console.error('Key derivation failed:', err);
+        showChangePasswordError(MSG['change.password.error.failed']);
+        return;
+      }
     }
 
     var res = await fetch('/api/user/change-password', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        currentPassword: current, newPassword: next, confirmPassword: confirmVal,
+        currentPassword: sentCurrent, newPassword: sentNext, confirmPassword: sentConfirm,
         newWrappedPrivateKey: newWrappedPrivateKey
       })
     });
@@ -391,6 +404,17 @@
     var privateKey = await OE_SESSION_KEYS.loadPrivateKey().catch(function () { return null; });
     if (!privateKey) { showReissueConfirmError(MSG['change.password.error.no.cached.key']); return; }
 
+    // Reissue is workspace-mode only; the server verifies the authKey derived from the password,
+    // never the password itself (auth-keys.js).
+    var currentAuthKey;
+    try {
+      currentAuthKey = await OE_AUTH.currentAuthKey(currentPassword);
+    } catch (err) {
+      console.error('Key derivation failed:', err);
+      showReissueConfirmError(MSG['toast.recovery.reissue.failed']);
+      return;
+    }
+
     var recoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
     var recoveryKek = await OE_CRYPTO.importRecoveryKeyAsAesGcm(recoveryBytes);
     var recoveryWrap = await OE_CRYPTO.wrapPrivateKey(privateKey, recoveryKek);
@@ -401,7 +425,7 @@
     var res = await fetch('/api/user/recovery-key', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        currentPassword: currentPassword,
+        currentPassword: currentAuthKey,
         wrappedPrivateKeyRecovery: wrappedPrivateKeyRecovery, recoveryVerifier: recoveryVerifier
       })
     });

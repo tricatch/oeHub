@@ -298,6 +298,7 @@
 <script nonce="{{ cspNonce }}">window.MSG = {{ msgJson | raw }};</script>
 <script nonce="{{ cspNonce }}">window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
 <script src="/js/crypto.js"></script>
+<script src="/js/auth-keys.js"></script>
 <script src="/js/util.js"></script>
 <script src="/js/recovery-code-modal.js"></script>
 <script nonce="{{ cspNonce }}">
@@ -309,13 +310,23 @@
   var submitBtnDefaultHtml = submitBtn.innerHTML;
   var recoveryModal = new bootstrap.Modal(document.getElementById('recoveryCodeModal'));
   var pendingRecoveryCode = '';
+  // Workspace mode: the authKey that stands in for the password when the form is finally submitted.
+  var pendingAuthKey = '';
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     if (submitBtn.disabled) return;
 
     var password = form.password.value;
-    if (!password || password.length < 8 || password !== form.confirm.value) {
+    if (window.OE_WORKSPACE_MODE) {
+      // The server never sees the password in workspace mode (only the authKey derived from it),
+      // so this check is the enforcement - a bad password must not be submitted as-is.
+      var passwordError = OE_AUTH.passwordErrorKey(password, form.confirm.value);
+      if (passwordError) {
+        showToast(MSG[passwordError]);
+        return;
+      }
+    } else if (!password || password.length < 8 || password !== form.confirm.value) {
       form.submit();
       return;
     }
@@ -351,11 +362,11 @@
       return;
     }
 
-    var salt = OE_CRYPTO.randomBytes(16);
-    var passwordKek = await OE_CRYPTO.deriveKeyFromPassword(password, salt);
-    var passwordWrap = await OE_CRYPTO.wrapPrivateKey(keyPair.privateKey, passwordKek);
+    var passwordKeys = await OE_AUTH.keysForNewPassword(password);
+    pendingAuthKey = passwordKeys.authKey;
+    var passwordWrap = await OE_CRYPTO.wrapPrivateKey(keyPair.privateKey, passwordKeys.kek);
     var wrappedPrivateKeyRecord = {
-      salt: OE_CRYPTO.bufToBase64(salt), iv: passwordWrap.iv, wrapped: passwordWrap.wrapped
+      salt: passwordKeys.salt, iv: passwordWrap.iv, wrapped: passwordWrap.wrapped
     };
 
     var recoveryBytes = OE_CRYPTO.generateRecoveryKeyBytes();
@@ -390,7 +401,9 @@
     recoveryModal.hide();
     submitBtn.disabled = true;
     submitBtn.textContent = MSG['auth.creating.account'];
-    form.submit();
+    // Only reached in workspace mode (self-hosted submits straight from generateIdentityAndSubmit):
+    // the typed password is swapped out for the authKey so it never leaves the browser.
+    OE_AUTH.submitWithAuthKey(form, ['password', 'confirm'], pendingAuthKey);
   });
 })();
 </script>

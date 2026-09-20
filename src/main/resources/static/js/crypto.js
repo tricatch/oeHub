@@ -7,9 +7,14 @@
 //   - Personal keypair: RSA-OAEP 2048 / SHA-256 - wraps/unwraps the workspace key and, for
 //     'private' visibility, the content key directly. Small payloads only (<=190 bytes), which
 //     both a 32-byte AES key and a wrapped-key blob comfortably fit under.
-//   - Password -> KEK: PBKDF2-SHA256 (600,000 iterations - OWASP Password Storage Cheat Sheet's
-//     current minimum recommendation as of this writing; re-check and bump this constant if that
-//     guidance moves) deriving an AES-256-GCM key.
+//   - Password -> two independent secrets: PBKDF2-SHA256 (600,000 iterations - OWASP Password
+//     Storage Cheat Sheet's current minimum recommendation as of this writing; re-check and bump
+//     this constant if that guidance moves) yields a master value, and HKDF-SHA256 splits it into
+//       * the KEK (AES-256-GCM) that wraps the private key - never leaves the browser, and
+//       * the authKey - what the server receives and bcrypt-hashes INSTEAD of the password.
+//     The password itself therefore never reaches the server in workspace mode (which is what
+//     lets the server-blind claim hold against anyone who can see login requests); knowing the
+//     authKey reveals neither the password nor the KEK. See auth-keys.js for the form helpers.
 //   - Wrapping the private key (arbitrary-length pkcs8 blob) with that password KEK, or with the
 //     recovery key: AES-256-GCM. AES-KW requires the wrapped payload to be a multiple of 8 bytes,
 //     which a pkcs8-encoded RSA private key is not guaranteed to be - GCM has no such constraint
@@ -71,24 +76,41 @@ const OE_CRYPTO = (function () {
     );
   }
 
-  // ---- Password -> KEK (PBKDF2-SHA256 -> AES-256-GCM) ----
+  // ---- Password -> authKey + KEK (PBKDF2-SHA256, then HKDF-SHA256 with distinct info labels) ----
 
-  async function deriveKeyFromPassword(password, saltBytes) {
+  // 32 bytes as unpadded base64url = 43 chars; the server checks this exact shape (AuthKey.java).
+  function bufToBase64Url(buf) {
+    return bufToBase64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  async function deriveKeys(password, saltBytes) {
+    const encoder = new TextEncoder();
     const baseKey = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']
+      'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
     );
-    return crypto.subtle.deriveKey(
+    const master = await crypto.subtle.deriveBits(
       { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-      baseKey,
+      baseKey, 256
+    );
+    const hkdfKey = await crypto.subtle.importKey('raw', master, 'HKDF', false, ['deriveBits', 'deriveKey']);
+    const noSalt = new Uint8Array(0);
+    const authBits = await crypto.subtle.deriveBits(
+      { name: 'HKDF', hash: 'SHA-256', salt: noSalt, info: encoder.encode('oehub-auth-v1') },
+      hkdfKey, 256
+    );
+    const kek = await crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: noSalt, info: encoder.encode('oehub-kek-v1') },
+      hkdfKey,
       { name: 'AES-GCM', length: 256 },
       false,
       ['wrapKey', 'unwrapKey']
     );
+    return { authKey: bufToBase64Url(authBits), kek };
   }
 
   // ---- Wrap/unwrap the private key with an AES-GCM KEK (password-derived or recovery-key) ----
   // Returns/accepts { iv, wrapped, salt } as base64 strings - salt is only meaningful for the
-  // password path (PBKDF2 needs it to re-derive the same KEK) and is null for the recovery path.
+  // password path (PBKDF2 needs it to re-derive the same secrets) and is null for the recovery path.
 
   async function wrapPrivateKey(privateKey, kek) {
     const iv = randomBytes(12);
@@ -225,7 +247,7 @@ const OE_CRYPTO = (function () {
   return {
     PBKDF2_ITERATIONS,
     generateKeyPair, exportPublicKey, importPublicKey,
-    deriveKeyFromPassword,
+    deriveKeys,
     wrapPrivateKey, unwrapPrivateKey,
     generateRecoveryKeyBytes, importRecoveryKeyAsAesGcm, formatRecoveryDisplayCode, parseRecoveryDisplayCode,
     deriveRecoveryVerifier,

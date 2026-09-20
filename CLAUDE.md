@@ -61,6 +61,13 @@ Every URL (page, API, form POST) belongs to exactly one access class, and the cl
 ### Adding or renaming a role
 Update `Role`, the `HUB_USR.role` column width, the affected mapper SQL, the per-prefix filters, and the Korean docs (`docs/04`, `docs/07`, `docs/08`) together, in one change.
 
+## Passwords in Workspace Mode
+
+- In `workspace` mode the typed password must never reach the server. The browser derives an authKey and a KEK from it (`OE_CRYPTO.deriveKeys`, `static/js/auth-keys.js`) and sends only the authKey, in the field that used to carry the password; the server bcrypt-hashes and compares it as an opaque secret. `self-hosted` mode keeps sending the password (no content encryption; the forward proxy authenticates with it).
+- Any new form or API that accepts a password (sign-up, reset, confirm-current-password, ...) goes through `OE_AUTH` in workspace mode and rejects a non-authKey value with `AuthKey.isWellFormed` on the server. Never read, log, or store a typed password in workspace mode, and never submit the visible password input (`OE_AUTH.submitWithAuthKey` strips it).
+- Password rules (length, confirmation) in workspace mode are enforced in the browser only, because the server cannot see the password; keep `OE_AUTH.passwordErrorKey` in step with `PasswordUtil.validateNewPassword`.
+- Changing how the KEK or authKey is derived invalidates every existing account's wrapped private key; treat it as a schema-level change and update `docs/05` and `docs/06` in the same change.
+
 ## Launch Options — JVM System Properties
 
 - Every oeHub-specific launch option is a JVM system property named `-Doe.<name>` (e.g. `-Doe.port`, `-Doe.home`, `-Doe.mode`, `-Doe.db.file`, `-Doe.dev`, `-Doe.app.version`). Read it with `System.getProperty("oe.<name>")`.
