@@ -52,14 +52,15 @@
               {% elseif workspaceMode %}
               <div class="mb-3">
                 <label class="form-label">{{ msg['auth.workspace.name'] }}</label>
-                <input type="text" name="wsName" class="form-control" value="{{ wsName }}">
+                <input type="text" name="wsName" class="form-control" value="{{ wsName }}" autofocus>
                 <div class="form-text">{{ msg['auth.workspace.name.help'] }}</div>
               </div>
               {% endif %}
               <div class="mb-3">
                 <label class="form-label">{{ msg['auth.userid'] }}</label>
+                {# The workspace name, when shown, is the first field and takes the initial focus #}
                 <input type="text" name="userId" class="form-control"
-                       value="{{ userId }}" autofocus>
+                       value="{{ userId }}"{% if not (workspaceMode and not inviteCode) %} autofocus{% endif %}>
               </div>
 
               <div class="mb-3">

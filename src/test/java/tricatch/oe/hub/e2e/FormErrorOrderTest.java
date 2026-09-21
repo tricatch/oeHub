@@ -86,6 +86,7 @@ class FormErrorOrderTest {
         var page = browser.newPage();
         page.navigate(server.baseUrl() + "/register");
         var submit = page.locator("#btnRegisterSubmit");
+        assertThat(page.locator("input[name=wsName]")).isFocused();   // first field takes the focus
 
         submit.click();
         assertToast(page, "auth.error.wsname.required");
