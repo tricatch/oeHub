@@ -24,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A regular member (role usr) of a workspace can bring in new people, not only the workspace admin:
  * on "/oehub/members" they issue invite codes - into any team - and approve sign-ups. They see only
  * the codes they issued themselves, cannot reject a sign-up, and everything else about people
- * (roles, removal, teams) stays behind "/api/wsa/*". Workspace mode.
+ * (roles, removal, teams) stays behind "/api/wsa/*". They can also see who else is in their workspace
+ * (a read-only list of user id, admin or not, team and join date). Workspace mode.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -225,11 +226,32 @@ class MemberInviteApprovalTest {
 
     @Test
     @Order(6)
+    void memberSeesWhoElseIsInTheirWorkspace_readOnly() {
+        memberPage.navigate(server.baseUrl() + "/oehub/members");
+        var rows = memberPage.locator("#membersTbody tr[data-user-id]");
+        assertThat(rows).hasCount(3);                                             // founder, member, joiner
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id='" + FOUNDER_ID + "']")).isVisible();
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id='" + JOINER_ID + "']")).containsText("Sales");
+        assertThat(memberPage.locator("#membersTbody button")).hasCount(0);         // nothing to click
+
+        // The search box narrows the list.
+        memberPage.locator("#memberSearch").fill("joiner");
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id]")).hasCount(1);
+
+        // Only who they are, not how they behave: no last login, no keys, no user numbers.
+        var body = (String) api(memberPage, "GET", "/api/members/users", null).get(1);
+        assertThat(body).contains(FOUNDER_ID).doesNotContain("lastLoginAt").doesNotContain("publicKey").doesNotContain("userNo");
+    }
+
+    @Test
+    @Order(7)
     void otherWorkspacesAndOutsidersStayOut() {
         otherPage = browser.newPage();
         registerFounder(otherPage, "Other Members Co", OTHER_ID, OTHER_PW);
         // Another workspace has its own (empty) lists, and cannot approve this workspace's people.
         assertThat((String) api(otherPage, "GET", "/api/members/pending", null).get(1)).isEqualTo("[]");
+        var others = (String) api(otherPage, "GET", "/api/members/users", null).get(1);
+        assertThat(others).contains(OTHER_ID).doesNotContain(FOUNDER_ID).doesNotContain(MEMBER_ID);
         assertThat((String) api(otherPage, "GET", "/api/members/invites", null).get(1)).doesNotContain(memberInviteCode);
         assertThat((Integer) api(otherPage, "POST", "/api/members/pending/1/approve",
             "{\"wrappedWsKey\":\"x\"}").get(0)).isEqualTo(404);
@@ -237,6 +259,7 @@ class MemberInviteApprovalTest {
         var anon = playwright.request().newContext();
         try {
             assertThat(anon.get(server.baseUrl() + "/api/members/invites").status()).isEqualTo(401);
+            assertThat(anon.get(server.baseUrl() + "/api/members/users").status()).isEqualTo(401);
             var redirect = anon.get(server.baseUrl() + "/oehub/members",
                 com.microsoft.playwright.options.RequestOptions.create().setMaxRedirects(0));
             assertThat(redirect.status()).isEqualTo(302);

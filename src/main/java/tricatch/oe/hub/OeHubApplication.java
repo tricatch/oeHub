@@ -546,11 +546,13 @@ public class OeHubApplication {
             config.routes.post("/api/wsa/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
             config.routes.delete("/api/wsa/users/{userNo}",      adminUser::apiDeleteUser);
 
-            // Any member of a workspace: issue invite codes and approve sign-ups (workspace mode only).
+            // Any member of a workspace: see who is in it, issue invite codes and approve sign-ups
+            // (workspace mode only).
             // Deliberately open to every logged-in account - the handlers act on the caller's own
             // workspace, and rejecting, roles, removal and team assignment stay under "/api/wsa/*".
             if (workspaceMode) {
                 config.routes.get("/oehub/members",                          member::showMembers);
+                config.routes.get("/api/members/users",                      member::apiListMembers);
                 config.routes.get("/api/members/invites",                    member::apiListMyInvites);
                 config.routes.post("/api/members/invites",                   adminUser::apiCreateInvite);
                 config.routes.get("/api/members/teams",                      adminUser::apiListTeams);

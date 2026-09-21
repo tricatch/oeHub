@@ -20,6 +20,40 @@
   {% include "templates/oehub/_invites-card.pebble" %}
   {% include "templates/oehub/_pending-card.pebble" %}
 
+  {# Read-only list of this workspace's members - roles, removal and teams are the admin's to change #}
+  <div class="oe-info-section">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:90px;">
+        <col style="width:170px;">
+        <col style="width:155px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="4">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>{{ msg['users.card.header'] }}</span>
+              <div style="width:200px;">
+                <input type="search" id="memberSearch" class="form-control form-control-sm"
+                       placeholder="{{ msg['users.search.placeholder'] }}">
+              </div>
+            </div>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.col.userid'] }}</th>
+          <th class="text-center">{{ msg['users.col.role'] }}</th>
+          <th>{{ msg['users.col.team'] }}</th>
+          <th>{{ msg['users.col.created'] }}</th>
+        </tr>
+      </thead>
+      <tbody id="membersTbody">
+        <tr><td colspan="4" class="text-muted text-center py-3">{{ msg['users.empty'] }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 </div>
 
 </div><!-- /settings-app -->
@@ -34,6 +68,39 @@
     approveUrl: function (userNo) { return '/api/members/pending/' + userNo + '/approve'; },
     rejectUrl: null
   });
+
+  // Read-only member list; the search box filters it as you type.
+  var membersTbody = document.getElementById('membersTbody');
+  var memberSearch = document.getElementById('memberSearch');
+  var searchTimer;
+  function loadMembers() {
+    var q = memberSearch.value.trim();
+    fetch('/api/members/users' + (q ? '?q=' + encodeURIComponent(q) : ''))
+      .then(function (r) { return r.json(); })
+      .then(function (members) {
+        if (!members || members.length === 0) {
+          membersTbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">' + escHtml(MSG['users.empty']) + '</td></tr>';
+          return;
+        }
+        membersTbody.innerHTML = members.map(function (m) {
+          var icon = m.admin ? 'oe-icon-admin' : 'oe-icon-user';
+          var color = m.admin ? '#5a9e2f' : '#adb5bd';
+          var title = m.admin ? ' title="' + escHtml(MSG['users.role.admin']) + '"' : '';
+          return '<tr data-user-id="' + escHtml(m.userId) + '">' +
+            '<td>' + escHtml(m.userId) + '</td>' +
+            '<td class="text-center"><span class="oe-icon ' + icon + '" style="width:16px;height:16px;color:' + color + '"' + title + '></span></td>' +
+            '<td class="small text-muted">' + escHtml(m.teamName || '-') + '</td>' +
+            '<td class="small text-muted">' + escHtml(m.createAt) + '</td></tr>';
+        }).join('');
+      })
+      .catch(function () {});
+  }
+  memberSearch.addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadMembers, 250);
+  });
+  loadMembers();
+
   fetch('/api/members/teams')
     .then(function (r) { return r.json(); })
     .then(function (teams) { if (inviteCard) inviteCard.setTeams(teams); })
