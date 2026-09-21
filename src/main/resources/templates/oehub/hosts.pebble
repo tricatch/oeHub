@@ -448,7 +448,45 @@ function proxyServerOn() {
     const dek = await OE_CRYPTO.generateContentKey();
     const enc = await OE_CRYPTO.encryptContent(plaintext, dek);
     const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey);
-    return { encryptedContent: JSON.stringify(enc), wrappedContentKey, dek };
+    return { encryptedContent: JSON.stringify(enc), wrappedContentKey };
+  }
+
+  // The one way a full row from the server becomes a visible entry in `profiles`: it is decrypted
+  // in place first (which also caches its DEK for later saves), so ciphertext can never reach the
+  // list or the editor. Any new "server hands back a row" path must go through here, never a bare
+  // profiles.push(). Returns false (after a toast) when the needed session key had expired.
+  async function addProfileRow(p) {
+    const keyExpired = await decryptProfileInPlace(p);
+    if (keyExpired) showToast(MSG['change.password.error.no.cached.key']);
+    profiles.push(p);
+    renderProfiles();
+    activateProfile(p.hostsId, false);
+    return !keyExpired;
+  }
+
+  // Another member's public/collabo row, fetched via /view and decrypted with the same helper the
+  // share viewer uses (passes plaintext through unchanged in self-hosted/unencrypted rows).
+  async function fetchViewPlaintext(hostsId) {
+    const res = await fetch('/api/hosts/' + hostsId + '/view');
+    if (!res.ok) throw new Error('view failed');
+    const row = await res.json();
+    return OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
+  }
+
+  // Request options for POST /api/hosts/{id}/copy. In workspace mode HostsProfService.copyProfile
+  // refuses an encrypted source unless handed a fresh {encryptedContent, wrappedContentKey}
+  // (copying its ciphertext as-is with no key would strand it - e2eEncryption design doc §9), so
+  // the source is decrypted and re-encrypted for the copy exactly like a brand-new profile.
+  // Throws if the source can't be read/decrypted.
+  async function copyRequestOptions(sourceHostId) {
+    const opts = {method: 'POST'};
+    if (!window.OE_WORKSPACE_MODE) return opts;
+    const enc = await encryptNewContent(await fetchViewPlaintext(sourceHostId));
+    if (enc) {
+      opts.headers = {'Content-Type': 'application/json'};
+      opts.body = JSON.stringify({encryptedContent: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey});
+    }
+    return opts;
   }
 
   // Ace editor
@@ -590,10 +628,7 @@ function proxyServerOn() {
     // (design doc §1/§9). /view returns the row's raw fields instead and this decrypts them the
     // same way hosts.pebble decrypts its own list (falls through unchanged in self-hosted/
     // unencrypted rows, since OE_CONTENT_CRYPTO.decrypt() passes plaintext straight through).
-    fetch('/api/hosts/' + result.hostsId + '/view').then(r => {
-      if (!r.ok) throw new Error('load failed');
-      return r.json();
-    }).then(row => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)).then(plain => {
+    fetchViewPlaintext(result.hostsId).then(plain => {
       if (activeHostId !== result.hostsId) return; // a newer selection has since taken over
       editor.setValue(plain, -1);
       editor.resize(true);
@@ -679,26 +714,21 @@ function proxyServerOn() {
   document.getElementById('btnAdd').addEventListener('click', async () => {
     const res = await fetch('/api/hosts', {method: 'POST'});
     if (res.ok) {
-      const p = await res.json();
+      let p = await res.json();
       // The server generates the initial example content in plaintext (it doesn't know how to
       // encrypt), so in workspace mode the client encrypts it right after creation and patches the
-      // row with both the ciphertext and its wrapped key in one call.
+      // row with both the ciphertext and its wrapped key in one call. The patched row (ciphertext)
+      // then goes through addProfileRow like any other; if the patch fails, the plaintext row
+      // create() returned is shown as-is.
       const enc = await encryptNewContent(p.hostsContent).catch(() => null);
       if (enc) {
         const patchRes = await fetch('/api/hosts/' + p.hostsId + '/content', {
           method: 'PATCH', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({content: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey})
         });
-        if (patchRes.ok) {
-          dekByHostId[p.hostsId] = enc.dek;
-          p.wrappedContentKey = enc.wrappedContentKey;
-          // p.hostsContent stays the plaintext already returned by create() - only the stored
-          // (server-side) copy needed to become ciphertext.
-        }
+        if (patchRes.ok) p = await patchRes.json();
       }
-      profiles.push(p);
-      renderProfiles();
-      activateProfile(p.hostsId, false);
+      await addProfileRow(p);
     }
   });
 
@@ -983,24 +1013,12 @@ function proxyServerOn() {
       el.querySelector('.search-copy-btn').addEventListener('click', async e => {
         e.stopPropagation();
         const url = isCollabo ? '/api/hosts/' + r.hostsId + '/register' : '/api/hosts/' + r.hostsId + '/copy';
+        // A collabo profile is registered as a reference row (no content/key of its own, see
+        // cloudGroupService design doc §4-2); anything else is copied.
         var opts = {method: 'POST'};
-        if (!isCollabo && window.OE_WORKSPACE_MODE) {
-          // Copying a 'public' profile (collabo instead goes through /register above, which
-          // just adds a reference row - no content/key of its own, see cloudGroupService design
-          // doc §4-2): if the source is encrypted, HostsProfService.copyProfile refuses the copy
-          // outright unless we hand it a fresh {encryptedContent, wrappedContentKey} - copying
-          // its ciphertext as-is with no key would permanently strand it (e2eEncryption design
-          // doc §9's guard). So unwrap+decrypt the source with its own (workspace) key via the
-          // same /view endpoint the read-only search viewer uses, then re-encrypt for the copy
-          // exactly like a brand-new profile (encryptNewContent, already used by btnAdd).
+        if (!isCollabo) {
           try {
-            const row = await (await fetch('/api/hosts/' + r.hostsId + '/view')).json();
-            const plain = await OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
-            const enc = await encryptNewContent(plain);
-            if (enc) {
-              opts.headers = {'Content-Type': 'application/json'};
-              opts.body = JSON.stringify({encryptedContent: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey});
-            }
+            opts = await copyRequestOptions(r.hostsId);
           } catch (err) {
             showToast(MSG['toast.copy.failed']);
             return;
@@ -1008,14 +1026,9 @@ function proxyServerOn() {
         }
         const res = await fetch(url, opts);
         if (res.ok) {
-          const p = await res.json();
-          // The server hands back ciphertext (a copy's own, or a collabo ref's parent content) -
-          // decrypt it like every row loaded at page start, which also caches its DEK for saves.
-          if (await decryptProfileInPlace(p)) showToast(MSG['change.password.error.no.cached.key']);
-          profiles.push(p);
-          renderProfiles();
-          activateProfile(p.hostsId, false);
-          showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+          if (await addProfileRow(await res.json())) {
+            showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+          }
         } else {
           showToast(MSG['toast.copy.failed']);
         }
@@ -1039,30 +1052,14 @@ function proxyServerOn() {
     btn.innerHTML = BUSY_HTML;
     feedback.style.display = 'none';
     try {
-      var opts = {method: 'POST'};
-      if (window.OE_WORKSPACE_MODE) {
-        // Same gap as the search-copy button (e2eEncryption design doc §9): the source row is
-        // 'public'-only (collabo can't be reached this way - no /register fallback here, since a
-        // pasted link never carries the "is this collabo" info register vs copy needs), and if
-        // it's encrypted, copyProfile refuses without a fresh {encryptedContent,
-        // wrappedContentKey} - unwrap+decrypt via /view, then re-encrypt like a brand-new profile.
-        var row = await (await fetch('/api/hosts/' + hostId + '/view')).json();
-        var plain = await OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
-        var enc = await encryptNewContent(plain);
-        if (enc) {
-          opts.headers = {'Content-Type': 'application/json'};
-          opts.body = JSON.stringify({encryptedContent: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey});
-        }
-      }
-      const res = await fetch('/api/hosts/' + hostId + '/copy', opts);
+      // The source row is 'public'-only (collabo can't be reached this way - no /register
+      // fallback here, since a pasted link never carries the "is this collabo" info register vs
+      // copy needs).
+      const res = await fetch('/api/hosts/' + hostId + '/copy', await copyRequestOptions(hostId));
       if (res.ok) {
-        const p = await res.json();
-        await decryptProfileInPlace(p);
-        profiles.push(p);
-        renderProfiles();
-        activateProfile(p.hostsId, false);
+        const keyOk = await addProfileRow(await res.json());
         bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
-        showToast(MSG['toast.imported']);
+        if (keyOk) showToast(MSG['toast.imported']);
         return;
       }
     } catch (e) { /* fall through to the not-found feedback below */ }
@@ -1205,20 +1202,9 @@ function proxyServerOn() {
         ? {content: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey}
         : {content})
     });
-    if (contentRes.ok) {
-      p = await contentRes.json();
-      if (enc) {
-        // The response carries ciphertext; keep the plaintext client-side and cache the DEK so
-        // later edits of this row re-encrypt instead of writing plaintext.
-        dekByHostId[p.hostsId] = enc.dek;
-        p.hostsContent = content;
-      }
-    }
+    if (contentRes.ok) p = await contentRes.json();
 
-    profiles.push(p);
-    renderProfiles();
-    activateProfile(p.hostsId, false);
-    showToast(MSG['toast.merge.saved']);
+    if (await addProfileRow(p)) showToast(MSG['toast.merge.saved']);
   });
 
   function buildSchemeArgs(browser) {
