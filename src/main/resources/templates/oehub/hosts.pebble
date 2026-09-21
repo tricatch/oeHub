@@ -1009,6 +1009,9 @@ function proxyServerOn() {
         const res = await fetch(url, opts);
         if (res.ok) {
           const p = await res.json();
+          // The server hands back ciphertext (a copy's own, or a collabo ref's parent content) -
+          // decrypt it like every row loaded at page start, which also caches its DEK for saves.
+          if (await decryptProfileInPlace(p)) showToast(MSG['change.password.error.no.cached.key']);
           profiles.push(p);
           renderProfiles();
           activateProfile(p.hostsId, false);
@@ -1054,6 +1057,7 @@ function proxyServerOn() {
       const res = await fetch('/api/hosts/' + hostId + '/copy', opts);
       if (res.ok) {
         const p = await res.json();
+        await decryptProfileInPlace(p);
         profiles.push(p);
         renderProfiles();
         activateProfile(p.hostsId, false);
@@ -1179,6 +1183,12 @@ function proxyServerOn() {
     const content = allEntries.filter(e => e.active).map(e => `${e.ip} ${e.host}`).join('\n');
     const name = selectedProfiles.map(p => p.hostsProfile).join(' + ');
 
+    // Workspace mode: the merged content must reach the server only as ciphertext (fresh DEK,
+    // wrapped with the workspace key - same as btnAdd). Encrypt before creating anything, so an
+    // expired key aborts the save instead of leaving a plaintext row behind.
+    const enc = await encryptNewContent(content).catch(() => null);
+    if (window.OE_WORKSPACE_MODE && !enc) { showToast(MSG['toast.merge.save.failed']); return; }
+
     const createRes = await fetch('/api/hosts', {method: 'POST'});
     if (!createRes.ok) { showToast(MSG['toast.merge.save.failed']); return; }
     let p = await createRes.json();
@@ -1191,9 +1201,19 @@ function proxyServerOn() {
 
     const contentRes = await fetch('/api/hosts/' + p.hostsId + '/content', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content})
+      body: JSON.stringify(enc
+        ? {content: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey}
+        : {content})
     });
-    if (contentRes.ok) p = await contentRes.json();
+    if (contentRes.ok) {
+      p = await contentRes.json();
+      if (enc) {
+        // The response carries ciphertext; keep the plaintext client-side and cache the DEK so
+        // later edits of this row re-encrypt instead of writing plaintext.
+        dekByHostId[p.hostsId] = enc.dek;
+        p.hostsContent = content;
+      }
+    }
 
     profiles.push(p);
     renderProfiles();

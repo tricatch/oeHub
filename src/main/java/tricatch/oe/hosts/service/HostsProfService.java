@@ -431,11 +431,17 @@ public class HostsProfService {
         return entries;
     }
 
+    // A collabo parent row is stored under the negated creator's user_no (see convertToCollabo), so
+    // resolving its owner as a HUB_USR row means un-negating it first.
+    private static Long realOwnerNo(HostsProf row) {
+        return Math.abs(row.getUserNo());
+    }
+
     public String getOwnerUserId(String hostId) {
         try (var session = sqlSessionFactory.openSession()) {
             var hostsProf = session.getMapper(HostsProfMapper.class).findByHostsId(hostId);
             if (hostsProf == null) return null;
-            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(hostsProf.getUserNo());
+            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(realOwnerNo(hostsProf));
             return hubUser != null ? hubUser.getUserId() : null;
         }
     }
@@ -443,14 +449,13 @@ public class HostsProfService {
     // Used by the /share viewer's workspace-mode workspace gate (e2eEncryption design doc §9's
     // reinterpretation of cloudGroupService doc §2.4: a shared link is only viewable by someone
     // already logged into the SAME workspace, since that's what lets their browser use its
-    // cached workspace key to decrypt). Mirrors getOwnerUserId's exact lookup (hostsProf.getUserNo()
-    // un-negated - a share link is always minted from the viewer's own row, never a raw collabo
-    // parent id, so this is always a real, positive HUB_USR.user_no).
+    // cached workspace key to decrypt). Mirrors getOwnerUserId's exact lookup. A raw collabo parent
+    // id (what search results and /view pass) is stored under a negated user_no, hence realOwnerNo.
     public Long getOwnerWsNo(String hostId) {
         try (var session = sqlSessionFactory.openSession()) {
             var hostsProf = session.getMapper(HostsProfMapper.class).findByHostsId(hostId);
             if (hostsProf == null) return null;
-            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(hostsProf.getUserNo());
+            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(realOwnerNo(hostsProf));
             return hubUser != null ? hubUser.getWsNo() : null;
         }
     }
