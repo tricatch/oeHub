@@ -27,6 +27,7 @@ import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
 import tricatch.oe.hub.controller.WorkspaceController;
+import tricatch.oe.hub.controller.WsaSettingsController;
 import tricatch.oe.hosts.controller.HostsController;
 import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
@@ -157,7 +158,7 @@ public class OeHubApplication {
         var jwtService  = new JwtService(sqlSessionFactory);
         var settings    = new SettingsController(sqlSessionFactory, objectMapper);
         var auth        = new AuthController(sqlSessionFactory, jwtService);
-        var setup       = new SetupController(sqlSessionFactory, settings, objectMapper, auth);
+        var setup       = new SetupController(sqlSessionFactory, settings, auth);
         var hosts       = new HostsController(sqlSessionFactory, settings, objectMapper);
         var proxy       = workspaceMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
@@ -165,6 +166,7 @@ public class OeHubApplication {
         var auditLogCtrl = new AuditLogController(sqlSessionFactory);
         var adminUa     = new AdminHostsUaController(sqlSessionFactory, objectMapper);
         var adminUrl    = new AdminHostsUrlController(sqlSessionFactory, objectMapper);
+        var wsaSettings = new WsaSettingsController();
         var oidExtension = new OidExtensionController(settings);
         // Instance-admin workspace console (cloudGroupService design doc §2.5/§3 item 2) -
         // workspace mode only, so constructed unconditionally here (cheap, no I/O) but only
@@ -300,6 +302,13 @@ public class OeHubApplication {
             // for the entire SSL reverse proxy. SetupController.processSetup logs the newly-created
             // admin in immediately so the legitimate wizard flow keeps working once this closes.
             config.routes.before("/setup/*", ctx -> {
+                // Presets belong to a workspace, which /setup creates together with the admin: before
+                // that there is nothing to attach them to (the wizard hides the tables until then).
+                if (ctx.path().startsWith("/setup/hosts-") && AuthController.currentUser(ctx) == null) {
+                    ctx.status(401).result("Unauthorized");
+                    ctx.skipRemainingHandlers();
+                    return;
+                }
                 if (SetupController.isAdminConfigured()) {
                     if (!Role.isInstanceAdmin(AuthController.currentUser(ctx))) {
                         ctx.status(403).result("Forbidden");
@@ -336,16 +345,18 @@ public class OeHubApplication {
                 config.routes.post("/setup/ca/import",   setup::importCa);
                 config.routes.post("/setup/oid-domain-default", setup::saveOidDomainDefault);
             }
-            config.routes.get("/setup/hosts-url",              setup::apiSetupUrlList);
-            config.routes.post("/setup/hosts-url",             setup::apiSetupUrlCreate);
-            config.routes.patch("/setup/hosts-url/{urlId}",    setup::apiSetupUrlUpdate);
-            config.routes.delete("/setup/hosts-url/{urlId}",   setup::apiSetupUrlDelete);
-            config.routes.put("/setup/hosts-url/order",        setup::apiSetupUrlReorder);
-            config.routes.get("/setup/hosts-ua",               setup::apiSetupUaList);
-            config.routes.post("/setup/hosts-ua",              setup::apiSetupUaCreate);
-            config.routes.patch("/setup/hosts-ua/{uaId}",      setup::apiSetupUaUpdate);
-            config.routes.delete("/setup/hosts-ua/{uaId}",     setup::apiSetupUaDelete);
-            config.routes.put("/setup/hosts-ua/order",         setup::apiSetupUaReorder);
+            // The wizard's preset tables use the same workspace-scoped handlers as the settings pages:
+            // they act on the logged-in admin's workspace, which exists once /setup created the admin.
+            config.routes.get("/setup/hosts-url",              adminUrl::apiList);
+            config.routes.post("/setup/hosts-url",             adminUrl::apiCreate);
+            config.routes.patch("/setup/hosts-url/{urlId}",    adminUrl::apiUpdate);
+            config.routes.delete("/setup/hosts-url/{urlId}",   adminUrl::apiDelete);
+            config.routes.put("/setup/hosts-url/order",        adminUrl::apiReorder);
+            config.routes.get("/setup/hosts-ua",               adminUa::apiList);
+            config.routes.post("/setup/hosts-ua",              adminUa::apiCreate);
+            config.routes.patch("/setup/hosts-ua/{uaId}",      adminUa::apiUpdate);
+            config.routes.delete("/setup/hosts-ua/{uaId}",     adminUa::apiDelete);
+            config.routes.put("/setup/hosts-ua/order",         adminUa::apiReorder);
 
             config.routes.get("/", ctx -> {
                 var model = new HashMap<String, Object>();
@@ -558,6 +569,20 @@ public class OeHubApplication {
                 config.routes.delete("/api/wsa/teams/{teamNo}",     adminUser::apiDeleteTeam);
                 config.routes.patch("/api/wsa/users/{userNo}/team", adminUser::apiSetUserTeam);
             }
+
+            // Workspace admin: the shared Open URL / User-Agent presets of their own workspace - the
+            // same handlers as the "/api/adm/hosts/*" routes below (instance admin, own workspace).
+            config.routes.get("/wsa/settings",                 wsaSettings::showSettings);
+            config.routes.get("/api/wsa/hosts/ua",              adminUa::apiList);
+            config.routes.post("/api/wsa/hosts/ua",             adminUa::apiCreate);
+            config.routes.patch("/api/wsa/hosts/ua/{uaId}",     adminUa::apiUpdate);
+            config.routes.delete("/api/wsa/hosts/ua/{uaId}",    adminUa::apiDelete);
+            config.routes.put("/api/wsa/hosts/ua/order",        adminUa::apiReorder);
+            config.routes.get("/api/wsa/hosts/url",             adminUrl::apiList);
+            config.routes.post("/api/wsa/hosts/url",            adminUrl::apiCreate);
+            config.routes.patch("/api/wsa/hosts/url/{urlId}",   adminUrl::apiUpdate);
+            config.routes.delete("/api/wsa/hosts/url/{urlId}",  adminUrl::apiDelete);
+            config.routes.put("/api/wsa/hosts/url/order",       adminUrl::apiReorder);
 
             // Admin: hosts user-agent presets
             config.routes.get("/api/adm/hosts/ua",              adminUa::apiList);

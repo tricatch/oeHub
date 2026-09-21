@@ -1,14 +1,9 @@
 package tricatch.oe.hub.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import tricatch.oe.hosts.mapper.HostsUaMapper;
-import tricatch.oe.hosts.mapper.HostsUrlMapper;
-import tricatch.oe.hosts.model.HostsUa;
-import tricatch.oe.hosts.model.HostsUrl;
 import tricatch.oe.hub.config.AuthKey;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.config.UserIdRules;
@@ -24,9 +19,6 @@ import tricatch.oe.proxy.ReverseProxyServer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 public class SetupController {
 
@@ -44,14 +36,12 @@ public class SetupController {
 
     private final SqlSessionFactory sqlSessionFactory;
     private final SettingsController settings;
-    private final ObjectMapper objectMapper;
     private final AuthController authController;
 
-    public SetupController(SqlSessionFactory sqlSessionFactory, SettingsController settings, ObjectMapper objectMapper,
+    public SetupController(SqlSessionFactory sqlSessionFactory, SettingsController settings,
                             AuthController authController) {
         this.sqlSessionFactory = sqlSessionFactory;
         this.settings = settings;
-        this.objectMapper = objectMapper;
         this.authController = authController;
     }
 
@@ -285,152 +275,6 @@ public class SetupController {
         } catch (Exception e) {
             logger.warn("SSL proxy server could not be started: {}", e.getMessage());
         }
-    }
-
-    public void apiSetupUrlList(Context ctx) {
-        try (var session = sqlSessionFactory.openSession()) {
-            ctx.json(session.getMapper(HostsUrlMapper.class).findAll());
-        }
-    }
-
-    public void apiSetupUrlCreate(Context ctx) throws Exception {
-        var body = objectMapper.readValue(ctx.body(), Map.class);
-        var urlName = (String) body.get("urlName");
-        var urlValue = (String) body.get("urlValue");
-        if (urlName == null || urlName.isBlank() || urlValue == null || urlValue.isBlank()) {
-            ctx.status(400); return;
-        }
-        var now = LocalDateTime.now();
-        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
-        var url = new HostsUrl();
-        url.setUrlId(UUID.randomUUID().toString().replace("-", "").substring(0, 32));
-        url.setUrlName(urlName.trim());
-        url.setUrlValue(urlValue.trim());
-        url.setCreatedBy(actorUserNo);
-        url.setUpdatedBy(actorUserNo);
-        url.setCreateAt(now);
-        url.setUpdatedAt(now);
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var mapper = session.getMapper(HostsUrlMapper.class);
-            url.setSortOrder(mapper.nextSortOrder());
-            mapper.insert(url);
-        }
-        ctx.json(url).status(201);
-    }
-
-    public void apiSetupUrlUpdate(Context ctx) throws Exception {
-        var urlId = ctx.pathParam("urlId");
-        var body = objectMapper.readValue(ctx.body(), Map.class);
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var mapper = session.getMapper(HostsUrlMapper.class);
-            var url = mapper.findByIdGlobal(urlId);
-            if (url == null) { ctx.status(404); return; }
-            if (body.get("urlName") instanceof String s) url.setUrlName(s.trim());
-            if (body.get("urlValue") instanceof String s) url.setUrlValue(s.trim());
-            url.setUpdatedBy(AuthController.currentUser(ctx).getUserNo());
-            url.setUpdatedAt(LocalDateTime.now());
-            mapper.update(url);
-            ctx.json(url);
-        }
-    }
-
-    public void apiSetupUrlDelete(Context ctx) {
-        var urlId = ctx.pathParam("urlId");
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var deleted = session.getMapper(HostsUrlMapper.class).deleteByIdGlobal(urlId);
-            if (deleted == 0) { ctx.status(404); return; }
-        }
-        ctx.status(204);
-    }
-
-    public void apiSetupUrlReorder(Context ctx) throws Exception {
-        var ids = objectMapper.readValue(ctx.body(), List.class);
-        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var mapper = session.getMapper(HostsUrlMapper.class);
-            for (int i = 0; i < ids.size(); i++) {
-                var url = mapper.findByIdGlobal((String) ids.get(i));
-                if (url == null) continue;
-                url.setSortOrder(i);
-                url.setUpdatedBy(actorUserNo);
-                url.setUpdatedAt(LocalDateTime.now());
-                mapper.update(url);
-            }
-        }
-        ctx.status(204);
-    }
-
-    public void apiSetupUaList(Context ctx) {
-        try (var session = sqlSessionFactory.openSession()) {
-            ctx.json(session.getMapper(HostsUaMapper.class).findAll());
-        }
-    }
-
-    public void apiSetupUaCreate(Context ctx) throws Exception {
-        var body = objectMapper.readValue(ctx.body(), Map.class);
-        var uaName = (String) body.get("uaName");
-        var uaValue = (String) body.get("uaValue");
-        if (uaName == null || uaName.isBlank() || uaValue == null || uaValue.isBlank()) {
-            ctx.status(400); return;
-        }
-        var now = LocalDateTime.now();
-        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
-        var ua = new HostsUa();
-        ua.setUaId(UUID.randomUUID().toString().replace("-", "").substring(0, 32));
-        ua.setUaName(uaName.trim());
-        ua.setUaValue(uaValue.trim());
-        ua.setCreatedBy(actorUserNo);
-        ua.setUpdatedBy(actorUserNo);
-        ua.setCreateAt(now);
-        ua.setUpdatedAt(now);
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var mapper = session.getMapper(HostsUaMapper.class);
-            ua.setSortOrder(mapper.nextSortOrder());
-            mapper.insert(ua);
-        }
-        ctx.json(ua).status(201);
-    }
-
-    public void apiSetupUaUpdate(Context ctx) throws Exception {
-        var uaId = ctx.pathParam("uaId");
-        var body = objectMapper.readValue(ctx.body(), Map.class);
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var mapper = session.getMapper(HostsUaMapper.class);
-            var ua = mapper.findByIdGlobal(uaId);
-            if (ua == null) { ctx.status(404); return; }
-            if (body.get("uaName") instanceof String s) ua.setUaName(s.trim());
-            if (body.get("uaValue") instanceof String s) ua.setUaValue(s.trim());
-            ua.setUpdatedBy(AuthController.currentUser(ctx).getUserNo());
-            ua.setUpdatedAt(LocalDateTime.now());
-            mapper.update(ua);
-            ctx.json(ua);
-        }
-    }
-
-    public void apiSetupUaDelete(Context ctx) {
-        var uaId = ctx.pathParam("uaId");
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var deleted = session.getMapper(HostsUaMapper.class).deleteByIdGlobal(uaId);
-            if (deleted == 0) { ctx.status(404); return; }
-        }
-        ctx.status(204);
-    }
-
-    public void apiSetupUaReorder(Context ctx) throws Exception {
-        var ids = objectMapper.readValue(ctx.body(), List.class);
-        var actorUserNo = AuthController.currentUser(ctx).getUserNo();
-        try (var session = sqlSessionFactory.openSession(true)) {
-            var mapper = session.getMapper(HostsUaMapper.class);
-            for (int i = 0; i < ids.size(); i++) {
-                var ua = mapper.findByIdGlobal((String) ids.get(i));
-                if (ua == null) continue;
-                ua.setSortOrder(i);
-                ua.setUpdatedBy(actorUserNo);
-                ua.setUpdatedAt(LocalDateTime.now());
-                mapper.update(ua);
-            }
-        }
-        ctx.status(204);
     }
 
     public void saveOidDomainDefault(Context ctx) {

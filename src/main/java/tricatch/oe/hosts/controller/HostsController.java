@@ -440,7 +440,7 @@ public class HostsController {
     public void apiMyUaList(Context ctx) {
         var user = AuthController.currentUser(ctx);
         try (var session = sqlSessionFactory.openSession()) {
-            var presets = session.getMapper(HostsUaMapper.class).findAllForUser(user.getUserNo());
+            var presets = session.getMapper(HostsUaMapper.class).findAllForUser(user.getWsNo(), user.getUserNo());
             ctx.json(presets.stream().filter(p -> p.getUserNo() != null).toList());
         }
     }
@@ -466,7 +466,7 @@ public class HostsController {
     public void apiUaPresets(Context ctx) {
         var user = AuthController.currentUser(ctx);
         try (var session = sqlSessionFactory.openSession()) {
-            var presets = session.getMapper(HostsUaMapper.class).findAllForUser(user.getUserNo());
+            var presets = session.getMapper(HostsUaMapper.class).findAllForUser(user.getWsNo(), user.getUserNo());
             presets.forEach(p -> p.setMine(p.getUserNo() != null));
             ctx.json(presets);
         }
@@ -486,6 +486,7 @@ public class HostsController {
         ua.setUaName(uaName.trim());
         ua.setUaValue(uaValue.trim());
         ua.setUserNo(user.getUserNo());
+        ua.setWsNo(user.getWsNo());
         ua.setCreatedBy(user.getUserNo());
         ua.setUpdatedBy(user.getUserNo());
         ua.setCreateAt(now);
@@ -529,7 +530,7 @@ public class HostsController {
     public void apiMyUrlList(Context ctx) {
         var user = AuthController.currentUser(ctx);
         try (var session = sqlSessionFactory.openSession()) {
-            var presets = session.getMapper(HostsUrlMapper.class).findAllForUser(user.getUserNo());
+            var presets = session.getMapper(HostsUrlMapper.class).findAllForUser(user.getWsNo(), user.getUserNo());
             ctx.json(presets.stream().filter(p -> p.getUserNo() != null).toList());
         }
     }
@@ -537,7 +538,7 @@ public class HostsController {
     public void apiUrlPresets(Context ctx) {
         var user = AuthController.currentUser(ctx);
         try (var session = sqlSessionFactory.openSession()) {
-            var presets = session.getMapper(HostsUrlMapper.class).findAllForUser(user.getUserNo());
+            var presets = session.getMapper(HostsUrlMapper.class).findAllForUser(user.getWsNo(), user.getUserNo());
             presets.forEach(p -> p.setMine(p.getUserNo() != null));
             ctx.json(presets);
         }
@@ -557,6 +558,7 @@ public class HostsController {
         url.setUrlName(urlName.trim());
         url.setUrlValue(urlValue.trim());
         url.setUserNo(user.getUserNo());
+        url.setWsNo(user.getWsNo());
         url.setCreatedBy(user.getUserNo());
         url.setUpdatedBy(user.getUserNo());
         url.setCreateAt(now);
@@ -623,7 +625,7 @@ public class HostsController {
 
         if ((value == null || value.isBlank()) && "open_url".equals(name)) {
             try (var session = sqlSessionFactory.openSession()) {
-                var globalUrls = session.getMapper(HostsUrlMapper.class).findAll();
+                var globalUrls = session.getMapper(HostsUrlMapper.class).findAllByWs(hubUser.getWsNo());
                 value = globalUrls.isEmpty() ? "" : globalUrls.get(0).getUrlValue();
             }
         }

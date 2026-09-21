@@ -74,6 +74,7 @@
             {% else %}
             <a href="/oehub/my/setting" class="dropdown-item">{{ msg['nav.settings'] }}</a>
             {% if user.role == 'wsa' %}
+            <a href="/wsa/settings" class="dropdown-item">{{ msg['nav.wsa.settings'] }}</a>
             <a href="/wsa/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>
             <a href="/wsa/audit-log" class="dropdown-item">{{ msg['nav.admin.audit.log'] }}</a>
             {% endif %}

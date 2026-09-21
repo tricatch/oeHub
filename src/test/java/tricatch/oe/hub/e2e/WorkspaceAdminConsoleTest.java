@@ -341,6 +341,68 @@ class WorkspaceAdminConsoleTest {
         assertThat(scriptErrors).isEmpty();
     }
 
+    /** Runs one JSON API call from inside the page (so it carries that account's session) and returns
+     *  {status, body}. */
+    @SuppressWarnings("unchecked")
+    private List<Object> apiCall(Page page, String method, String path, String jsonBody) {
+        return (List<Object>) page.evaluate(
+            "async ([m, p, b]) => { const r = await fetch(p, {method: m, headers: {'Content-Type': 'application/json'},"
+                + " body: b}); return [r.status, await r.text()]; }",
+            java.util.Arrays.asList(method, path, jsonBody));
+    }
+
+    /** Open URL / User-Agent presets belong to one workspace: the workspace admin manages their own,
+     *  members of that workspace load them, and nothing crosses to another workspace - the instance
+     *  admin's SYSTEM workspace works the same way, through its own "/api/adm/hosts/*" routes. */
+    @Test
+    @Order(12)
+    void presetsAreManagedAndSeenPerWorkspace() throws Exception {
+        // Alpha's workspace admin adds a preset; it shows in the admin list and the member-facing list.
+        alphaPage.navigate(server.baseUrl() + "/wsa/settings");
+        assertThat(alphaPage.locator("#urlPresetTable")).hasCount(1);
+        assertThat(alphaPage.locator("#uaPresetTable")).hasCount(1);
+        var created = apiCall(alphaPage, "POST", "/api/wsa/hosts/url",
+            "{\"urlName\":\"Alpha Health\",\"urlValue\":\"https://alpha.example/health\"}");
+        assertThat((Integer) created.get(0)).isEqualTo(201);
+        var alphaUrlId = new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree((String) created.get(1)).get("urlId").asText();
+        assertThat((String) apiCall(alphaPage, "GET", "/api/hosts/url/presets", null).get(1)).contains("Alpha Health");
+
+        // Beta cannot see it - not in its member-facing list, and not editable or deletable by id.
+        assertThat((String) apiCall(betaPage, "GET", "/api/hosts/url/presets", null).get(1)).doesNotContain("Alpha Health");
+        assertThat((String) apiCall(betaPage, "GET", "/api/wsa/hosts/url", null).get(1)).doesNotContain("Alpha Health");
+        assertThat((Integer) apiCall(betaPage, "PATCH", "/api/wsa/hosts/url/" + alphaUrlId,
+            "{\"urlName\":\"hijacked\"}").get(0)).isEqualTo(404);
+        assertThat((Integer) apiCall(betaPage, "DELETE", "/api/wsa/hosts/url/" + alphaUrlId, null).get(0)).isEqualTo(404);
+
+        // The same for User-Agent presets, and the SYSTEM workspace stays apart from both tenants.
+        var uaCreated = apiCall(alphaPage, "POST", "/api/wsa/hosts/ua",
+            "{\"uaName\":\"Alpha UA\",\"uaValue\":\"AlphaAgent/1.0\"}");
+        assertThat((Integer) uaCreated.get(0)).isEqualTo(201);
+        assertThat((String) apiCall(betaPage, "GET", "/api/hosts/ua/presets", null).get(1)).doesNotContain("Alpha UA");
+        assertThat((Integer) apiCall(instAdminPage, "POST", "/api/adm/hosts/url",
+            "{\"urlName\":\"System Home\",\"urlValue\":\"https://system.example\"}").get(0)).isEqualTo(201);
+        assertThat((String) apiCall(instAdminPage, "GET", "/api/hosts/url/presets", null).get(1)).contains("System Home");
+        assertThat((String) apiCall(instAdminPage, "GET", "/api/hosts/url/presets", null).get(1)).doesNotContain("Alpha Health");
+        assertThat((String) apiCall(alphaPage, "GET", "/api/hosts/url/presets", null).get(1)).doesNotContain("System Home");
+
+        // Who may call what: wsa-only workspace routes, adm-only SYSTEM routes.
+        assertThat(status(alphaPage, "/wsa/settings")).isEqualTo(200);
+        assertThat(status(alphaPage, "/api/wsa/hosts/ua")).isEqualTo(200);
+        assertThat(status(alphaPage, "/api/adm/hosts/url")).isEqualTo(403);
+        assertThat(status(instAdminPage, "/wsa/settings")).isEqualTo(403);
+        assertThat(status(instAdminPage, "/api/wsa/hosts/url")).isEqualTo(403);
+        var anon = playwright.request().newContext();
+        try {
+            assertThat(anon.get(server.baseUrl() + "/api/wsa/hosts/url").status()).isEqualTo(401);
+            var redirect = anon.get(server.baseUrl() + "/wsa/settings",
+                com.microsoft.playwright.options.RequestOptions.create().setMaxRedirects(0));
+            assertThat(redirect.status()).isEqualTo(302);
+        } finally {
+            anon.dispose();
+        }
+    }
+
     /** The personal settings page (any logged-in account) has no oeOID domain section in workspace
      *  mode either, and the API behind it is unrouted. */
     @Test

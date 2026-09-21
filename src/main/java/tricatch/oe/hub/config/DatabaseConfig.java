@@ -289,14 +289,18 @@ public class DatabaseConfig {
                     ua_value    VARCHAR(512) NOT NULL,
                     sort_order  INT          NOT NULL DEFAULT 0,
                     user_no     BIGINT       NULL,
+                    ws_no       BIGINT       NOT NULL,
                     created_by  BIGINT       NOT NULL,
                     updated_by  BIGINT       NULL,
                     create_at   TIMESTAMP    NOT NULL,
-                    updated_at  TIMESTAMP    NOT NULL
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT fk_hosts_ua_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_ua_user_no ON HOSTS_UA(user_no)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_ua_ws_no ON HOSTS_UA(ws_no)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_URL (
                     url_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
@@ -304,14 +308,18 @@ public class DatabaseConfig {
                     url_value   VARCHAR(512) NOT NULL,
                     sort_order  INT          NOT NULL DEFAULT 0,
                     user_no     BIGINT       NULL,
+                    ws_no       BIGINT       NOT NULL,
                     created_by  BIGINT       NOT NULL,
                     updated_by  BIGINT       NULL,
                     create_at   TIMESTAMP    NOT NULL,
-                    updated_at  TIMESTAMP    NOT NULL
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT fk_hosts_url_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_url_user_no ON HOSTS_URL(user_no)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_url_ws_no ON HOSTS_URL(ws_no)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
                     vhost_id          VARCHAR(32)    NOT NULL PRIMARY KEY,

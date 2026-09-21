@@ -1,0 +1,41 @@
+{# Shared markup of the workspace's Open URL / User-Agent preset tables (rows are rendered by
+   preset-table.js, see _preset-scripts.pebble). Included by /adm/settings and /wsa/settings. #}
+    {# ── Default URL Presets ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table ua-preset-table mb-0" id="urlPresetTable">
+        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.url.title'] }}</th>
+            <th class="col-actions text-end">
+              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUrlPreset" type="button" title="{{ msg['settings.url.add'] }}">
+                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="urlPresetBody">
+          <tr id="urlEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.url.empty'] }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ── User-Agent Presets ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table ua-preset-table mb-0" id="uaPresetTable">
+        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.ua.title'] }}</th>
+            <th class="col-actions text-end">
+              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUaPreset" type="button" title="{{ msg['settings.ua.add'] }}">
+                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="uaPresetBody">
+          <tr id="uaEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.ua.empty'] }}</td></tr>
+        </tbody>
+      </table>
+    </div>

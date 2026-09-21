@@ -1,0 +1,36 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['wsa.settings.title'] }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/settings.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="wsaSettingsApp">
+<script nonce="{{ cspNonce }}">
+  (function() {
+    if (localStorage.getItem('oeWidthExpanded') === 'true') {
+      document.getElementById('wsaSettingsApp').classList.add('expanded');
+      document.body.classList.add('oe-expanded');
+    }
+  })();
+</script>
+
+  <div class="settings-main">
+
+    <h5>{{ msg['wsa.settings.title'] }}</h5>
+    <p class="small text-muted">{{ msg['wsa.settings.desc'] }}</p>
+
+    {% include "templates/oehub/_preset-tables.pebble" %}
+
+  </div>
+
+</div>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('wsaSettingsApp'), document.getElementById('btnToggleWidth'));</script>
+
+{% set presetApiBase = '/api/wsa/hosts' %}
+{% include "templates/oehub/_preset-scripts.pebble" %}
+{% endblock %}

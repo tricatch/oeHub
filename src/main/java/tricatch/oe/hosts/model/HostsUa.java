@@ -8,6 +8,7 @@ public class HostsUa extends Auditable {
     private String uaValue;
     private int sortOrder;
     private Long userNo;
+    private Long wsNo;
     private boolean mine;
 
     public String getUaId() { return uaId; }
@@ -24,6 +25,9 @@ public class HostsUa extends Auditable {
 
     public Long getUserNo() { return userNo; }
     public void setUserNo(Long userNo) { this.userNo = userNo; }
+
+    public Long getWsNo() { return wsNo; }
+    public void setWsNo(Long wsNo) { this.wsNo = wsNo; }
 
     public boolean isMine() { return mine; }
     public void setMine(boolean mine) { this.mine = mine; }

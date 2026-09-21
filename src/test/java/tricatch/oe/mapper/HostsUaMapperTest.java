@@ -18,6 +18,7 @@ class HostsUaMapperTest extends MapperTestBase {
         u.setUaValue("Mozilla/5.0 (" + name + ")");
         u.setSortOrder(0);
         u.setUserNo(userNo);
+        u.setWsNo(TEST_WS_NO);
         var actor = userNo != null ? userNo : 0L;
         u.setCreatedBy(actor);
         u.setUpdatedBy(actor);
@@ -31,7 +32,7 @@ class HostsUaMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
             mapper.insert(ua(newId(), "Chrome", null));
-            assertThat(mapper.findAll()).hasSize(1);
+            assertThat(mapper.findAllByWs(TEST_WS_NO)).hasSize(1);
         }
     }
 
@@ -45,7 +46,7 @@ class HostsUaMapperTest extends MapperTestBase {
             mapper.insert(ua(newId(), "Mine", user.getUserNo()));
             mapper.insert(ua(newId(), "Others", other.getUserNo()));
 
-            var result = mapper.findAllForUser(user.getUserNo());
+            var result = mapper.findAllForUser(TEST_WS_NO, user.getUserNo());
             assertThat(result).extracting(HostsUa::getUaName).containsExactlyInAnyOrder("Global", "Mine");
         }
     }
@@ -57,7 +58,7 @@ class HostsUaMapperTest extends MapperTestBase {
             var mapper = session.getMapper(HostsUaMapper.class);
             var personal = ua(newId(), "Personal", user.getUserNo());
             mapper.insert(personal);
-            assertThat(mapper.findByIdGlobal(personal.getUaId())).isNull();
+            assertThat(mapper.findByIdGlobal(personal.getUaId(), TEST_WS_NO)).isNull();
             assertThat(mapper.findByIdAndUserNo(personal.getUaId(), user.getUserNo())).isNotNull();
         }
     }
@@ -70,7 +71,7 @@ class HostsUaMapperTest extends MapperTestBase {
             var personal = ua(newId(), "Personal", user.getUserNo());
             mapper.insert(personal);
 
-            mapper.deleteByIdGlobal(personal.getUaId());
+            mapper.deleteByIdGlobal(personal.getUaId(), TEST_WS_NO);
 
             assertThat(mapper.findByIdAndUserNo(personal.getUaId(), user.getUserNo())).isNotNull();
         }
@@ -99,13 +100,13 @@ class HostsUaMapperTest extends MapperTestBase {
     void nextSortOrder_incrementsPastExistingMax() {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsUaMapper.class);
-            assertThat(mapper.nextSortOrder()).isZero();
+            assertThat(mapper.nextSortOrder(TEST_WS_NO)).isZero();
 
             var first = ua(newId(), "First", null);
             first.setSortOrder(3);
             mapper.insert(first);
 
-            assertThat(mapper.nextSortOrder()).isEqualTo(4);
+            assertThat(mapper.nextSortOrder(TEST_WS_NO)).isEqualTo(4);
         }
     }
 
@@ -132,7 +133,55 @@ class HostsUaMapperTest extends MapperTestBase {
 
             mapper.deleteAllByUserNo(user.getUserNo());
 
-            assertThat(mapper.findAll()).hasSize(1);
+            assertThat(mapper.findAllByWs(TEST_WS_NO)).hasSize(1);
+        }
+    }
+
+    @Test
+    void presets_areIsolatedPerWorkspace() {
+        var otherWs = insertWorkspace("other");
+        var user = insertUser("iris");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsUaMapper.class);
+            mapper.insert(ua(newId(), "Mine-ws", null));
+            var foreign = ua(newId(), "Other-ws", null);
+            foreign.setWsNo(otherWs);
+            mapper.insert(foreign);
+
+            assertThat(mapper.findAllByWs(TEST_WS_NO)).extracting(p -> p.getUaName()).containsExactly("Mine-ws");
+            assertThat(mapper.findAllByWs(otherWs)).extracting(p -> p.getUaName()).containsExactly("Other-ws");
+            assertThat(mapper.findAllForUser(TEST_WS_NO, user.getUserNo()))
+                .extracting(p -> p.getUaName()).containsExactly("Mine-ws");
+        }
+    }
+
+    @Test
+    void globalLookupsAndDeletes_cannotReachAnotherWorkspacesPreset() {
+        var otherWs = insertWorkspace("other2");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsUaMapper.class);
+            var foreign = ua(newId(), "Foreign", null);
+            foreign.setWsNo(otherWs);
+            mapper.insert(foreign);
+
+            assertThat(mapper.findByIdGlobal(foreign.getUaId(), TEST_WS_NO)).isNull();
+            assertThat(mapper.deleteByIdGlobal(foreign.getUaId(), TEST_WS_NO)).isZero();
+            assertThat(mapper.findByIdGlobal(foreign.getUaId(), otherWs)).isNotNull();
+        }
+    }
+
+    @Test
+    void nextSortOrder_isScopedPerWorkspace() {
+        var otherWs = insertWorkspace("other3");
+        try (var session = FACTORY.openSession(true)) {
+            var mapper = session.getMapper(HostsUaMapper.class);
+            var foreign = ua(newId(), "Foreign", null);
+            foreign.setWsNo(otherWs);
+            foreign.setSortOrder(7);
+            mapper.insert(foreign);
+
+            assertThat(mapper.nextSortOrder(TEST_WS_NO)).isZero();
+            assertThat(mapper.nextSortOrder(otherWs)).isEqualTo(8);
         }
     }
 }

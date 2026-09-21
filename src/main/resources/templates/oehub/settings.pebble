@@ -23,45 +23,7 @@
 
     <h5>{{ msg['settings.title'] }}</h5>
 
-    {# ── Default URL Presets ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table ua-preset-table mb-0" id="urlPresetTable">
-        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
-        <thead>
-          <tr>
-            <th colspan="2">{{ msg['settings.url.title'] }}</th>
-            <th class="col-actions text-end">
-              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUrlPreset" type="button" title="{{ msg['settings.url.add'] }}">
-                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody id="urlPresetBody">
-          <tr id="urlEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.url.empty'] }}</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# ── User-Agent Presets ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table ua-preset-table mb-0" id="uaPresetTable">
-        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
-        <thead>
-          <tr>
-            <th colspan="2">{{ msg['settings.ua.title'] }}</th>
-            <th class="col-actions text-end">
-              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUaPreset" type="button" title="{{ msg['settings.ua.add'] }}">
-                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody id="uaPresetBody">
-          <tr id="uaEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.ua.empty'] }}</td></tr>
-        </tbody>
-      </table>
-    </div>
+    {% include "templates/oehub/_preset-tables.pebble" %}
 
     {# oeProxy-only sections (CA, identifier, upstream certificate): workspace mode never runs oeProxy #}
     {% if not workspaceMode %}
@@ -405,24 +367,10 @@
 </div>
 <script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
 
-<script src="/js/preset-table.js"></script>
-<script nonce="{{ cspNonce }}">
-  initUaPresetTable({
-    apiBase: '/api/adm/hosts/ua',
-    deleteTooltipKey: 'tooltip.ua.delete',
-    savedToastKey: 'toast.ua.saved',
-    deletedToastKey: 'toast.ua.deleted'
-  });
-</script>
+{% set presetApiBase = '/api/adm/hosts' %}
+{% include "templates/oehub/_preset-scripts.pebble" %}
 
 <script nonce="{{ cspNonce }}">
-  initUrlPresetTable({
-    apiBase: '/api/adm/hosts/url',
-    deleteTooltipKey: 'tooltip.url.delete',
-    savedToastKey: 'toast.url.saved',
-    deletedToastKey: 'toast.url.deleted'
-  });
-
   {% if not workspaceMode %}
   document.getElementById('btnSaveOidDomainDefault').addEventListener('click', async () => {
     const domainList = document.getElementById('oidDomainDefault').value;

@@ -250,10 +250,12 @@ public abstract class MapperTestBase {
                     ua_value   VARCHAR(512) NOT NULL,
                     sort_order INT          NOT NULL DEFAULT 0,
                     user_no    BIGINT       NULL,
+                    ws_no      BIGINT       NOT NULL,
                     created_by BIGINT       NOT NULL,
                     updated_by BIGINT       NULL,
                     create_at  TIMESTAMP    NOT NULL,
-                    updated_at TIMESTAMP    NOT NULL
+                    updated_at TIMESTAMP    NOT NULL,
+                    CONSTRAINT fk_hosts_ua_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )""");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_URL (
@@ -262,10 +264,12 @@ public abstract class MapperTestBase {
                     url_value  VARCHAR(512) NOT NULL,
                     sort_order INT          NOT NULL DEFAULT 0,
                     user_no    BIGINT       NULL,
+                    ws_no      BIGINT       NOT NULL,
                     created_by BIGINT       NOT NULL,
                     updated_by BIGINT       NULL,
                     create_at  TIMESTAMP    NOT NULL,
-                    updated_at TIMESTAMP    NOT NULL
+                    updated_at TIMESTAMP    NOT NULL,
+                    CONSTRAINT fk_hosts_url_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )""");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
@@ -328,6 +332,20 @@ public abstract class MapperTestBase {
             } finally {
                 conn.createStatement().execute("SET REFERENTIAL_INTEGRITY TRUE");
             }
+        }
+    }
+
+    /** A second (or third...) workspace, for tests that check nothing leaks across workspaces. */
+    protected Long insertWorkspace(String wsName) {
+        try (var session = FACTORY.openSession(true)) {
+            var workspace = new Workspace();
+            workspace.setWsName(wsName + "-" + newId());
+            workspace.setStatus("active");
+            var now = LocalDateTime.now();
+            workspace.setCreateAt(now);
+            workspace.setUpdatedAt(now);
+            session.getMapper(WorkspaceMapper.class).insert(workspace);
+            return workspace.getWsNo();
         }
     }
 

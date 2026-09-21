@@ -33,8 +33,8 @@
 
 | 접두어 | 접근 가능 | 비고 |
 |---|---|---|
-| `/adm/*`, `/api/adm/*` | `adm` | 설정, CA, 전역 프리셋, 워크스페이스 콘솔, H2 콘솔 |
-| `/wsa/*`, `/api/wsa/*` | `wsa` (self-hosted에서는 `adm`도 가능) | 구성원, 승인, 초대, 팀, 감사 로그, 키 회전 |
+| `/adm/*`, `/api/adm/*` | `adm` | 설정, CA, 워크스페이스 콘솔, H2 콘솔, 자신이 속한 워크스페이스의 프리셋 |
+| `/wsa/*`, `/api/wsa/*` | `wsa` (self-hosted에서는 `adm`도 가능) | 구성원, 승인, 초대, 팀, 감사 로그, 키 회전, 워크스페이스 프리셋 |
 | `/oehub/*`, 그 외 `/api/*` | 로그인 가능한 모든 역할 (`adm`, `wsa`, `usr`) | oeHosts, oeProxy, 내 정보 |
 
 `workspace` 모드에서 `adm`은 `/wsa/*`에, `wsa`는 `/adm/*`에 접근할 수 없다(`403`). 세션이 없으면
@@ -75,7 +75,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | PUT | `/api/hosts/order` | 정렬 순서 저장 |
 | GET | `/api/hosts/export` | 내보내기 (JSON) |
 | POST | `/api/hosts/import` | 가져오기 |
-| GET | `/api/hosts/ua/presets` / `/api/hosts/url/presets` | 관리자 전역 UA/URL 프리셋 조회 |
+| GET | `/api/hosts/ua/presets` / `/api/hosts/url/presets` | 내 워크스페이스의 공유 UA/URL 프리셋과 내 개인 프리셋 조회 (다른 워크스페이스의 프리셋은 보이지 않음) |
 | GET/POST/PATCH/DELETE | `/api/hosts/ua/my`, `/api/hosts/url/my` (`+/{id}`, `+/order`) | 내 개인 UA/URL 프리셋 CRUD |
 | GET/PUT | `/api/hosts/conf/{name}` | 개인 설정값(`open_url`, `incognito` 등) 조회/저장 |
 | POST | `/api/oid/domain/my` | 내 oeOID 도메인 오버라이드 저장 |
@@ -118,6 +118,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/wsa/workspace/rotate` | 워크스페이스키 회전 실행 (감사 로그 대상) |
 | GET/POST | `/api/wsa/invites` | 초대 코드 목록/발급 (`workspace` 전용) |
 | GET/POST/PATCH/DELETE | `/api/wsa/teams` (`+/{teamNo}`) | 팀 CRUD (`workspace` 전용) |
+| GET/POST/PATCH/DELETE | `/api/wsa/hosts/ua`, `/api/wsa/hosts/url` (`+/{id}`, `+/order`) | 내 워크스페이스의 공유 UA/URL 프리셋 CRUD. 다른 워크스페이스의 프리셋 id는 `404`. 페이지는 `/wsa/settings` |
 
 ## 워크스페이스 관리자 — 감사 로그 (`/api/wsa/audit-log`)
 
@@ -138,7 +139,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/adm/workspaces` | 전체 워크스페이스 목록 |
 | PATCH | `/api/adm/workspaces/{wsNo}/status` | 활성/정지 전환 (감사 로그 대상, 대상 워크스페이스에 기록). 호출자 자신이 속한 워크스페이스는 `400`으로 거부 — 정지하면 본인이 로그인할 수 없게 되어 되돌릴 사람이 없기 때문 |
 
-## 인스턴스 관리자 — 설정·전역 프리셋 (`/api/adm/*`, 두 모드 모두)
+## 인스턴스 관리자 — 설정·프리셋 (`/api/adm/*`, 두 모드 모두)
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -148,7 +149,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/adm/settings/trust-internal-cert` | 내부망 백엔드 인증서 신뢰 on/off (`self-hosted` 전용) |
 | POST | `/api/adm/settings/internal-only-upstream` | 내부망 백엔드만 허용 on/off, 본문 `{"enabled": true}` (`self-hosted` 전용, 기본값 켜짐) |
 | POST | `/api/adm/settings/allowed-domains` | 허용 도메인(화이트리스트) 저장, 본문 `{"domains": "..."}`. 포워드 프록시가 중계할 수 있는 도메인이자 `PROXY_SVR` 주소를 위해 DNS 조회를 허용할 이름의 목록. 비어 있으면 아무것도 허용하지 않음 (`self-hosted` 전용, `workspace` 모드에서는 등록되지 않음) |
-| GET/POST/PATCH/DELETE | `/api/adm/hosts/ua`, `/api/adm/hosts/url` (`+/{id}`, `+/order`) | 전역 UA/URL 프리셋 CRUD |
+| GET/POST/PATCH/DELETE | `/api/adm/hosts/ua`, `/api/adm/hosts/url` (`+/{id}`, `+/order`) | 인스턴스 관리자가 속한 워크스페이스(`workspace` 모드에서는 `SYSTEM`)의 공유 UA/URL 프리셋 CRUD. `/api/wsa/hosts/*`와 같은 핸들러 |
 
 `/adm/settings/ca/generate`, `/adm/settings/ca/import`(폼 POST, JSON 아님)도 이 그룹에
 속하며 CA 재발급/가져오기는 감사 로그 대상이다. 최초 설치 마법사(`/setup/ca/generate`)의 CA
