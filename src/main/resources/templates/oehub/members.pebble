@@ -34,9 +34,14 @@
           <th colspan="4">
             <div class="d-flex align-items-center justify-content-between">
               <span>{{ msg['users.card.header'] }}</span>
-              <div style="width:200px;">
-                <input type="search" id="memberSearch" class="form-control form-control-sm"
-                       placeholder="{{ msg['users.search.placeholder'] }}">
+              <div class="d-flex align-items-center gap-2">
+                <select id="memberTeamFilter" class="form-select form-select-sm w-auto">
+                  <option value="">{{ msg['teams.filter.all'] }}</option>
+                </select>
+                <div style="width:200px;">
+                  <input type="search" id="memberSearch" class="form-control form-control-sm"
+                         placeholder="{{ msg['users.search.placeholder'] }}">
+                </div>
               </div>
             </div>
           </th>
@@ -69,41 +74,60 @@
     rejectUrl: null
   });
 
-  // Read-only member list; the search box filters it as you type.
+  // Read-only member list; the search box (server side) and the team filter (on the loaded list)
+  // narrow it as you go.
   var membersTbody = document.getElementById('membersTbody');
   var memberSearch = document.getElementById('memberSearch');
+  var teamFilterSelect = document.getElementById('memberTeamFilter');
   var searchTimer;
+  var loadedMembers = [];
+
+  function renderMembers() {
+    var team = teamFilterSelect.value;
+    var members = loadedMembers.filter(function (m) {
+      if (!team) return true;
+      if (team === 'none') return !m.teamNo;
+      return String(m.teamNo) === team;
+    });
+    if (members.length === 0) {
+      membersTbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">' + escHtml(MSG['users.empty']) + '</td></tr>';
+      return;
+    }
+    membersTbody.innerHTML = members.map(function (m) {
+      var icon = m.admin ? 'oe-icon-admin' : 'oe-icon-user';
+      var color = m.admin ? '#5a9e2f' : '#adb5bd';
+      var title = m.admin ? ' title="' + escHtml(MSG['users.role.admin']) + '"' : '';
+      return '<tr data-user-id="' + escHtml(m.userId) + '">' +
+        '<td>' + escHtml(m.userId) + '</td>' +
+        '<td class="text-center"><span class="oe-icon ' + icon + '" style="width:16px;height:16px;color:' + color + '"' + title + '></span></td>' +
+        '<td class="small text-muted">' + escHtml(m.teamName || '-') + '</td>' +
+        '<td class="small text-muted">' + escHtml(m.createAt) + '</td></tr>';
+    }).join('');
+  }
+
   function loadMembers() {
     var q = memberSearch.value.trim();
     fetch('/api/members/users' + (q ? '?q=' + encodeURIComponent(q) : ''))
       .then(function (r) { return r.json(); })
-      .then(function (members) {
-        if (!members || members.length === 0) {
-          membersTbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">' + escHtml(MSG['users.empty']) + '</td></tr>';
-          return;
-        }
-        membersTbody.innerHTML = members.map(function (m) {
-          var icon = m.admin ? 'oe-icon-admin' : 'oe-icon-user';
-          var color = m.admin ? '#5a9e2f' : '#adb5bd';
-          var title = m.admin ? ' title="' + escHtml(MSG['users.role.admin']) + '"' : '';
-          return '<tr data-user-id="' + escHtml(m.userId) + '">' +
-            '<td>' + escHtml(m.userId) + '</td>' +
-            '<td class="text-center"><span class="oe-icon ' + icon + '" style="width:16px;height:16px;color:' + color + '"' + title + '></span></td>' +
-            '<td class="small text-muted">' + escHtml(m.teamName || '-') + '</td>' +
-            '<td class="small text-muted">' + escHtml(m.createAt) + '</td></tr>';
-        }).join('');
-      })
+      .then(function (members) { loadedMembers = members || []; renderMembers(); })
       .catch(function () {});
   }
   memberSearch.addEventListener('input', function () {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(loadMembers, 250);
   });
+  teamFilterSelect.addEventListener('change', renderMembers);
   loadMembers();
 
+  // The same team list feeds the invite card's team dropdown and this filter.
   fetch('/api/members/teams')
     .then(function (r) { return r.json(); })
-    .then(function (teams) { if (inviteCard) inviteCard.setTeams(teams); })
+    .then(function (teams) {
+      if (inviteCard) inviteCard.setTeams(teams);
+      teamFilterSelect.innerHTML = '<option value="">' + escHtml(MSG['teams.filter.all']) + '</option>' +
+        '<option value="none">' + escHtml(MSG['teams.select.none']) + '</option>' +
+        teams.map(function (t) { return '<option value="' + t.teamNo + '">' + escHtml(t.teamName) + '</option>'; }).join('');
+    })
     .catch(function () {});
 })();
 </script>

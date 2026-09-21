@@ -234,6 +234,16 @@ class MemberInviteApprovalTest {
         assertThat(memberPage.locator("#membersTbody tr[data-user-id='" + JOINER_ID + "']")).containsText("Sales");
         assertThat(memberPage.locator("#membersTbody button")).hasCount(0);         // nothing to click
 
+        // The team filter narrows it too: one person is in Sales, the other two have no team.
+        var filter = memberPage.locator("#memberTeamFilter");
+        filter.selectOption(String.valueOf(teamNo));
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id]")).hasCount(1);
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id='" + JOINER_ID + "']")).isVisible();
+        filter.selectOption("none");
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id]")).hasCount(2);
+        filter.selectOption("");
+        assertThat(memberPage.locator("#membersTbody tr[data-user-id]")).hasCount(3);
+
         // The search box narrows the list.
         memberPage.locator("#memberSearch").fill("joiner");
         assertThat(memberPage.locator("#membersTbody tr[data-user-id]")).hasCount(1);

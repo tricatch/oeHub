@@ -42,7 +42,7 @@ public class MemberController {
 
     /**
      * The members of the caller's own workspace, for a read-only list: who they are, whether they are
-     * an admin, their team and when they joined. Nothing else about them (no last login, no keys).
+     * an admin, their team (number and name) and when they joined. Nothing else about them (no last login, no keys).
      */
     public void apiListMembers(Context ctx) {
         var currentUser = AuthController.currentUser(ctx);
@@ -57,6 +57,7 @@ public class MemberController {
                 var m = new LinkedHashMap<String, Object>();
                 m.put("userId", u.getUserId());
                 m.put("admin", Role.WSA.equals(u.getRole()) || Role.ADM.equals(u.getRole()));
+                m.put("teamNo", u.getTeamNo());
                 m.put("teamName", u.getTeamName());
                 m.put("createAt", u.getCreateAt() != null ? u.getCreateAt().format(FMT) : "");
                 result.add(m);
