@@ -289,7 +289,20 @@
     document.getElementById('cpNewPassword').value = '';
     document.getElementById('cpConfirmPassword').value = '';
     document.getElementById('cpError').classList.add('d-none');
+    updateChangePasswordBtn();
     new bootstrap.Modal(document.getElementById('changePasswordModal')).show();
+  });
+
+  // The confirm button only works once all three fields have something in them; length and
+  // match are checked on click (in field order) so the message always points at the first problem.
+  function updateChangePasswordBtn() {
+    var filled = ['cpCurrentPassword', 'cpNewPassword', 'cpConfirmPassword'].every(function(id) {
+      return document.getElementById(id).value !== '';
+    });
+    document.getElementById('btnChangePasswordConfirm').disabled = !filled;
+  }
+  ['cpCurrentPassword', 'cpNewPassword', 'cpConfirmPassword'].forEach(function(id) {
+    document.getElementById(id)?.addEventListener('input', updateChangePasswordBtn);
   });
 
   function showChangePasswordError(text) {
@@ -303,6 +316,7 @@
     var next    = document.getElementById('cpNewPassword').value;
     var confirmVal = document.getElementById('cpConfirmPassword').value;
 
+    if (!current) { showChangePasswordError(MSG['change.password.error.current.required']); return; }
     if (!next) { showChangePasswordError(MSG['change.password.error.required']); return; }
     if (next.length < 8) { showChangePasswordError(MSG['change.password.error.too.short']); return; }
     if (next !== confirmVal) { showChangePasswordError(MSG['change.password.error.mismatch']); return; }
@@ -391,8 +405,16 @@
     e.preventDefault();
     document.getElementById('rrCurrentPassword').value = '';
     document.getElementById('rrError').classList.add('d-none');
+    updateReissueConfirmBtn();
     new bootstrap.Modal(document.getElementById('reissueConfirmModal')).show();
   });
+
+  // Same rule as the change-password modal: the confirm button only works once the field is filled.
+  function updateReissueConfirmBtn() {
+    document.getElementById('btnReissueConfirm').disabled =
+      document.getElementById('rrCurrentPassword').value === '';
+  }
+  document.getElementById('rrCurrentPassword')?.addEventListener('input', updateReissueConfirmBtn);
 
   function showReissueConfirmError(text) {
     var errEl = document.getElementById('rrError');
@@ -402,6 +424,7 @@
 
   document.getElementById('btnReissueConfirm').addEventListener('click', async function() {
     var currentPassword = document.getElementById('rrCurrentPassword').value;
+    if (!currentPassword) { showReissueConfirmError(MSG['change.password.error.current.required']); return; }
 
     // Reissue is workspace-mode only; the server verifies the authKey derived from the password,
     // never the password itself (auth-keys.js). The private key to re-wrap under the new recovery
