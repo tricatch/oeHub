@@ -21,7 +21,6 @@
     pointer-events: none;
   }
   .users-search-wrap input { padding-left: 2rem; font-size: 0.74rem; }
-  .oe-subhead th { background: #fff; color: #6c757d; }
   tr.oe-removing { opacity: 0; transition: opacity 0.25s ease; }
   th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
   th[data-sort]:hover { color: #5a8a28; }
@@ -82,6 +81,7 @@
         <tr><td colspan="4" class="text-muted text-center py-3">{{ msg['users.invite.empty'] }}</td></tr>
       </tbody>
     </table>
+  </div>
   {% endif %}
 
   <div class="oe-info-section" id="pendingSection">
@@ -108,9 +108,8 @@
       </tbody>
     </table>
   </div>
-  </div>
-  {% if workspaceMode %}
 
+  {% if workspaceMode %}
   <div class="oe-info-section" id="teamsSection">
     <table class="oe-info-table mb-0">
       <colgroup>
@@ -675,6 +674,7 @@
       .then(renderPending)
       .catch(function () {});
   }
+
   // The section is always shown; with nobody waiting it holds a single "no pending sign-ups" row.
   function showPendingEmpty() {
     document.getElementById('pendingTbody').innerHTML =
@@ -684,7 +684,6 @@
   function showPendingEmptyIfNone() {
     if (!document.getElementById('pendingTbody').querySelector('tr[data-user-no]')) showPendingEmpty();
   }
-
 
   function renderPending(pending) {
     var tbody = document.getElementById('pendingTbody');
