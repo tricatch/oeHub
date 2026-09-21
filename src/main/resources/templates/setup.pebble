@@ -279,8 +279,7 @@
         <div class="text-center mt-2 mb-4">
           <button type="button" class="oe-modal-btn" id="btnGotoLogin"
                   data-setup-complete="{% if adminConfigured and (workspaceMode or caConfigured) %}true{% else %}false{% endif %}"
-                  {% if not (adminConfigured and (workspaceMode or caConfigured)) %}disabled{% endif %}
-                  onclick="location.href='/login'">{{ msg['setup.goto.login'] }}</button>
+                  {% if not (adminConfigured and (workspaceMode or caConfigured)) %}disabled{% endif %}>{{ msg['setup.goto.login'] }}</button>
         </div>
 
       </div>
@@ -419,6 +418,10 @@
     unsavedPresetCount += dirty ? 1 : -1;
     updateLoginBtn();
   }
+  // Not an inline onclick="...": the CSP has no 'unsafe-inline' for scripts, so it would be blocked.
+  document.getElementById('btnGotoLogin').addEventListener('click', function () {
+    location.href = '/login';
+  });
 </script>
 <script src="/js/preset-table.js"></script>
 <script nonce="{{ cspNonce }}">

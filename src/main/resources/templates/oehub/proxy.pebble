@@ -82,7 +82,7 @@
         <button class="oe-nav-action-btn" id="btnSaveMergedVhost" title="{{ msg['tooltip.save.merged'] }}" disabled>
           <span class="oe-icon oe-icon-save-merge" style="width:15px;height:15px"></span>
         </button>
-        <button class="oe-nav-action-btn" id="btnMonitor" title="{{ msg['tooltip.monitor'] }}" onclick="window.open('/oehub/proxy/monitor','_blank')" disabled>
+        <button class="oe-nav-action-btn" id="btnMonitor" title="{{ msg['tooltip.monitor'] }}" disabled>
           <span class="oe-icon oe-icon-monitor" style="width:15px;height:15px"></span>
         </button>
         <button class="oe-nav-action-btn" data-bs-toggle="modal" data-bs-target="#caInstallModal" title="{{ msg['tooltip.install.guide'] }}">
@@ -490,6 +490,11 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
   }
 
   // ── Add ────────────────────────────────────────────────────
+  // Not an inline onclick="...": the CSP has no 'unsafe-inline' for scripts, so it would be blocked.
+  document.getElementById('btnMonitor').addEventListener('click', () => {
+    window.open('/oehub/proxy/monitor', '_blank');
+  });
+
   document.getElementById('btnAdd').addEventListener('click', async () => {
     const res = await fetch('/api/proxy/vhosts', {method: 'POST'});
     if (res.ok) {
