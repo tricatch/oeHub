@@ -325,6 +325,19 @@ class WorkspaceAdminConsoleTest {
             "async () => (await fetch('/api/adm/settings/internal-only-upstream', {method: 'POST', "
                 + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: false})})).status");
         assertThat(upstreamStatus).isEqualTo(404);
+        // The other oeProxy-only sections (CA, IP identifier, upstream certificate, forward proxy,
+        // oeOID domains) are hidden too, and their save routes are unrouted.
+        for (var id : new String[] {"identifierIp", "trustInternalCert", "fwdproxyEnabled",
+                                    "oidDomainDefault", "btnSaveOidDomainDefault"}) {
+            assertThat(instAdminPage.locator("#" + id)).hasCount(0);
+        }
+        assertThat(instAdminPage.locator("form[action='/adm/settings/ca/generate']")).hasCount(0);
+        for (var path : new String[] {"identifier", "trust-internal-cert", "oid-domain-default"}) {
+            var status = (Integer) instAdminPage.evaluate(
+                "async () => (await fetch('/api/adm/settings/" + path + "', {method: 'POST', "
+                    + "headers: {'Content-Type': 'application/json'}, body: '{}'})).status");
+            assertThat(status).as(path).isEqualTo(404);
+        }
         assertThat(scriptErrors).isEmpty();
     }
 

@@ -63,6 +63,8 @@
       </table>
     </div>
 
+    {# oeProxy-only sections (CA, identifier, upstream certificate): workspace mode never runs oeProxy #}
+    {% if not workspaceMode %}
     {# ── CA Certificate ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
@@ -250,6 +252,8 @@
       </table>
     </div>
 
+    {% endif %}
+
     {# ── oeProxy Upstream Address (where a virtual host's backend may live) - oeProxy is self-hosted only ── #}
     {% if not workspaceMode %}
     <div class="oe-info-section">
@@ -306,6 +310,8 @@
 
     {% endif %}
 
+    {# oeProxy-only sections (forward proxy, oeOID domains) #}
+    {% if not workspaceMode %}
     {# ── Forward Proxy (LittleProxy) ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
@@ -356,6 +362,8 @@
         </tbody>
       </table>
     </div>
+
+    {% endif %}
 
     {# ── Backup ── #}
     <div class="oe-info-section">
@@ -415,6 +423,7 @@
     deletedToastKey: 'toast.url.deleted'
   });
 
+  {% if not workspaceMode %}
   document.getElementById('btnSaveOidDomainDefault').addEventListener('click', async () => {
     const domainList = document.getElementById('oidDomainDefault').value;
     const res = await fetch('/api/adm/settings/oid-domain-default', {
@@ -423,6 +432,7 @@
     });
     if (res.ok) showToast(MSG['settings.saved']);
   });
+  {% endif %}
 
   {% if not workspaceMode %}
   document.getElementById('btnSaveAllowedDomains').addEventListener('click', async () => {
@@ -444,6 +454,7 @@
     if (res.ok) showToast(MSG['settings.saved']);
   });
 
+  {% if not workspaceMode %}
   document.getElementById('identifierIp').addEventListener('change', async e => {
     const ipEnabled = e.target.checked;
     const res = await fetch('/api/adm/settings/identifier', {
@@ -463,6 +474,7 @@
     if (res.ok) showToast(MSG['settings.saved']);
     else e.target.checked = !enabled;
   });
+  {% endif %}
 
   {% if not workspaceMode %}
   document.getElementById('internalOnlyUpstream').addEventListener('change', async e => {

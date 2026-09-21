@@ -35,11 +35,6 @@
       </colgroup>
       <thead>
         <tr>
-          <th colspan="5">
-            <span>{{ msg['workspaces.card.header'] }}</span>
-          </th>
-        </tr>
-        <tr class="oe-subhead">
           <th>{{ msg['workspaces.col.name'] }}</th>
           <th class="text-center">{{ msg['workspaces.col.status'] }}</th>
           <th class="text-center">{{ msg['workspaces.col.members'] }}</th>

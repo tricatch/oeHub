@@ -370,12 +370,12 @@ public class OeHubApplication {
 
             // Admin settings
             config.routes.get("/adm/settings",              settings::showSettings);
-            config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
             config.routes.post("/api/adm/settings/backup-interval", settings::apiSaveBackupInterval);
             if (!workspaceMode) {
                 // IP identifier / allowed domains (forward-proxy relay whitelist, and the names looked
-                // up for PROXY_SVR) / CA are all oeProxy-only concerns - meaningless (and their
+                // up for PROXY_SVR) / CA / oeOID domain defaults are all oeProxy-only concerns - meaningless (and their
                 // backing servers non-existent) under workspace mode.
+                config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
                 config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
                 config.routes.post("/api/adm/settings/allowed-domains",    settings::apiSaveAllowedDomains);
                 config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
