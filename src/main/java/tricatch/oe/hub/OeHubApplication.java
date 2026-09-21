@@ -427,7 +427,10 @@ public class OeHubApplication {
             config.routes.put("/api/hosts/url/my/order",          hosts::apiMyUrlReorder);
             config.routes.get("/api/hosts/conf/{name}",            hosts::apiEnvGet);
             config.routes.put("/api/hosts/conf/{name}",            hosts::apiEnvSet);
-            config.routes.post("/api/oid/domain/my",              hosts::apiMyOidDomainSave);
+            if (!workspaceMode) {
+                // oeOID (X-OeHub-Oid) domains only matter to oeProxy, which workspace mode never runs.
+                config.routes.post("/api/oid/domain/my",          hosts::apiMyOidDomainSave);
+            }
             config.routes.get("/api/oid/download",                 oidExtension::apiDownload);
 
             // Share (public, no auth)

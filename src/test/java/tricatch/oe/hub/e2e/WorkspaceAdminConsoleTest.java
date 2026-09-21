@@ -341,6 +341,25 @@ class WorkspaceAdminConsoleTest {
         assertThat(scriptErrors).isEmpty();
     }
 
+    /** The personal settings page (any logged-in account) has no oeOID domain section in workspace
+     *  mode either, and the API behind it is unrouted. */
+    @Test
+    @Order(11)
+    void personalSettingsHasNoOeoidSectionInWorkspaceMode() {
+        var scriptErrors = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        instAdminPage.onPageError(scriptErrors::add);
+        instAdminPage.navigate(server.baseUrl() + "/oehub/my/setting");
+
+        assertThat(instAdminPage.locator("#uaPresetTable")).hasCount(1);
+        assertThat(instAdminPage.locator("#myOidDomainList")).hasCount(0);
+        assertThat(instAdminPage.locator("#btnSaveMyOidDomain")).hasCount(0);
+        var status = (Integer) instAdminPage.evaluate(
+            "async () => (await fetch('/api/oid/domain/my', {method: 'POST', "
+                + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({domainList: 'x.oe'})})).status");
+        assertThat(status).isEqualTo(404);
+        assertThat(scriptErrors).isEmpty();
+    }
+
     /** The setup-created "SYSTEM" workspace is reserved: registering a workspace with that name is
      *  refused whatever the letter case, so nobody can pose as it. */
     @Test

@@ -60,6 +60,8 @@
       </table>
     </div>
 
+    {# oeOID domains belong to oeProxy, which workspace mode never runs #}
+    {% if not workspaceMode %}
     <div class="oe-info-section">
       <table class="oe-info-table mb-0">
         <colgroup><col style="width:110px;"><col></colgroup>
@@ -85,6 +87,7 @@
         </tbody>
       </table>
     </div>
+    {% endif %}
 
   </div>
 
@@ -111,6 +114,7 @@
     deletedToastKey: 'toast.url.my.deleted'
   });
 
+  {% if not workspaceMode %}
   document.getElementById('btnSaveMyOidDomain').addEventListener('click', async () => {
     const domainList = document.getElementById('myOidDomainList').value;
     const res = await fetch('/api/oid/domain/my', {
@@ -119,5 +123,6 @@
     });
     if (res.ok) showToast(MSG['settings.saved']);
   });
+  {% endif %}
 </script>
 {% endblock %}
