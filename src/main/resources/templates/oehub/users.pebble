@@ -48,66 +48,10 @@
   </div>
 
   {% if workspaceMode %}
-  <div class="oe-info-section">
-    <table class="oe-info-table mb-0">
-      <colgroup>
-        <col style="width:130px;">
-        <col>
-        <col style="width:175px;">
-        <col style="width:90px;">
-      </colgroup>
-      <thead>
-        <tr>
-          <th colspan="4">
-            <div class="d-flex align-items-center justify-content-between">
-              <span>{{ msg['users.invite.title'] }}</span>
-              <div class="d-flex align-items-center gap-2">
-                <select id="inviteTeamSelect" class="form-select form-select-sm" style="width:150px;" hidden></select>
-                <button type="button" class="oe-tbl-btn oe-tbl-btn-action" id="btnCreateInvite" title="{{ msg['users.invite.btn.create'] }}">
-                  <span class="oe-icon oe-icon-new" style="width:15px;height:15px"></span>
-                </button>
-              </div>
-            </div>
-          </th>
-        </tr>
-        <tr class="oe-subhead">
-          <th>{{ msg['users.invite.col.team'] }}</th>
-          <th>{{ msg['users.invite.col.code'] }}</th>
-          <th>{{ msg['users.invite.col.expires'] }}</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="invitesTbody">
-        <tr><td colspan="4" class="text-muted text-center py-3">{{ msg['users.invite.empty'] }}</td></tr>
-      </tbody>
-    </table>
-  </div>
+  {% include "templates/oehub/_invites-card.pebble" %}
   {% endif %}
 
-  <div class="oe-info-section" id="pendingSection">
-    <table class="oe-info-table mb-0">
-      <colgroup>
-        <col>
-        <col style="width:150px;">
-        <col style="width:175px;">
-      </colgroup>
-      <thead>
-        <tr>
-          <th colspan="3">
-            <span>{{ msg['users.pending.title'] }}</span>
-          </th>
-        </tr>
-        <tr class="oe-subhead">
-          <th>{{ msg['users.pending.col.userid'] }}</th>
-          <th>{{ msg['users.pending.col.requested'] }}</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="pendingTbody">
-        <tr><td colspan="3" class="text-muted text-center py-3">{{ msg['users.pending.empty'] }}</td></tr>
-      </tbody>
-    </table>
-  </div>
+  {% include "templates/oehub/_pending-card.pebble" %}
 
   {% if workspaceMode %}
   <div class="oe-info-section" id="teamsSection">
@@ -238,6 +182,7 @@
   </div>
 </div>
 
+<script src="/js/member-cards.js"></script>
 <script nonce="{{ cspNonce }}">
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
@@ -668,178 +613,14 @@
     });
   }
 
-  function loadPending() {
-    fetch('/api/wsa/users/pending')
-      .then(function (r) { return r.json(); })
-      .then(renderPending)
-      .catch(function () {});
-  }
-
-  // The section is always shown; with nobody waiting it holds a single "no pending sign-ups" row.
-  function showPendingEmpty() {
-    document.getElementById('pendingTbody').innerHTML =
-      '<tr><td colspan="3" class="text-muted text-center py-3">' + escHtml(MSG['users.pending.empty']) + '</td></tr>';
-  }
-
-  function showPendingEmptyIfNone() {
-    if (!document.getElementById('pendingTbody').querySelector('tr[data-user-no]')) showPendingEmpty();
-  }
-
-  function renderPending(pending) {
-    var tbody = document.getElementById('pendingTbody');
-    if (!pending || pending.length === 0) {
-      showPendingEmpty();
-      return;
-    }
-    tbody.innerHTML = pending.map(function (u) {
-      return '<tr data-user-no="' + u.userNo + '" data-public-key="' + escHtml(u.publicKey || '') + '">' +
-        '<td>' + escHtml(u.userId) + '</td>' +
-        '<td class="small text-muted">' + escHtml(u.createAt) + '</td>' +
-        '<td class="text-end">' +
-        '<button class="oe-tbl-btn oe-tbl-btn-action btn-approve-pending" title="' + escHtml(MSG['users.btn.approve']) + '">' +
-        '<span class="oe-icon oe-icon-approve" style="width:15px;height:15px"></span></button>' +
-        ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-reject-pending ms-1" title="' + escHtml(MSG['users.btn.reject']) + '">' +
-        '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>' +
-        '</td></tr>';
-    }).join('');
-    tbody.querySelectorAll('.btn-approve-pending').forEach(function (btn) {
-      btn.addEventListener('click', onApprovePending);
-    });
-    tbody.querySelectorAll('.btn-reject-pending').forEach(function (btn) {
-      btn.addEventListener('click', onRejectPending);
-    });
-  }
-
-  function onApprovePending() {
-    var btn = this;
-    var row = btn.closest('tr');
-    var userNo = row.dataset.userNo;
-    var publicKeyB64 = row.dataset.publicKey;
-    if (!confirm(MSG['confirm.approve.user'])) return;
-    btn.disabled = true;
-
-    approveWithWorkspaceKeyWrap(userNo, publicKeyB64).catch(function (err) {
-      console.error('Approve failed:', err);
-      btn.disabled = false;
-      showToast(MSG['toast.user.approve.failed']);
-    });
-  }
-
-  async function approveWithWorkspaceKeyWrap(userNo, publicKeyB64) {
-    var row = document.querySelector('tr[data-user-no="' + userNo + '"]');
-    var btn = row.querySelector('.btn-approve-pending');
-
-    var wrappedWsKey;
-    if (!window.OE_WORKSPACE_MODE) {
-      // self-hosted never had a real workspace key to wrap in the first place (dummy identity
-      // crypto - e2eEncryption design doc §1), and neither the approver nor the pending member
-      // has one cached.
-      wrappedWsKey = 'self-hosted';
-    } else {
-      // The approving wsa must have their own workspace key cached from login (e2eEncryption
-      // design doc §3/§5) - if not (e.g. this account predates the crypto wiring, or the cache
-      // was never populated), approval can't proceed: there would be nothing correct to wrap.
-      var wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
-      if (!wsKey || !publicKeyB64) {
-        btn.disabled = false;
-        showToast(MSG['toast.user.approve.failed']);
-        return;
-      }
-      var publicKey = await OE_CRYPTO.importPublicKey(publicKeyB64);
-      wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(wsKey, publicKey);
-    }
-
-    var r = await fetch('/api/wsa/users/' + userNo + '/approve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wrappedWsKey: wrappedWsKey })
-    });
-    if (r.ok) {
-      showToast(MSG['toast.user.approved']);
-      row.remove();
-      showPendingEmptyIfNone();
-      loadUsers('');
-    } else {
-      btn.disabled = false;
-      showToast(MSG['toast.user.approve.failed']);
-    }
-  }
-
-  function onRejectPending() {
-    var btn = this;
-    var row = btn.closest('tr');
-    var userNo = row.dataset.userNo;
-    if (!confirm(MSG['confirm.reject.user'])) return;
-    btn.disabled = true;
-    fetch('/api/wsa/users/' + userNo + '/reject', { method: 'POST' })
-      .then(function (r) {
-        if (r.ok) {
-          showToast(MSG['toast.user.rejected']);
-          row.remove();
-          showPendingEmptyIfNone();
-        } else {
-          btn.disabled = false;
-          showToast(MSG['toast.user.reject.failed']);
-        }
-      }).catch(function () {
-        btn.disabled = false;
-        showToast(MSG['toast.user.reject.failed']);
-      });
-  }
-
-  function loadInvites() {
-    var tbody = document.getElementById('invitesTbody');
-    if (!tbody) return; // workspace mode only - section isn't rendered in self-hosted
-    fetch('/api/wsa/invites')
-      .then(function (r) { return r.json(); })
-      .then(renderInvites)
-      .catch(function () {});
-  }
-
-  function renderInvites(invites) {
-    var tbody = document.getElementById('invitesTbody');
-    if (!invites || invites.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">' + escHtml(MSG['users.invite.empty']) + '</td></tr>';
-      return;
-    }
-    tbody.innerHTML = invites.map(function (i) {
-      return '<tr data-invite-code="' + escHtml(i.inviteCode) + '">' +
-        '<td class="small text-muted">' + escHtml(i.teamName || '-') + '</td>' +
-        '<td class="setup-mono">' + escHtml(i.inviteCode) + '</td>' +
-        '<td class="small text-muted">' + escHtml(i.expiresAt) + '</td>' +
-        '<td class="text-end"><button class="oe-tbl-btn oe-tbl-btn-action btn-copy-invite" title="' + escHtml(MSG['ui.copy.clipboard']) + '">' +
-        '<span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span></button></td></tr>';
-    }).join('');
-    tbody.querySelectorAll('.btn-copy-invite').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var code = btn.closest('tr').dataset.inviteCode;
-        var url = location.origin + '/register?invite=' + encodeURIComponent(code);
-        copyToClipboard(url).then(function () { showToast(MSG['toast.copied']); });
-      });
-    });
-  }
-
-  var btnCreateInvite = document.getElementById('btnCreateInvite');
-  if (btnCreateInvite) {
-    btnCreateInvite.addEventListener('click', function () {
-      btnCreateInvite.disabled = true;
-      var teamSelect = document.getElementById('inviteTeamSelect');
-      var teamNo = teamSelect && teamSelect.value ? Number(teamSelect.value) : null;
-      fetch('/api/wsa/invites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamNo: teamNo })
-      })
-        .then(function (r) {
-          btnCreateInvite.disabled = false;
-          if (r.ok) { loadInvites(); return; }
-          showToast(MSG['toast.invite.create.failed']);
-        }).catch(function () {
-          btnCreateInvite.disabled = false;
-          showToast(MSG['toast.invite.create.failed']);
-        });
-    });
-  }
+  // Invite codes and pending sign-ups: shared with the regular members' page (member-cards.js).
+  var inviteCard = OE_MEMBER_CARDS.initInvites({ listUrl: '/api/wsa/invites', createUrl: '/api/wsa/invites' });
+  OE_MEMBER_CARDS.initPending({
+    listUrl: '/api/wsa/users/pending',
+    approveUrl: function (userNo) { return '/api/wsa/users/' + userNo + '/approve'; },
+    rejectUrl: function (userNo) { return '/api/wsa/users/' + userNo + '/reject'; },
+    onApproved: function () { loadUsers(''); }
+  });
 
   // Team management (cloudGroupService design doc §2.9) - list/create/rename/delete, plus keeping
   // the invite modal's team dropdown and every member row's reassignment dropdown in sync.
@@ -851,7 +632,7 @@
       .then(function (teams) {
         currentTeams = teams;
         renderTeams(teams);
-        renderInviteTeamOptions(teams);
+        if (inviteCard) inviteCard.setTeams(teams);
         renderTeamFilterOptions(teams);
         renderUsers(filteredUsers());
       })
@@ -870,19 +651,6 @@
       '<option value="none">' + escHtml(MSG['teams.select.none']) + '</option>' +
       teams.map(function (t) { return '<option value="' + t.teamNo + '">' + escHtml(t.teamName) + '</option>'; }).join('');
     select.value = teamFilter;
-  }
-
-  function renderInviteTeamOptions(teams) {
-    var select = document.getElementById('inviteTeamSelect');
-    if (!select) return;
-    if (!teams || teams.length === 0) {
-      select.hidden = true;
-      select.innerHTML = '';
-      return;
-    }
-    select.hidden = false;
-    select.innerHTML = '<option value="">' + escHtml(MSG['teams.select.none']) + '</option>' +
-      teams.map(function (t) { return '<option value="' + t.teamNo + '">' + escHtml(t.teamName) + '</option>'; }).join('');
   }
 
   function renderTeams(teams) {
@@ -939,7 +707,7 @@
           var t = currentTeams.find(function (t) { return String(t.teamNo) === String(teamNo); });
           if (t) t.teamName = newName;
           span.textContent = newName;
-          renderInviteTeamOptions(currentTeams);
+          if (inviteCard) inviteCard.setTeams(currentTeams);
           renderTeamFilterOptions(currentTeams);
           renderUsers(filteredUsers());
         } else if (r.status === 409) {
@@ -976,7 +744,7 @@
           showToast(MSG['toast.team.deleted']);
           currentTeams = currentTeams.filter(function (t) { return String(t.teamNo) !== String(teamNo); });
           renderTeams(currentTeams);
-          renderInviteTeamOptions(currentTeams);
+          if (inviteCard) inviteCard.setTeams(currentTeams);
           renderTeamFilterOptions(currentTeams);
           renderUsers(filteredUsers());
         } else if (r.status === 409) {
@@ -1024,8 +792,6 @@
   }
 
   loadUsers('');
-  loadPending();
-  loadInvites();
   loadTeams();
 })();
 </script>

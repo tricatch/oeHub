@@ -1,0 +1,25 @@
+{# Pending sign-ups card, shared by /wsa/users and /oehub/members; wired up by member-cards.js #}
+  <div class="oe-info-section" id="pendingSection">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:150px;">
+        <col style="width:175px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="3">
+            <span>{{ msg['users.pending.title'] }}</span>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.pending.col.userid'] }}</th>
+          <th>{{ msg['users.pending.col.requested'] }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="pendingTbody">
+        <tr><td colspan="3" class="text-muted text-center py-3">{{ msg['users.pending.empty'] }}</td></tr>
+      </tbody>
+    </table>
+  </div>
