@@ -144,7 +144,7 @@ class AuditLogTest {
 
         var tbody = page.locator("#auditLogTbody");
         assertThat(tbody).containsText("Generated root CA");
-        assertThat(tbody).containsText("Approved membership");
+        assertThat(tbody).containsText("Approved sign-up");
         assertThat(tbody).containsText("Changed role");
         assertThat(tbody).containsText("Reset password");
         assertThat(tbody).containsText("Deleted account");
