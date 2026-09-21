@@ -104,7 +104,7 @@ class PasswordRecoveryTest {
         page.locator("#btnRecoverVerify").click();
 
         assertThat(page.locator("#recoverErrorBox")).not().hasClass(Pattern.compile(".*\\bd-none\\b.*"));
-        assertThat(page.locator("#recoverErrorBox")).hasText("Invalid user ID or recovery code.");
+        assertThat(page.locator("#recoverErrorBox")).hasText("Invalid user ID or password reset code.");
         assertThat(page.locator("#recoverStep2")).hasClass(Pattern.compile(".*\\bd-none\\b.*"));
     }
 

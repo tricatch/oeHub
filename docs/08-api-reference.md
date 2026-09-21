@@ -50,7 +50,7 @@
 | GET | `/api/user/backup` | hosts 프로필 + 설정 + proxy vhost를 JSON 파일로 내보내기 |
 | POST | `/api/user/restore` | 위 백업 JSON을 복원 (`?merge=true`면 병합, 아니면 전체 교체) |
 | POST | `/api/user/change-password` | 비밀번호 변경 (개인키 재래핑 포함) |
-| POST | `/api/user/recovery-key` | 복구코드 재발급 |
+| POST | `/api/user/recovery-key` | 비밀번호 재설정 코드 재발급 |
 
 ## oeHosts (`/api/hosts/*`)
 

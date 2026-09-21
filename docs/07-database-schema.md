@@ -72,8 +72,8 @@ erDiagram
 | `token_version` | JWT 무효화 카운터 |
 | `public_key` | 종단간 암호화 공개키 |
 | `wrapped_private_key` | 비밀번호 KEK로 감싼 개인키 |
-| `wrapped_private_key_recovery` | 복구코드 KEK로 감싼 개인키 |
-| `recovery_verifier` | 복구코드 검증용 해시 |
+| `wrapped_private_key_recovery` | 비밀번호 재설정 코드 KEK로 감싼 개인키 |
+| `recovery_verifier` | 비밀번호 재설정 코드 검증용 해시 |
 | `created_by` | 생성자 `user_no` (소프트 레퍼런스) |
 | `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스) |
 | `create_at` | 생성 일시 |
