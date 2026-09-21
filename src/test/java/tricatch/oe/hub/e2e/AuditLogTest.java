@@ -113,7 +113,10 @@ class AuditLogTest {
         var pendingRow = page.locator("#pendingTbody tr[data-user-no]");
         assertThat(pendingRow).hasCount(1);
         pendingRow.locator(".btn-approve-pending").click();
-        assertThat(page.locator("#pendingSection")).isHidden();
+        // The section stays on screen with nobody waiting - it just shows its empty-state row.
+        assertThat(page.locator("#pendingSection")).isVisible();
+        assertThat(page.locator("#pendingTbody tr[data-user-no]")).hasCount(0);
+        assertThat(page.locator("#pendingTbody tr")).hasCount(1);
     }
 
     @Test

@@ -82,7 +82,34 @@
         <tr><td colspan="4" class="text-muted text-center py-3">{{ msg['users.invite.empty'] }}</td></tr>
       </tbody>
     </table>
+  {% endif %}
+
+  <div class="oe-info-section" id="pendingSection">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:150px;">
+        <col style="width:175px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="3">
+            <span>{{ msg['users.pending.title'] }}</span>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.pending.col.userid'] }}</th>
+          <th>{{ msg['users.pending.col.requested'] }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="pendingTbody">
+        <tr><td colspan="3" class="text-muted text-center py-3">{{ msg['users.pending.empty'] }}</td></tr>
+      </tbody>
+    </table>
   </div>
+  </div>
+  {% if workspaceMode %}
 
   <div class="oe-info-section" id="teamsSection">
     <table class="oe-info-table mb-0">
@@ -112,36 +139,12 @@
   </div>
   {% endif %}
 
-  <div class="oe-info-section" id="pendingSection" hidden>
-    <table class="oe-info-table mb-0">
-      <colgroup>
-        <col>
-        <col style="width:150px;">
-        <col style="width:175px;">
-      </colgroup>
-      <thead>
-        <tr>
-          <th colspan="3">
-            <span>{{ msg['users.pending.title'] }}</span>
-          </th>
-        </tr>
-        <tr class="oe-subhead">
-          <th>{{ msg['users.pending.col.userid'] }}</th>
-          <th>{{ msg['users.pending.col.requested'] }}</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="pendingTbody">
-      </tbody>
-    </table>
-  </div>
-
   <div class="oe-info-section">
     <table class="oe-info-table mb-0">
       <colgroup>
         <col>
         <col style="width:90px;">
-        {% if workspaceMode %}<col style="width:140px;">{% endif %}
+        {% if workspaceMode %}<col style="width:170px;">{% endif %}
         <col style="width:150px;">
         <col style="width:150px;">
         <col style="width:155px;">
@@ -672,16 +675,23 @@
       .then(renderPending)
       .catch(function () {});
   }
+  // The section is always shown; with nobody waiting it holds a single "no pending sign-ups" row.
+  function showPendingEmpty() {
+    document.getElementById('pendingTbody').innerHTML =
+      '<tr><td colspan="3" class="text-muted text-center py-3">' + escHtml(MSG['users.pending.empty']) + '</td></tr>';
+  }
+
+  function showPendingEmptyIfNone() {
+    if (!document.getElementById('pendingTbody').querySelector('tr[data-user-no]')) showPendingEmpty();
+  }
+
 
   function renderPending(pending) {
-    var section = document.getElementById('pendingSection');
     var tbody = document.getElementById('pendingTbody');
     if (!pending || pending.length === 0) {
-      section.hidden = true;
-      tbody.innerHTML = '';
+      showPendingEmpty();
       return;
     }
-    section.hidden = false;
     tbody.innerHTML = pending.map(function (u) {
       return '<tr data-user-no="' + u.userNo + '" data-public-key="' + escHtml(u.publicKey || '') + '">' +
         '<td>' + escHtml(u.userId) + '</td>' +
@@ -748,7 +758,7 @@
     if (r.ok) {
       showToast(MSG['toast.user.approved']);
       row.remove();
-      if (!document.getElementById('pendingTbody').children.length) document.getElementById('pendingSection').hidden = true;
+      showPendingEmptyIfNone();
       loadUsers('');
     } else {
       btn.disabled = false;
@@ -767,7 +777,7 @@
         if (r.ok) {
           showToast(MSG['toast.user.rejected']);
           row.remove();
-          if (!document.getElementById('pendingTbody').children.length) document.getElementById('pendingSection').hidden = true;
+          showPendingEmptyIfNone();
         } else {
           btn.disabled = false;
           showToast(MSG['toast.user.reject.failed']);

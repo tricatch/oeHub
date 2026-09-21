@@ -138,7 +138,10 @@ class SetupToOeProxyScenarioTest {
         assertThat(pendingRow).containsText(USER_ID);
 
         pendingRow.locator(".btn-approve-pending").click();
-        assertThat(page.locator("#pendingSection")).isHidden();
+        // The section stays on screen with nobody waiting - it just shows its empty-state row.
+        assertThat(page.locator("#pendingSection")).isVisible();
+        assertThat(page.locator("#pendingTbody tr[data-user-no]")).hasCount(0);
+        assertThat(page.locator("#pendingTbody tr")).hasCount(1);
 
         page.navigate(server.baseUrl() + "/logout");
         assertThat(page).hasURL(java.util.regex.Pattern.compile(".*/login"));
