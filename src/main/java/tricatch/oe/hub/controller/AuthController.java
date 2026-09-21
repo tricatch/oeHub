@@ -255,6 +255,18 @@ public class AuthController {
 
         if( logger.isDebugEnabled() ) logger.debug( "login, userId={}", userId);
 
+        // Missing input is reported in on-screen field order and is not a failed attempt (nothing
+        // was tried), so it neither counts toward the lockout nor reveals anything about accounts.
+        String missing = userId == null || userId.isBlank() ? "auth.error.userid.required"
+                       : password == null || password.isEmpty() ? "auth.error.password.required" : null;
+        if (missing != null) {
+            ctx.render("templates/login.pebble", Map.of(
+                "redirect", redirect != null ? redirect : "",
+                "error", missing
+            ));
+            return;
+        }
+
         if (isLoginLocked(userId)) {
             ctx.status(429).render("templates/login.pebble", Map.of(
                 "redirect", redirect != null ? redirect : "",

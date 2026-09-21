@@ -95,10 +95,22 @@
     e.preventDefault();
     if (submitBtn.disabled) return;
     errorBox.classList.add('d-none');
-    submitBtn.disabled = true;
 
     var password = form.password.value;
     var userId = form.userId.value;
+    // Nothing is sent until both fields are filled; the first empty one (on-screen order) is
+    // named. Only "required" is checked here - format rules would tell a stranger how ids look.
+    if (!userId.trim()) {
+      showError(MSG['auth.error.userid.required']);
+      form.userId.focus();
+      return;
+    }
+    if (!password) {
+      showError(MSG['auth.error.password.required']);
+      form.password.focus();
+      return;
+    }
+    submitBtn.disabled = true;
     var body = new URLSearchParams();
     body.set('_csrf', form._csrf.value);
     body.set('redirect', form.redirect.value);

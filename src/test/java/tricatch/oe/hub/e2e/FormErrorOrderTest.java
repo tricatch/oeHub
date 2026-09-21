@@ -136,6 +136,35 @@ class FormErrorOrderTest {
         page.close();
     }
 
+    /** Login sends nothing until both fields are filled, naming the first empty one; the server
+     *  answers the same way, in the same order, when the browser's check is bypassed. */
+    @Test
+    @Order(5)
+    void loginReportsMissingUserIdThenPasswordWithoutSubmitting() {
+        var page = browser.newPage();
+        var loginPosts = new java.util.concurrent.atomic.AtomicInteger();
+        page.onRequest(r -> { if ("POST".equals(r.method()) && r.url().endsWith("/login")) loginPosts.incrementAndGet(); });
+        page.navigate(server.baseUrl() + "/login");
+        var submit = page.locator("#btnLoginSubmit");
+        var box = page.locator("#loginErrorBox");
+
+        submit.click();
+        assertThat(box).hasText((String) page.evaluate("k => window.MSG[k]", "auth.error.userid.required"));
+
+        page.locator("input[name=userId]").fill("admin1");
+        submit.click();
+        assertThat(box).hasText((String) page.evaluate("k => window.MSG[k]", "auth.error.password.required"));
+        org.assertj.core.api.Assertions.assertThat(loginPosts.get()).isZero();
+
+        var html = (String) page.evaluate(
+            "async () => { const f = document.getElementById('loginForm');"
+                + " const b = new URLSearchParams({_csrf: f._csrf.value, redirect: '', userId: '', password: ''});"
+                + " return await (await fetch('/login', {method: 'POST', body: b})).text(); }");
+        var expected = (String) page.evaluate("k => window.MSG[k]", "auth.error.userid.required");
+        org.assertj.core.api.Assertions.assertThat(html).contains(expected);
+        page.close();
+    }
+
     /** Same order when the browser's own checks are bypassed and the server judges the form. */
     @Test
     @Order(3)

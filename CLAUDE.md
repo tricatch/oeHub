@@ -127,7 +127,7 @@ Update `Role`, the `HUB_USR.role` column width, the affected mapper SQL, the per
 - In an input form block, validate and report errors in the order the fields appear on screen (top to bottom). Show only the first failing field's message, so the message always points at the first thing the user has to fix.
 - Within a field, check "required" before format/length rules; cross-field rules (e.g. confirm equals new) come after every field they depend on has passed.
 - Never let a later field's message pre-empt an earlier empty field (e.g. do not report "new password required" while "current password" is still empty).
-- A submit button that depends on required fields stays disabled until all of them are non-empty; the ordered checks above still run on click (and again server-side) as the guard.
+- Nothing is submitted while a required field is empty. Either keep the submit button disabled until all required fields are non-empty (dialogs), or keep it enabled and, on click, show the first missing field's message without sending anything (forms like login, where the per-case messages matter). Either way the ordered checks above also run on click and again server-side as the guard.
 - Use the same order in client-side checks and in the server's error responses for the same form.
 
 ## Typography
