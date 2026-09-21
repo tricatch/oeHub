@@ -341,6 +341,22 @@ class WorkspaceAdminConsoleTest {
         assertThat(scriptErrors).isEmpty();
     }
 
+    /** The setup-created "SYSTEM" workspace is reserved: registering a workspace with that name is
+     *  refused whatever the letter case, so nobody can pose as it. */
+    @Test
+    @Order(10)
+    void systemWorkspaceNameCannotBeRegisteredInAnyCase() {
+        for (var name : new String[] {"SYSTEM", "system"}) {
+            var page = browser.newPage();
+            try {
+                registerAndConfirmRecovery(page, name, "sysclash" + name.length(), "Sys-Clash-Pw-1");
+                assertThat(page.locator(".alert-danger")).isVisible();
+            } finally {
+                page.close();
+            }
+        }
+    }
+
     /** Suspending the workspace the instance admin belongs to would block their own next login
      *  with nobody left to reactivate it, so the server refuses and the console shows no button. */
     @Test
@@ -351,7 +367,7 @@ class WorkspaceAdminConsoleTest {
         var workspaces = (List<?>) instAdminPage.evaluate(
             "async () => await (await fetch('/api/adm/workspaces')).json()");
         var own = workspaces.stream().map(o -> (Map<String, Object>) o)
-            .filter(m -> "Default".equals(m.get("wsName"))).findFirst().orElseThrow();
+            .filter(m -> "SYSTEM".equals(m.get("wsName"))).findFirst().orElseThrow();
         var ownWsNo = String.valueOf(((Number) own.get("wsNo")).longValue());
 
         var patchStatus = (Integer) instAdminPage.evaluate(

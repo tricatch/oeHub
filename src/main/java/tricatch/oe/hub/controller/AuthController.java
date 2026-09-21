@@ -515,7 +515,10 @@ public class AuthController {
                     renderRegisterError(ctx, "auth.error.wsname.required", userId);
                     return;
                 }
-                if (wsMapper.findByWsName(wsName.trim()) != null) {
+                // The setup-created workspace is stored as "SYSTEM"; the UNIQUE index is case-sensitive,
+                // so "system" would otherwise slip through as a look-alike.
+                if (Workspace.SYSTEM_NAME.equalsIgnoreCase(wsName.trim())
+                        || wsMapper.findByWsName(wsName.trim()) != null) {
                     renderRegisterError(ctx, "auth.error.wsname.exists", userId);
                     return;
                 }

@@ -1,6 +1,9 @@
 package tricatch.oe.hub.model;
 
 public class Workspace extends Auditable {
+    /** Name of the workspace /setup creates for the instance admin. Reserved: registration refuses it. */
+    public static final String SYSTEM_NAME = "SYSTEM";
+
     private Long wsNo;
     private String wsName;
     private String status;

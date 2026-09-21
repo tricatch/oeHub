@@ -158,7 +158,7 @@ public class SetupController {
                 // admin account that will own it.
                 var workspaceMapper = session.getMapper(WorkspaceMapper.class);
                 var workspace = new Workspace();
-                workspace.setWsName("Default");
+                workspace.setWsName(Workspace.SYSTEM_NAME);
                 workspace.setStatus("active");
                 workspace.setCreateAt(now);
                 workspace.setUpdatedAt(now);
