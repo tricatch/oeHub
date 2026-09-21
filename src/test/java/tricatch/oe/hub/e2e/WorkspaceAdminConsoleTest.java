@@ -261,6 +261,14 @@ class WorkspaceAdminConsoleTest {
                     + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: true})})).status");
             assertThat(upstreamStatus).isEqualTo(200);
 
+            // The oeHosts page offers --proxy-server here (it points Chrome at oeProxy's forward proxy)
+            // and its scripts run cleanly with the option in place.
+            var hostsErrors = new java.util.concurrent.CopyOnWriteArrayList<String>();
+            page.onPageError(hostsErrors::add);
+            page.navigate(selfHosted.baseUrl() + "/oehub/hosts");
+            assertThat(page.locator("#toggleProxyServer")).hasCount(1);
+            assertThat(hostsErrors).isEmpty();
+
             page.close();
         }
     }
@@ -401,6 +409,24 @@ class WorkspaceAdminConsoleTest {
         } finally {
             anon.dispose();
         }
+    }
+
+    /** Workspace mode has no forward proxy, so the oeHosts page has no --proxy-server option, and a
+     *  stale "enabled" value stored for it can never put the flag into a launch command. */
+    @Test
+    @Order(13)
+    void hostsPageHasNoProxyServerOptionInWorkspaceMode() {
+        var scriptErrors = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        instAdminPage.onPageError(scriptErrors::add);
+        instAdminPage.navigate(server.baseUrl() + "/oehub/hosts");
+        assertThat((Integer) apiCall(instAdminPage, "PUT", "/api/hosts/conf/proxy_server_enabled",
+            "{\"value\":\"true\"}").get(0)).isEqualTo(204);
+
+        instAdminPage.navigate(server.baseUrl() + "/oehub/hosts");
+        assertThat(instAdminPage.locator("#toggleProxyServer")).hasCount(0);
+        assertThat(instAdminPage.locator("#toggleHostResolverRules")).hasCount(1);
+        assertThat(instAdminPage.locator("#oelinkArgsPreview")).not().containsText("--proxy-server");
+        assertThat(scriptErrors).isEmpty();
     }
 
     /** The personal settings page (any logged-in account) has no oeOID domain section in workspace

@@ -180,6 +180,8 @@
         </button>
         <div class="hosts-info-pop d-none" id="resolverRulesInfoPop">{{ msg['hosts.resolver.rules.info'] }}</div>
       </div>
+      {# --proxy-server points Chrome at oeProxy's forward proxy, which workspace mode never runs #}
+      {% if not workspaceMode %}
       <div class="hosts-browser-option" style="padding-left:0; border-top:none;">
         <div class="form-check form-switch mb-0">
           <input type="checkbox" class="form-check-input oe-list-check" id="toggleProxyServer" role="switch">
@@ -190,6 +192,7 @@
         </button>
         <div class="hosts-info-pop d-none" id="proxyServerInfoPop">{{ msg['hosts.proxy.server.info'] }}</div>
       </div>
+      {% endif %}
       <div class="hosts-chrome-btn-row">
         <button class="hosts-chrome-launch-btn" id="btnChrome" type="button">
           <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
@@ -354,6 +357,12 @@
 <script nonce="{{ cspNonce }}">
 const PROXY_SVR = '{{ proxyIp }}';
 const FWDPROXY_PORT = 36980;
+// Workspace mode has no forward proxy, so the --proxy-server option does not exist there and can
+// never end up in a launch command - even if an earlier self-hosted setting was stored as enabled.
+const PROXY_SERVER_OPTION = {{ workspaceMode ? 'false' : 'true' }};
+function proxyServerOn() {
+  return PROXY_SERVER_OPTION && document.getElementById('toggleProxyServer').checked;
+}
 
 (function() {
   let profiles = [];
@@ -784,7 +793,7 @@ const FWDPROXY_PORT = 36980;
       extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
       extraArgs:        document.getElementById('extraArgs').value,
       hrr:              document.getElementById('toggleHostResolverRules').checked,
-      proxyServer:     document.getElementById('toggleProxyServer').checked,
+      proxyServer:     proxyServerOn(),
       uddEnabled:      document.getElementById('toggleUserDataDir').checked,
       udd:             defaultUserDataDir,
       urlEnabled:      document.getElementById('toggleOpenUrl').checked,
@@ -1099,7 +1108,7 @@ const FWDPROXY_PORT = 36980;
       uddEnabled: document.getElementById('toggleUserDataDir').checked,
       urlEnabled: document.getElementById('toggleOpenUrl').checked,
       uaEnabled: document.getElementById('toggleUserAgent').checked,
-      proxyServerEnabled: document.getElementById('toggleProxyServer').checked,
+      proxyServerEnabled: proxyServerOn(),
       proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
       url: loadingUrlInput.value.trim(),
       userDataDir,
@@ -1206,7 +1215,7 @@ const FWDPROXY_PORT = 36980;
       extraArgsVal: document.getElementById('extraArgs').value,
       hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
       rulesStr,
-      proxyServerEnabled: document.getElementById('toggleProxyServer').checked,
+      proxyServerEnabled: proxyServerOn(),
       proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
       incognito: document.getElementById('toggleIncognito').checked,
       uddEnabled,
@@ -1244,7 +1253,7 @@ const FWDPROXY_PORT = 36980;
       extraArgsVal: document.getElementById('extraArgs').value,
       hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
       rulesStr,
-      proxyServerEnabled: document.getElementById('toggleProxyServer').checked,
+      proxyServerEnabled: proxyServerOn(),
       proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
       incognito: document.getElementById('toggleIncognito').checked,
       uddEnabled: document.getElementById('toggleUserDataDir').checked,
@@ -1276,6 +1285,7 @@ const FWDPROXY_PORT = 36980;
     }
   });
 
+  {% if not workspaceMode %}
   // ── proxy-server info popover ───────────────────────────────
   document.getElementById('btnProxyServerInfo').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1287,6 +1297,7 @@ const FWDPROXY_PORT = 36980;
       pop.classList.add('d-none');
     }
   });
+  {% endif %}
 
   // ── oelink help popover ─────────────────────────────────────
   window.addEventListener('load', () => {
@@ -1469,7 +1480,7 @@ const FWDPROXY_PORT = 36980;
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: String(e.target.checked)})
     });
-    if (e.target.checked && document.getElementById('toggleProxyServer').checked) {
+    if (e.target.checked && proxyServerOn()) {
       document.getElementById('toggleProxyServer').checked = false;
       fetch('/api/hosts/conf/proxy_server_enabled', {
         method: 'PUT', headers: {'Content-Type': 'application/json'},
@@ -1479,6 +1490,7 @@ const FWDPROXY_PORT = 36980;
     updateSchemePreview();
   });
 
+  {% if not workspaceMode %}
   document.getElementById('toggleProxyServer').addEventListener('change', e => {
     fetch('/api/hosts/conf/proxy_server_enabled', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
@@ -1493,7 +1505,7 @@ const FWDPROXY_PORT = 36980;
     }
     updateSchemePreview();
   });
-
+  {% endif %}
 
   // ── Loading URL save ───────────────────────────────────────
   let loadingUrlTimer;
@@ -1747,7 +1759,7 @@ const FWDPROXY_PORT = 36980;
     const exa  = await exaRes.json();
     const exae = await exaeRes.json();
     const pse  = await pseRes.json();
-    document.getElementById('toggleProxyServer').checked = pse.value === 'true';
+    if (PROXY_SERVER_OPTION) document.getElementById('toggleProxyServer').checked = pse.value === 'true';
     defaultUserDataDir = '${USERHOME}/oe-chrome';
     loadingUrlInput.value = lu.value || '';
     userDataDirInput.textContent = defaultUserDataDir;
