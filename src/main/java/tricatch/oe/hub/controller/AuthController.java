@@ -407,6 +407,15 @@ public class AuthController {
         var password        = ctx.formParam("password");
         var confirmPassword = ctx.formParam("confirmPassword");
 
+        // Errors follow the on-screen field order, and the workspace name is the first field when
+        // the form founds a new workspace (workspace mode, no invite code).
+        var inviteParam = ctx.formParam("inviteCode");
+        var wsNameParam = ctx.formParam("wsName");
+        if (AppHome.isWorkspaceMode() && (inviteParam == null || inviteParam.isBlank())
+                && (wsNameParam == null || wsNameParam.isBlank())) {
+            renderRegisterError(ctx, "auth.error.wsname.required", userId != null ? userId : "");
+            return;
+        }
         if (userId == null || userId.isBlank()) {
             renderRegisterError(ctx, "auth.error.userid.required", "");
             return;

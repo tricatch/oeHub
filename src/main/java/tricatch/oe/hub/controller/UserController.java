@@ -202,6 +202,12 @@ public class UserController {
         // the password itself, never as a separate follow-up call.
         var newWrappedPrivateKey = (String) body.get("newWrappedPrivateKey");
 
+        // Errors follow the form's on-screen field order, so a missing current password is reported
+        // before any problem with the new one. Not counted as a wrong-password attempt: nothing was tried.
+        if (currentPassword == null || currentPassword.isEmpty()) {
+            ctx.status(400).json(Map.of("error", "current_password_required"));
+            return;
+        }
         var passwordError = PasswordUtil.validateNewPassword(newPassword, confirmPassword);
         if (passwordError != null) {
             ctx.status(400).json(Map.of("error", passwordError));

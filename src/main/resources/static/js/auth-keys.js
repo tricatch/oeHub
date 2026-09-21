@@ -21,6 +21,17 @@ const OE_AUTH = (function () {
     return null;
   }
 
+  // Client-side mirror of the server's user id rules (SetupController / AuthController.processRegister
+  // / UserIdRules), so a form can report its first failing field in on-screen order before it gets
+  // to the password. The server stays the source of truth. Returns an i18n message key or null.
+  function userIdErrorKey(userId) {
+    if (!userId || !userId.trim()) return 'auth.error.userid.required';
+    if (userId.length < 4) return 'auth.error.userid.too.short';
+    if (!/^[A-Za-z0-9._-]+$/.test(userId)) return 'auth.error.userid.invalid.chars';
+    if (userId.indexOf('__') === 0) return 'auth.error.userid.reserved';
+    return null;
+  }
+
   // The account's PBKDF2 salt, needed BEFORE logging in (the authKey depends on it). The server
   // answers with a deterministic decoy for unknown accounts, so this doesn't reveal which ids exist.
   async function fetchSalt(userId) {
@@ -90,5 +101,5 @@ const OE_AUTH = (function () {
     form.submit();
   }
 
-  return { passwordErrorKey, fetchSalt, keysForLogin, keysForNewPassword, currentSecrets, UNUSABLE_WRAP, submitWithAuthKey };
+  return { passwordErrorKey, userIdErrorKey, fetchSalt, keysForLogin, keysForNewPassword, currentSecrets, UNUSABLE_WRAP, submitWithAuthKey };
 })();

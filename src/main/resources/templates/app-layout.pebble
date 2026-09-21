@@ -384,7 +384,8 @@
         showChangePasswordError(cpMsg);
         return;
       }
-      var key = data.error === 'password_too_short' ? 'change.password.error.too.short'
+      var key = data.error === 'current_password_required' ? 'change.password.error.current.required'
+              : data.error === 'password_too_short' ? 'change.password.error.too.short'
               : data.error === 'password_mismatch'   ? 'change.password.error.mismatch'
               : 'change.password.error.failed';
       showChangePasswordError(MSG[key]);

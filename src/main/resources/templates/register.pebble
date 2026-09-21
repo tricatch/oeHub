@@ -117,6 +117,18 @@
     e.preventDefault();
     if (submitBtn.disabled) return;
 
+    // Errors are reported in on-screen field order: workspace name (only when founding one),
+    // user id, then the password fields.
+    if (form.wsName && !form.wsName.value.trim()) {
+      showToast(MSG['auth.error.wsname.required']);
+      return;
+    }
+    var userIdError = OE_AUTH.userIdErrorKey(form.userId.value);
+    if (userIdError) {
+      showToast(MSG[userIdError]);
+      return;
+    }
+
     var password = form.password.value;
     if (window.OE_WORKSPACE_MODE) {
       // The server never sees the password in workspace mode (only the authKey derived from it),
