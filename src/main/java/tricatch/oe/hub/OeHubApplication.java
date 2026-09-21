@@ -26,6 +26,7 @@ import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
+import tricatch.oe.hub.controller.MemberController;
 import tricatch.oe.hub.controller.WorkspaceController;
 import tricatch.oe.hub.controller.WsaSettingsController;
 import tricatch.oe.hosts.controller.HostsController;
@@ -167,6 +168,7 @@ public class OeHubApplication {
         var adminUa     = new AdminHostsUaController(sqlSessionFactory, objectMapper);
         var adminUrl    = new AdminHostsUrlController(sqlSessionFactory, objectMapper);
         var wsaSettings = new WsaSettingsController();
+        var member      = new MemberController(sqlSessionFactory);
         var oidExtension = new OidExtensionController(settings);
         // Instance-admin workspace console (cloudGroupService design doc §2.5/§3 item 2) -
         // workspace mode only, so constructed unconditionally here (cheap, no I/O) but only
@@ -543,6 +545,18 @@ public class OeHubApplication {
             config.routes.get("/api/wsa/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
             config.routes.post("/api/wsa/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
             config.routes.delete("/api/wsa/users/{userNo}",      adminUser::apiDeleteUser);
+
+            // Any member of a workspace: issue invite codes and approve sign-ups (workspace mode only).
+            // Deliberately open to every logged-in account - the handlers act on the caller's own
+            // workspace, and rejecting, roles, removal and team assignment stay under "/api/wsa/*".
+            if (workspaceMode) {
+                config.routes.get("/oehub/members",                          member::showMembers);
+                config.routes.get("/api/members/invites",                    member::apiListMyInvites);
+                config.routes.post("/api/members/invites",                   adminUser::apiCreateInvite);
+                config.routes.get("/api/members/teams",                      adminUser::apiListTeams);
+                config.routes.get("/api/members/pending",                    adminUser::apiListPending);
+                config.routes.post("/api/members/pending/{userNo}/approve",  adminUser::apiApprovePending);
+            }
 
             // Admin: Tier-1 audit log - reachable by whoever "/wsa/*" already lets in
             // (wsa, or self-hosted's 'adm' - see Role.isWorkspaceAdmin), no separate

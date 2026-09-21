@@ -19,6 +19,13 @@ public interface WsInviteMapper {
         + "WHERE i.ws_no = #{wsNo} AND i.used = FALSE AND i.expires_at > #{now} ORDER BY i.create_at DESC")
     List<WsInvite> findOutstandingByWsNo(@Param("wsNo") Long wsNo, @Param("now") LocalDateTime now);
 
+    // The same list restricted to the codes one member issued - what a regular member sees on their
+    // invite screen (a workspace admin sees the whole workspace through findOutstandingByWsNo).
+    @Select("SELECT i.invite_code, i.ws_no, i.team_no, i.used, i.created_by, i.updated_by, i.create_at, i.updated_at, i.expires_at, t.team_name "
+        + "FROM HUB_WS_INVITE i LEFT JOIN HUB_TEAM t ON t.team_no = i.team_no "
+        + "WHERE i.ws_no = #{wsNo} AND i.created_by = #{createdBy} AND i.used = FALSE AND i.expires_at > #{now} ORDER BY i.create_at DESC")
+    List<WsInvite> findOutstandingByWsNoAndCreator(@Param("wsNo") Long wsNo, @Param("createdBy") Long createdBy, @Param("now") LocalDateTime now);
+
     @Insert("INSERT INTO HUB_WS_INVITE (invite_code, ws_no, team_no, created_by, updated_by, create_at, updated_at, expires_at) VALUES (#{inviteCode}, #{wsNo}, #{teamNo}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}, #{expiresAt})")
     void insert(WsInvite invite);
 

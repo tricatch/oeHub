@@ -35,7 +35,7 @@
 |---|---|---|
 | `/adm/*`, `/api/adm/*` | `adm` | 설정, CA, 워크스페이스 콘솔, H2 콘솔, 자신이 속한 워크스페이스의 프리셋 |
 | `/wsa/*`, `/api/wsa/*` | `wsa` (self-hosted에서는 `adm`도 가능) | 구성원, 승인, 초대, 팀, 감사 로그, 키 회전, 워크스페이스 프리셋 |
-| `/oehub/*`, 그 외 `/api/*` | 로그인 가능한 모든 역할 (`adm`, `wsa`, `usr`) | oeHosts, oeProxy, 내 정보 |
+| `/oehub/*`, 그 외 `/api/*` | 로그인 가능한 모든 역할 (`adm`, `wsa`, `usr`) | oeHosts, oeProxy, 내 정보, 초대/승인(`/oehub/members`, `/api/members/*`, `workspace` 전용) |
 
 `workspace` 모드에서 `adm`은 `/wsa/*`에, `wsa`는 `/adm/*`에 접근할 수 없다(`403`). 세션이 없으면
 `/api/*`는 `401`, 페이지(`/adm/*`, `/wsa/*`)는 로그인 페이지로 리다이렉트된다.
@@ -119,6 +119,19 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET/POST | `/api/wsa/invites` | 초대 코드 목록/발급 (`workspace` 전용) |
 | GET/POST/PATCH/DELETE | `/api/wsa/teams` (`+/{teamNo}`) | 팀 CRUD (`workspace` 전용) |
 | GET/POST/PATCH/DELETE | `/api/wsa/hosts/ua`, `/api/wsa/hosts/url` (`+/{id}`, `+/order`) | 내 워크스페이스의 공유 UA/URL 프리셋 CRUD. 다른 워크스페이스의 프리셋 id는 `404`. 페이지는 `/wsa/settings` |
+
+## 구성원 — 초대·승인 (`/api/members/*`, `workspace` 전용)
+
+일반 구성원(`usr`)도 새 사람을 들일 수 있도록 로그인한 모든 계정에 열려 있다(페이지는 `/oehub/members`). 모든 호출은
+호출자 자신의 워크스페이스에만 작용한다. 거부, 역할 변경, 삭제, 팀 배정은 여기에 없고 `/api/wsa/*`(`wsa`)에만 있다.
+`self-hosted`에서는 등록되지 않는다(404).
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET/POST | `/api/members/invites` | 내가 발급한 초대 코드 목록 / 발급 (본문 `{"teamNo": n}`으로 워크스페이스의 아무 팀이나 지정 가능, 다른 워크스페이스의 팀은 `400`) |
+| GET | `/api/members/teams` | 초대에 지정할 팀 목록 |
+| GET | `/api/members/pending` | 승인 대기 목록 |
+| POST | `/api/members/pending/{userNo}/approve` | 가입 승인 (본문 `wrappedWsKey`, 감사 로그에 승인한 구성원이 남음) |
 
 ## 워크스페이스 관리자 — 감사 로그 (`/api/wsa/audit-log`)
 

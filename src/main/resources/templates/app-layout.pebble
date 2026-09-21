@@ -73,6 +73,9 @@
             <a href="/adm/h2" target="_blank" class="dropdown-item">{{ msg['nav.h2console'] }}</a>
             {% else %}
             <a href="/oehub/my/setting" class="dropdown-item">{{ msg['nav.settings'] }}</a>
+            {% if workspaceMode and user.role == 'usr' %}
+            <a href="/oehub/members" class="dropdown-item">{{ msg['nav.members'] }}</a>
+            {% endif %}
             {% if user.role == 'wsa' %}
             <a href="/wsa/settings" class="dropdown-item">{{ msg['nav.wsa.settings'] }}</a>
             <a href="/wsa/users" class="dropdown-item">{{ msg['nav.admin.users'] }}</a>

@@ -1,0 +1,44 @@
+{% extends "templates/app-layout.pebble" %}
+
+{% block title %}{{ msg['members.title'] }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/css/settings.css">
+<link rel="stylesheet" href="/css/oe-panel.css">
+<link rel="stylesheet" href="/css/info-page.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-app" id="membersApp">
+<script nonce="{{ cspNonce }}">(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('membersApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
+
+<div class="settings-main">
+
+  <h5 class="mb-1">{{ msg['members.title'] }}</h5>
+  <p class="small text-muted">{{ msg['members.desc'] }}</p>
+
+  {% include "templates/oehub/_invites-card.pebble" %}
+  {% include "templates/oehub/_pending-card.pebble" %}
+
+</div>
+
+</div><!-- /settings-app -->
+
+<script src="/js/member-cards.js"></script>
+<script nonce="{{ cspNonce }}">
+(function () {
+  // Regular members can issue invites (into any team) and approve sign-ups; there is no reject here.
+  var inviteCard = OE_MEMBER_CARDS.initInvites({ listUrl: '/api/members/invites', createUrl: '/api/members/invites' });
+  OE_MEMBER_CARDS.initPending({
+    listUrl: '/api/members/pending',
+    approveUrl: function (userNo) { return '/api/members/pending/' + userNo + '/approve'; },
+    rejectUrl: null
+  });
+  fetch('/api/members/teams')
+    .then(function (r) { return r.json(); })
+    .then(function (teams) { if (inviteCard) inviteCard.setTeams(teams); })
+    .catch(function () {});
+})();
+</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('membersApp'), document.getElementById('btnToggleWidth'));</script>
+{% endblock %}
