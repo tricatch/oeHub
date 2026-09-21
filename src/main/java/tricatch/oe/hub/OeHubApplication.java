@@ -81,13 +81,17 @@ public class OeHubApplication {
     // pervasively (icon sizing etc.), and CSS injection can't read IndexedDB or exfiltrate the
     // workspace key the way injected JS can - script-src is where the real value is, so that's
     // where the strictness goes.
-    private static String buildCsp(String nonce) {
+    //
+    // connect-src stays 'self' in production. With -Doe.dev=true it also allows the jsdelivr CDN,
+    // because DevTools fetches the Bootstrap .css.map/.js.map source maps from there and would
+    // otherwise log a CSP violation for each one; nothing in the app itself connects to it.
+    private static String buildCsp(String nonce, boolean dev) {
         return "default-src 'self'; "
             + "script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
             + "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             + "img-src 'self' data:; "
             + "font-src 'self' data:; "
-            + "connect-src 'self'; "
+            + "connect-src 'self'" + (dev ? " https://cdn.jsdelivr.net" : "") + "; "
             + "worker-src 'self' https://cdnjs.cloudflare.com blob:; "
             + "object-src 'none'; "
             + "base-uri 'self'; "
@@ -214,7 +218,7 @@ public class OeHubApplication {
             config.routes.before(ctx -> {
                 String nonce = generateCspNonce();
                 ctx.attribute("cspNonce", nonce);
-                ctx.res().addHeader("Content-Security-Policy", buildCsp(nonce));
+                ctx.res().addHeader("Content-Security-Policy", buildCsp(nonce, dev));
             });
 
             // Set locale from cookie (fallback: Accept-Language header, then "en")
