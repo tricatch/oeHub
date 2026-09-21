@@ -50,7 +50,7 @@
 
               <div class="mb-3">
                 <div class="form-check form-switch">
-                  <input type="checkbox" name="rememberMe" class="form-check-input" id="rememberMe" role="switch" checked>
+                  <input type="checkbox" name="rememberMe" class="form-check-input" id="rememberMe" role="switch"{% if not workspaceMode %} checked{% endif %}>
                   <label class="form-check-label" for="rememberMe">{{ msg['auth.remember.me'] }}</label>
                 </div>
               </div>
