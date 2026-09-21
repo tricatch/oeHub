@@ -19,7 +19,7 @@ const OE_RECOVERY_CODE_MODAL = (function () {
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'oeHub-recovery-code.txt';
+      a.download = 'oeHub-password-reset-code.txt';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
