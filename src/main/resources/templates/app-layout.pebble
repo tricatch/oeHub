@@ -319,6 +319,9 @@
     if (!current) { showChangePasswordError(MSG['change.password.error.current.required']); return; }
     if (!next) { showChangePasswordError(MSG['change.password.error.required']); return; }
     if (next.length < 8) { showChangePasswordError(MSG['change.password.error.too.short']); return; }
+    // Checked here on the typed values: in workspace mode the server only gets authKeys, derived
+    // with different salts for the current and the new password, so it cannot compare them.
+    if (next === current) { showChangePasswordError(MSG['change.password.error.same.as.current']); return; }
     if (next !== confirmVal) { showChangePasswordError(MSG['change.password.error.mismatch']); return; }
 
     // wrapped_private_key must be re-wrapped for the new password in the same request - the old
@@ -386,6 +389,7 @@
       }
       var key = data.error === 'current_password_required' ? 'change.password.error.current.required'
               : data.error === 'password_too_short' ? 'change.password.error.too.short'
+              : data.error === 'password_unchanged'  ? 'change.password.error.same.as.current'
               : data.error === 'password_mismatch'   ? 'change.password.error.mismatch'
               : 'change.password.error.failed';
       showChangePasswordError(MSG[key]);

@@ -127,6 +127,13 @@ class FormErrorOrderTest {
         var tooShort = (String) page.evaluate("k => window.MSG[k]", "change.password.error.too.short");
         assertThat(page.locator("#cpError")).hasText(tooShort);
 
+        // A new password identical to the current one is refused before the request is made.
+        page.locator("#cpNewPassword").fill("Setup-Order-Pw-1");
+        page.locator("#cpConfirmPassword").fill("Setup-Order-Pw-1");
+        confirm.click();
+        var same = (String) page.evaluate("k => window.MSG[k]", "change.password.error.same.as.current");
+        assertThat(page.locator("#cpError")).hasText(same);
+
         var error = (String) page.evaluate(
             "async () => (await (await fetch('/api/user/change-password', {method: 'POST',"
                 + " headers: {'Content-Type': 'application/json'},"

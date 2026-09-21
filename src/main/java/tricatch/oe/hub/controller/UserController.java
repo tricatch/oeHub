@@ -213,6 +213,12 @@ public class UserController {
             ctx.status(400).json(Map.of("error", passwordError));
             return;
         }
+        // Self-hosted only in practice: in workspace mode both values are authKeys derived with
+        // different salts, so identical typed passwords never compare equal here (the browser checks).
+        if (newPassword.equals(currentPassword)) {
+            ctx.status(400).json(Map.of("error", "password_unchanged"));
+            return;
+        }
         if (newWrappedPrivateKey == null || newWrappedPrivateKey.isBlank()) {
             ctx.status(400).json(Map.of("error", "crypto_required"));
             return;
