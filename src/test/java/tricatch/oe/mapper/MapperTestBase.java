@@ -215,7 +215,7 @@ public abstract class MapperTestBase {
                     hosts_content CLOB         NOT NULL,
                     selected      BOOLEAN      NOT NULL DEFAULT FALSE,
                     sort_order    INT          NOT NULL DEFAULT 0,
-                    visibility    VARCHAR(16)  NOT NULL DEFAULT 'public',
+                    share_scope   VARCHAR(16)  NOT NULL DEFAULT 'workspace',
                     parent_id     VARCHAR(32)  NULL,
                     wrapped_content_key CLOB   NULL,
                     link_content        CLOB   NULL,
@@ -279,7 +279,7 @@ public abstract class MapperTestBase {
                     vhost_content CLOB         NOT NULL,
                     selected      BOOLEAN      NOT NULL DEFAULT FALSE,
                     sort_order    INT          NOT NULL DEFAULT 0,
-                    visibility    VARCHAR(16)  NOT NULL DEFAULT 'public',
+                    share_scope   VARCHAR(16)  NOT NULL DEFAULT 'workspace',
                     parent_id     VARCHAR(32)  NULL,
                     wrapped_content_key CLOB   NULL,
                     link_content        CLOB   NULL,
@@ -368,7 +368,7 @@ public abstract class MapperTestBase {
         return user;
     }
 
-    /** The workspace's non-login system account (role wss) that inherits orphaned 'public' rows. */
+    /** The workspace's non-login system account (role wss) that inherits orphaned 'workspace' scope rows. */
     protected HubUser insertWsSystem(Long wsNo) {
         var now = LocalDateTime.now();
         var wsSystem = new HubUser();

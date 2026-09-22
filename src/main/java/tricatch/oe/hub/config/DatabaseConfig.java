@@ -119,7 +119,7 @@ public class DatabaseConfig {
             // HUB_TEAM must exist before HUB_USR, which FK-references it via team_no - see the
             // cloudGroupService design doc §2.1/§2.9 table-creation-order note. Teams are a
             // one-level, workspace-only org label/filter (no nesting, no search/sharing scope of
-            // their own - HOSTS_PFILE.visibility is untouched by this table).
+            // their own - HOSTS_PFILE.share_scope is untouched by this table).
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HUB_TEAM (
                     team_no    BIGINT       AUTO_INCREMENT PRIMARY KEY,
@@ -252,7 +252,7 @@ public class DatabaseConfig {
                     hosts_content     CLOB           NOT NULL,
                     selected          BOOLEAN        NOT NULL DEFAULT FALSE,
                     sort_order        INT            NOT NULL DEFAULT 0,
-                    visibility        VARCHAR(16)    NOT NULL DEFAULT 'public',
+                    share_scope       VARCHAR(16)    NOT NULL DEFAULT 'workspace',
                     parent_id         VARCHAR(32)    NULL,
                     wrapped_content_key CLOB         NULL,
                     link_content        CLOB         NULL,
@@ -328,7 +328,7 @@ public class DatabaseConfig {
                     vhost_content     CLOB           NOT NULL,
                     selected          BOOLEAN        NOT NULL DEFAULT FALSE,
                     sort_order        INT            NOT NULL DEFAULT 0,
-                    visibility        VARCHAR(16)    NOT NULL DEFAULT 'public',
+                    share_scope       VARCHAR(16)    NOT NULL DEFAULT 'workspace',
                     parent_id         VARCHAR(32)    NULL,
                     wrapped_content_key CLOB         NULL,
                     link_content        CLOB         NULL,

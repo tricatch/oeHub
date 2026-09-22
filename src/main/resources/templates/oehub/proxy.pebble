@@ -51,11 +51,11 @@
       <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.vhost'] }}" disabled>
         <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
       </button>
-      <span class="oe-visibility-wrap d-none" id="visibilityWrap">
-        <select class="oe-visibility-select" id="visibilitySelect">
-          <option value="public">{{ msg['visibility.public'] }}</option>
-          <option value="private">{{ msg['visibility.private'] }}</option>
-          <option value="collabo">{{ msg['visibility.collabo'] }}</option>
+      <span class="oe-share-scope-wrap d-none" id="shareScopeWrap">
+        <select class="oe-share-scope-select" id="shareScopeSelect">
+          <option value="workspace">{{ msg['share.scope.workspace'] }}</option>
+          <option value="private">{{ msg['share.scope.private'] }}</option>
+          <option value="collabo">{{ msg['share.scope.collabo'] }}</option>
         </select>
       </span>
     </div>
@@ -231,8 +231,8 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
   const btnDownload      = document.getElementById('btnDownload');
   const emptyState       = document.getElementById('emptyState');
   const editorBody       = document.getElementById('editorBody');
-  const visibilityWrap   = document.getElementById('visibilityWrap');
-  const visibilitySelect = document.getElementById('visibilitySelect');
+  const shareScopeWrap   = document.getElementById('shareScopeWrap');
+  const shareScopeSelect = document.getElementById('shareScopeSelect');
 
   // ── Ace Editor ─────────────────────────────────────────────
   const editor = initAceEditor('cmEditor', 'ace/mode/yaml');
@@ -341,8 +341,8 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
       item.dataset.vhostId = v.vhostId;
       item.draggable = true;
       item.innerHTML = `
-        <span class="oe-list-drag${v.visibility === 'private' ? ' private' : v.visibility === 'collabo' ? ' collabo' : ''}">&#9776;</span>
-        <span class="oe-list-name${v.visibility === 'private' ? ' private' : v.visibility === 'collabo' ? ' collabo' : ''}" data-vhostid="${v.vhostId}">${escHtml(v.vhostProfile)}</span>
+        <span class="oe-list-drag${v.shareScope === 'private' ? ' private' : v.shareScope === 'collabo' ? ' collabo' : ''}">&#9776;</span>
+        <span class="oe-list-name${v.shareScope === 'private' ? ' private' : v.shareScope === 'collabo' ? ' collabo' : ''}" data-vhostid="${v.vhostId}">${escHtml(v.vhostProfile)}</span>
         <div class="form-check form-switch mb-0 oe-list-toggle">
           <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${v.selected ? 'checked' : ''}>
         </div>`;
@@ -372,12 +372,12 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     setContent(v.vhostContent);
     setReadOnly(readonly);
     btnDelete.disabled = readonly;
-    visibilityWrap.classList.toggle('d-none', readonly);
-    visibilitySelect.value = v.visibility || 'public';
-    visibilitySelect.disabled = !!v.parentId;
-    applyVisibilityStyle();
-    btnShare.disabled = v.visibility === 'private';
-    btnCopyShareLink.disabled = v.visibility === 'private';
+    shareScopeWrap.classList.toggle('d-none', readonly);
+    shareScopeSelect.value = v.shareScope || 'workspace';
+    shareScopeSelect.disabled = !!v.parentId;
+    applyShareScopeStyle();
+    btnShare.disabled = v.shareScope === 'private';
+    btnCopyShareLink.disabled = v.shareScope === 'private';
     btnDownload.disabled = false;
     saveStatus.textContent = '';
     document.querySelectorAll('.oe-list-item').forEach(el =>
@@ -398,7 +398,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     btnShare.disabled = false;
     btnCopyShareLink.disabled = false;
     btnDownload.disabled = false;
-    visibilityWrap.classList.add('d-none');
+    shareScopeWrap.classList.add('d-none');
     saveStatus.textContent = '';
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
@@ -543,7 +543,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     btnShare.disabled = true;
     btnCopyShareLink.disabled = true;
     btnDownload.disabled = true;
-    visibilityWrap.classList.add('d-none');
+    shareScopeWrap.classList.add('d-none');
     updateEditorMeta(null);
     renderVhosts();
   });
@@ -828,7 +828,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     }
   });
 
-  // ── Visibility ─────────────────────────────────────────────
+  // ── Share scope ────────────────────────────────────────────
   function updateEditorMeta(v) {
     document.getElementById('metaCreator').textContent = v ? (v.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = v ? (fmtDateTime(v.updatedAt) || '—') : '—';
@@ -838,56 +838,56 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
       : '';
   }
 
-  function applyVisibilityStyle() {
-    visibilitySelect.style.color = visibilitySelect.value === 'private' ? '#CC7722' : visibilitySelect.value === 'collabo' ? '#3b7dd8' : '';
+  function applyShareScopeStyle() {
+    shareScopeSelect.style.color = shareScopeSelect.value === 'private' ? '#CC7722' : shareScopeSelect.value === 'collabo' ? '#3b7dd8' : '';
   }
 
   let _pendingCollabo = false;
-  let _prevVisibility = null;
+  let _prevShareScope = null;
 
-  async function doUpdateVisibility(visibility) {
-    const res = await fetch('/api/proxy/vhosts/' + activeVhostId + '/visibility', {
+  async function doUpdateShareScope(shareScope) {
+    const res = await fetch('/api/proxy/vhosts/' + activeVhostId + '/share-scope', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({visibility})
+      body: JSON.stringify({shareScope})
     });
     if (res.ok) {
       const updated = await res.json();
       const v = vhosts.find(x => x.vhostId === activeVhostId);
-      if (v) { v.visibility = updated.visibility; v.parentId = updated.parentId; }
+      if (v) { v.shareScope = updated.shareScope; v.parentId = updated.parentId; }
       const updatedV = vhosts.find(x => x.vhostId === activeVhostId);
-      visibilitySelect.disabled = !!(updatedV && updatedV.parentId);
-      applyVisibilityStyle();
-      btnShare.disabled = updated.visibility === 'private';
-      btnCopyShareLink.disabled = updated.visibility === 'private';
+      shareScopeSelect.disabled = !!(updatedV && updatedV.parentId);
+      applyShareScopeStyle();
+      btnShare.disabled = updated.shareScope === 'private';
+      btnCopyShareLink.disabled = updated.shareScope === 'private';
       renderVhosts();
       document.querySelectorAll('.oe-list-item').forEach(el =>
         el.classList.toggle('active', el.dataset.vhostId === String(activeVhostId)));
     }
   }
 
-  visibilitySelect.addEventListener('change', e => {
+  shareScopeSelect.addEventListener('change', e => {
     if (!activeVhostId) return;
     if (e.target.value === 'collabo') {
-      _prevVisibility = vhosts.find(x => x.vhostId === activeVhostId)?.visibility || 'public';
+      _prevShareScope = vhosts.find(x => x.vhostId === activeVhostId)?.shareScope || 'workspace';
       _pendingCollabo = true;
       new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
       return;
     }
-    doUpdateVisibility(e.target.value);
+    doUpdateShareScope(e.target.value);
   });
 
   document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
     bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
     if (_pendingCollabo && activeVhostId) {
       _pendingCollabo = false;
-      await doUpdateVisibility('collabo');
+      await doUpdateShareScope('collabo');
     }
   });
 
   document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
     if (_pendingCollabo) {
-      visibilitySelect.value = _prevVisibility;
-      applyVisibilityStyle();
+      shareScopeSelect.value = _prevShareScope;
+      applyShareScopeStyle();
       _pendingCollabo = false;
     }
   });

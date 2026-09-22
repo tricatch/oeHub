@@ -65,7 +65,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | PATCH | `/api/hosts/{hostsId}/content` | 프로필 내용 수정 |
 | PATCH | `/api/hosts/{hostsId}/name` | 프로필 이름 변경 |
 | PATCH | `/api/hosts/{hostsId}/selected` | 선택(활성) 상태 토글 |
-| PATCH | `/api/hosts/{hostsId}/visibility` | 공개 범위 변경 (`private`/`collabo`/`public`) |
+| PATCH | `/api/hosts/{hostsId}/share-scope` | 공개 범위 변경 (`private`/`collabo`/`workspace`) |
 | GET | `/api/hosts/{hostsId}/view` | 단일 프로필 조회 (복호화된 내용 포함) |
 | POST | `/api/hosts/{hostsId}/link` | "살아있는 공개 링크" 생성/갱신 |
 | POST | `/api/hosts/{hostsId}/copy` | 프로필 복사 |
@@ -94,7 +94,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/proxy/vhosts` | 내 가상 호스트 목록 |
 | POST | `/api/proxy/vhosts` | 새 가상 호스트 생성 |
 | DELETE | `/api/proxy/vhosts` | 전체 삭제 |
-| PATCH | `/api/proxy/vhosts/{vhostId}/content`\|`/name`\|`/selected`\|`/visibility` | 각 필드 수정 |
+| PATCH | `/api/proxy/vhosts/{vhostId}/content`\|`/name`\|`/selected`\|`/share-scope` | 각 필드 수정 |
 | POST | `/api/proxy/vhosts/{vhostId}/copy`\|`/register` | 복사 / `collabo` 등록 |
 | DELETE | `/api/proxy/vhosts/{vhostId}` | 삭제 |
 | GET | `/api/proxy/vhosts/search` | 검색 |

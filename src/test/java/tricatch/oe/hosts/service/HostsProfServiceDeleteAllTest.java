@@ -6,9 +6,10 @@ import tricatch.oe.mapper.MapperTestBase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 // Account deletion must not silently destroy content the rest of the workspace still depends on
-// - cloudGroupService design doc §2.5's orphan-handling rule: 'public' survives (reassigned to
-// wss), 'private'/'collabo' still go away with the account. A user-requested "delete all" is not
-// account deletion: it must really delete everything, public profiles included.
+// - cloudGroupService design doc §2.5's orphan-handling rule: 'workspace' scope survives
+// (reassigned to wss), 'private'/'collabo' still go away with the account. A user-requested
+// "delete all" is not account deletion: it must really delete everything, workspace-scoped
+// profiles included.
 class HostsProfServiceDeleteAllTest extends MapperTestBase {
 
     @Test
@@ -17,13 +18,13 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
         var owner = insertUser("deleteAllOwner");
         var service = new HostsProfService(FACTORY);
 
-        var publicProfile = service.create(owner.getUserNo()); // defaults to visibility='public'
+        var publicProfile = service.create(owner.getUserNo()); // defaults to share_scope='workspace'
         var privateProfile = service.create(owner.getUserNo());
-        service.updateVisibility(privateProfile.getHostsId(), owner.getUserNo(), "private", null);
+        service.updateShareScope(privateProfile.getHostsId(), owner.getUserNo(), "private", null);
 
         service.deleteAllForAccountRemoval(owner.getUserNo());
 
-        // 'public' survives, now owned by wss.
+        // 'workspace' scope survives, now owned by wss.
         var survived = service.get(publicProfile.getHostsId());
         assertThat(survived).isNotNull();
         assertThat(survived.getUserNo()).isEqualTo(wsSystem.getUserNo());
@@ -73,9 +74,9 @@ class HostsProfServiceDeleteAllTest extends MapperTestBase {
         var owner = insertUser("userRequestedDeleteAll");
         var service = new HostsProfService(FACTORY);
 
-        var publicProfile = service.create(owner.getUserNo()); // defaults to visibility='public'
+        var publicProfile = service.create(owner.getUserNo()); // defaults to share_scope='workspace'
         var privateProfile = service.create(owner.getUserNo());
-        service.updateVisibility(privateProfile.getHostsId(), owner.getUserNo(), "private", null);
+        service.updateShareScope(privateProfile.getHostsId(), owner.getUserNo(), "private", null);
 
         service.deleteAll(owner.getUserNo());
 

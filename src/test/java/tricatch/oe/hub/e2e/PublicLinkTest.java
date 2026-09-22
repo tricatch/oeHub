@@ -275,8 +275,8 @@ class PublicLinkTest {
 
     @Test
     @Order(11)
-    void changingVisibilityAwayFromPublic_autoRevokesTheLink() {
-        page.locator("#visibilitySelect").selectOption("private");
+    void changingShareScopeAwayFromWorkspace_autoRevokesTheLink() {
+        page.locator("#shareScopeSelect").selectOption("private");
         page.waitForTimeout(300);
 
         var anonContext = browser.newContext();
@@ -287,7 +287,7 @@ class PublicLinkTest {
         assertThat(textResp.status()).isEqualTo(404);
         anonContext.close();
 
-        page.locator("#visibilitySelect").selectOption("public");
+        page.locator("#shareScopeSelect").selectOption("workspace");
         page.waitForTimeout(300);
 
         page.locator("#btnPublicLink").click();
@@ -301,7 +301,7 @@ class PublicLinkTest {
     @Test
     @Order(12)
     void revoking_makesTheSameLink404ForAnonymousVisitors() {
-        // The previous test's visibility flip auto-revoked the earlier link - issue a fresh one
+        // The previous test's share-scope flip auto-revoked the earlier link - issue a fresh one
         // here so this test still proves the "Revoke" button itself works end-to-end.
         page.locator("#btnPublicLink").click();
         assertThat(page.locator("#publicLinkModal.show")).isVisible();

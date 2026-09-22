@@ -12,7 +12,7 @@
   만들려면 평문이 필요하기 때문이다. 이 때문에 `workspace` 모드에서는 oeProxy 자체가 실행되지
   않는다([04-deployment-modes.md](04-deployment-modes.md)).
 - **사용자별 설정 값**(open URL 동작, 시크릿 모드 토글 등)도 대상이 아니다. 서버가 직접 읽어
-  렌더링/내보내기에 쓰며, 애초에 `visibility` 개념이 없는 값이다.
+  렌더링/내보내기에 쓰며, 애초에 `share_scope` 개념이 없는 값이다.
 
 ## 키 계층 구조
 
@@ -25,7 +25,7 @@ flowchart TD
     REC["비밀번호 재설정 코드\n(256비트 무작위 값)"] -->|wrap, 두 번째 방법| PRIV
     PRIV -->|unwrap| WSK["워크스페이스키\n(AES-256, 워크스페이스당 1개)"]
     PUB["공개 키\n(평문 저장)"] -.->|wrap, 사용자별| WSK
-    WSK -->|wrap| DEK_PUB["콘텐츠 키(DEK)\ncollabo / public 리소스용"]
+    WSK -->|wrap| DEK_PUB["콘텐츠 키(DEK)\ncollabo / workspace 리소스용"]
     PRIV -->|wrap| DEK_PRIV["콘텐츠 키(DEK)\nprivate 리소스용"]
     DEK_PRIV -->|암호화| CONTENT["hosts_content\n(AES-256-GCM)"]
     DEK_PUB -->|암호화| CONTENT
@@ -37,7 +37,7 @@ flowchart TD
 
 - 비밀번호 → wrap → 개인 키 ← wrap ← 비밀번호 재설정 코드 (두 방법 중 하나로 unwrap 가능)
 - 개인 키 → unwrap → 워크스페이스키 ← wrap(사용자별) ← 각 사용자 공개 키
-- 워크스페이스키 → wrap → 콘텐츠 키(DEK, collabo/public용)
+- 워크스페이스키 → wrap → 콘텐츠 키(DEK, collabo/workspace용)
 - 개인 키 → wrap → 콘텐츠 키(DEK, private용)
 - 콘텐츠 키(DEK) → 암호화 → `hosts_content`
 - 워크스페이스키 → wrap → 공개 링크 키 → 암호화 → `link_content`
@@ -56,7 +56,7 @@ flowchart TD
 - **워크스페이스키(AES-KW)** — 워크스페이스당 하나. 평문 저장 없이 각 사용자의 공개 키로 개별
   wrap되어, 각자 자기 개인 키로만 자기 사본을 unwrap한다.
 - **행별 콘텐츠 키(DEK, AES-256-GCM)** — 리소스(hosts 프로필)마다 무작위 생성되어 내용을 직접
-  암호화한다. `private`는 소유자 개인 키로, `collabo`/`public`은 워크스페이스키로 wrap한다. 두
+  암호화한다. `private`는 소유자 개인 키로, `collabo`/`workspace`는 워크스페이스키로 wrap한다. 두
   공개 범위는 복호화 권한이 아니라 검색 범위에서만 다르다.
 
 표준 봉투 암호화 패턴(AWS KMS류)으로, DEK가 콘텐츠 암호화를, KEK가 작은 키 하나의 wrap만
@@ -125,10 +125,11 @@ WebCrypto API에서 일어난다.
 
 ## 공개 링크 공유
 
-`public` 리소스에는 리소스별로 로그인 불필요한 공개 링크를 선택적으로 만들 수 있다. `public`은
-워크스페이스가 공동으로 소유하는 범위라, 링크 발급·폐기는 소유자에게 한정되지 않고 같은
-워크스페이스의 어느 멤버든 할 수 있다(서버는 대상 행이 `public`이고 호출자와 같은 워크스페이스인지만
-검사한다). 워크스페이스 모델 위에 얹히는 것이며, 리소스마다 의도적으로 켜야 한다.
+`workspace` 공개 범위 리소스에는 리소스별로 로그인 불필요한 공개 링크를 선택적으로 만들 수 있다.
+`workspace`는 워크스페이스가 공동으로 소유하는 범위라, 링크 발급·폐기는 소유자에게 한정되지 않고
+같은 워크스페이스의 어느 멤버든 할 수 있다(서버는 대상 행의 공개 범위가 `workspace`이고 호출자와
+같은 워크스페이스인지만 검사한다). 워크스페이스 모델 위에 얹히는 것이며, 리소스마다 의도적으로
+켜야 한다.
 
 링크 내용은 리소스의 일반 콘텐츠 DEK와 별개인 전용 키로 암호화된다. 이 전용 키는
 워크스페이스키로 wrap되어 서버에 저장되므로, 어느 사용자의 브라우저든 원본 수정 시 링크 내용을
@@ -145,5 +146,5 @@ HTTP 요청에 포함되지 않으므로 서버 접근 로그에도 남지 않�
 공개 범위 변경은 콘텐츠는 그대로 둔 채 콘텐츠 키만 다시 wrap한다.
 
 - `private`로 옮기면 → 소유자 개인 키로 다시 wrap한다.
-- `public`/`collabo`로 옮기면 → 워크스페이스키로 다시 wrap한다.
-- `public`을 벗어나면 → 살아있는 공개 링크는 자동 폐기된다.
+- `workspace`/`collabo`로 옮기면 → 워크스페이스키로 다시 wrap한다.
+- `workspace`를 벗어나면 → 살아있는 공개 링크는 자동 폐기된다.

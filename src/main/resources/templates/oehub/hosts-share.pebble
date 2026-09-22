@@ -207,7 +207,7 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
     // ciphertext with the viewer's own cached workspace key (apiShare already required them to be
     // logged in to this same workspace) and passes plaintext straight through when the row isn't
     // encrypted (self-hosted), so the rest of this script is unchanged either way.
-    content = await OE_CONTENT_CRYPTO.decrypt({{ wrappedContentKeyJson | raw }}, {{ contentJson | raw }}, '{{ hosts.visibility }}');
+    content = await OE_CONTENT_CRYPTO.decrypt({{ wrappedContentKeyJson | raw }}, {{ contentJson | raw }}, '{{ hosts.shareScope }}');
     {% endif %}
   } catch (err) {
     console.error('Failed to decrypt shared content:', err);

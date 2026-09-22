@@ -63,7 +63,7 @@ public class HostsProfService {
 
     // encryptedContent/wrappedContentKey come from the client (workspace mode only - e2eEncryption
     // design doc §1): it generates a DEK, encrypts the example content with it, and wraps the DEK
-    // with the workspace key (new profiles default to 'public' visibility, same as below).
+    // with the workspace key (new profiles default to 'workspace' share scope, same as below).
     // Both null means self-hosted/plaintext, unchanged from before this wiring.
     public HostsProf create(Long userNo, String encryptedContent, String wrappedContentKey) {
         try (var session = sqlSessionFactory.openSession()) {
@@ -80,7 +80,7 @@ public class HostsProfService {
             hosts.setUpdatedBy(userNo);
             hosts.setCreateAt(now);
             hosts.setUpdatedAt(now);
-            hosts.setVisibility("public");
+            hosts.setShareScope("workspace");
             mapper.insertWithAutoSortOrder(hosts);
             session.commit();
             return mapper.findByHostsId(hosts.getHostsId());
@@ -178,7 +178,7 @@ public class HostsProfService {
 
     /**
      * Removes everything the user owns because they asked for it ("delete all my profiles"): every
-     * profile goes, 'public' ones included - the same as deleting each one by hand, or a
+     * profile goes, 'workspace' scoped ones included - the same as deleting each one by hand, or a
      * replace-import. Account removal is different, see {@link #deleteAllForAccountRemoval}.
      */
     public void deleteAll(Long userNo) {
@@ -189,8 +189,8 @@ public class HostsProfService {
     }
 
     /**
-     * Removes a user's profiles because their ACCOUNT is being deleted. 'public' profiles are
-     * reassigned to the workspace's wss account rather than deleted with the account -
+     * Removes a user's profiles because their ACCOUNT is being deleted. 'workspace' scoped profiles
+     * are reassigned to the workspace's wss account rather than deleted with the account -
      * 'private'/'collabo' still go away (cloudGroupService design doc §2.5 orphan handling), so
      * shared resources the team depends on outlive whoever made them. Must not be used for a
      * user-requested "delete all": that must really delete.
@@ -236,8 +236,8 @@ public class HostsProfService {
         return copyProfile(userNo, sourceHostId, null, null);
     }
 
-    // encryptedContent/wrappedContentKey (workspace mode only): the copy always becomes 'public', so
-    // if the source was 'private' the client must unwrap-then-rewrap for the workspace key
+    // encryptedContent/wrappedContentKey (workspace mode only): the copy always becomes 'workspace'
+    // scoped, so if the source was 'private' the client must unwrap-then-rewrap for the workspace key
     // itself (a plain copy of source's wrap would be wrong) - simplest for the client to just
     // generate a fresh DEK for the copy either way, same as a new create().
     public HostsProf copyProfile(Long userNo, String sourceHostId, String encryptedContent, String wrappedContentKey) {
@@ -245,7 +245,7 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var source = mapper.findByHostsId(sourceHostId);
             if (source == null) return null;
-            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getShareScope())) return null;
             // Refuse rather than silently create an undecryptable row: if the source is
             // encrypted (has its own key) and the caller didn't provide a fresh wrap, copying
             // source's ciphertext verbatim with no key would permanently strand that content.
@@ -266,7 +266,7 @@ public class HostsProfService {
             copy.setUpdatedBy(userNo);
             copy.setCreateAt(now);
             copy.setUpdatedAt(now);
-            copy.setVisibility("public");
+            copy.setShareScope("workspace");
             mapper.insertWithAutoSortOrder(copy);
             session.commit();
             return mapper.findByHostsId(copy.getHostsId());
@@ -277,7 +277,7 @@ public class HostsProfService {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var parent = mapper.findByHostsId(parentId);
-            if (parent == null || parent.getUserNo() >= 0 || !"collabo".equals(parent.getVisibility())) return null;
+            if (parent == null || parent.getUserNo() >= 0 || !"collabo".equals(parent.getShareScope())) return null;
             // A collabo target must be in the same workspace as its owner - searchOthers() already
             // won't surface a cross-workspace item, but this call takes parentId directly, so a
             // guessed/leaked hosts_id must still be rejected here (cloudGroupService design doc
@@ -299,7 +299,7 @@ public class HostsProfService {
             ref.setUpdatedBy(userNo);
             ref.setCreateAt(now);
             ref.setUpdatedAt(now);
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parentId);
             mapper.insertWithAutoSortOrder(ref);
             session.commit();
@@ -308,26 +308,26 @@ public class HostsProfService {
     }
 
     // wrappedContentKey is the client's re-wrap of the row's existing DEK for the KEK that the
-    // target visibility implies (personal key for 'private', workspace key for 'collabo'/
-    // 'public') - the DEK itself never changes on a visibility flip (e2eEncryption design doc
+    // target share scope implies (personal key for 'private', workspace key for 'collabo'/
+    // 'workspace') - the DEK itself never changes on a share-scope flip (e2eEncryption design doc
     // §7). Null in self-hosted, where content/keys are never encrypted (design doc §1).
-    public HostsProf updateVisibility(String hostId, Long userNo, String visibility, String wrappedContentKey) {
-        if ("collabo".equals(visibility)) {
+    public HostsProf updateShareScope(String hostId, Long userNo, String shareScope, String wrappedContentKey) {
+        if ("collabo".equals(shareScope)) {
             return convertToCollabo(hostId, userNo, wrappedContentKey);
         }
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = mapper.findByHostsId(hostId);
             if (hosts == null || !hosts.getUserNo().equals(userNo) || hosts.getUserNo() < 0) return null;
-            if ("collabo".equals(hosts.getVisibility())) return null;
+            if ("collabo".equals(hosts.getShareScope())) return null;
             // Refuse rather than silently strand ciphertext with a stale/missing key - see the
             // identical guard in copyProfile.
             if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
-            mapper.updateVisibility(hostId, userNo, visibility, wrappedContentKey, LocalDateTime.now());
-            // Auto-revoke any live public link the moment visibility leaves 'public' (e2eEncryption
-            // design doc §6) - previously the "Generate"/"Revoke" button was merely disabled here
-            // while an already-issued link stayed live and reachable at its URL.
-            if (!"public".equals(visibility)) {
+            mapper.updateShareScope(hostId, userNo, shareScope, wrappedContentKey, LocalDateTime.now());
+            // Auto-revoke any live public link the moment share scope leaves 'workspace'
+            // (e2eEncryption design doc §6) - previously the "Generate"/"Revoke" button was merely
+            // disabled here while an already-issued link stayed live and reachable at its URL.
+            if (!"workspace".equals(shareScope)) {
                 mapper.clearLink(hostId);
             }
             session.commit();
@@ -341,7 +341,7 @@ public class HostsProfService {
             var hosts = mapper.findByHostsId(hostId);
             if (hosts == null || !hosts.getUserNo().equals(userNo) || hosts.getUserNo() < 0) return null;
             if (hosts.getParentId() != null) return null;
-            // Same guard as updateVisibility/copyProfile - never move ciphertext to the new
+            // Same guard as updateShareScope/copyProfile - never move ciphertext to the new
             // parent row without a key to go with it.
             if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
             var now = LocalDateTime.now();
@@ -360,11 +360,11 @@ public class HostsProfService {
             parent.setUpdatedBy(userNo);
             parent.setCreateAt(now);
             parent.setUpdatedAt(now);
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
             mapper.setAsCollaboRef(hostId, userNo, parent.getHostsId(), now);
             // Auto-revoke (design doc §6): 'collabo' is a restricted audience, defeating the whole
-            // point of a fully-public no-login link - same reasoning as updateVisibility's
+            // point of a fully-public no-login link - same reasoning as updateShareScope's
             // downgrade to 'private' above.
             mapper.clearLink(hostId);
             session.commit();
@@ -395,7 +395,7 @@ public class HostsProfService {
                 entry.setUpdatedBy(userNo);
                 entry.setCreateAt(now);
                 entry.setUpdatedAt(now);
-                if (entry.getVisibility() == null) entry.setVisibility("private");
+                if (entry.getShareScope() == null) entry.setShareScope("private");
                 mapper.insert(entry);
             }
             session.commit();
@@ -424,8 +424,8 @@ public class HostsProfService {
             h.setSelected(Boolean.TRUE.equals(m.get("selected")));
             h.setSortOrder(tricatch.oe.hub.util.ImportFields.intValue(m, "sortOrder", 0));
             // Import creates standalone entries, never collabo refs, and a file that doesn't say
-            // "public" must not make the row public - see VisibilityUtil.forImport.
-            h.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
+            // "workspace" must not make the row workspace-scoped - see ShareScopeUtil.forImport.
+            h.setShareScope(tricatch.oe.hub.util.ShareScopeUtil.forImport(m.get("shareScope")));
             entries.add(h);
         }
         return entries;
@@ -465,15 +465,15 @@ public class HostsProfService {
     // workspace key, so any workspace member's browser can re-encrypt on later saves - the raw key
     // itself still only ever appears in the share URL's fragment. Both null revokes; exactly one
     // null is rejected (a link is issued/revoked as a pair, never half-updated) by returning null,
-    // same signal as "not found"/"not public" below - the controller maps either to an error
-    // response. 'public' only - private is pointless here and collabo's restricted audience
-    // defeats the point of "anyone, no login".
+    // same signal as "not found"/"not workspace-scoped" below - the controller maps either to an
+    // error response. 'workspace' scope only - private is pointless here and collabo's restricted
+    // audience defeats the point of "anyone, no login".
     public HostsProf setPublicLink(String hostId, Long callerUserNo, String linkContent, String wrappedLinkKey) {
         if ((linkContent == null) != (wrappedLinkKey == null)) return null;
         try (var session = sqlSessionFactory.openSession()) {
             var hostsMapper = session.getMapper(HostsProfMapper.class);
             var hosts = hostsMapper.findByHostsId(hostId);
-            if (hosts == null || !"public".equals(hosts.getVisibility())) return null;
+            if (hosts == null || !"workspace".equals(hosts.getShareScope())) return null;
             var caller = session.getMapper(HubUserMapper.class).findByUserNo(callerUserNo);
             if (caller == null) return null;
             hostsMapper.updateLinkContent(hostId, caller.getWsNo(), linkContent, wrappedLinkKey);
@@ -482,12 +482,12 @@ public class HostsProfService {
         }
     }
 
-    // Public, unauthenticated read for the /link viewer - visibility='public' and a non-null
+    // Public, unauthenticated read for the /link viewer - share_scope='workspace' and a non-null
     // link_content (an issued, not-yet-revoked link) are the only gates; no workspace/login check
     // at all, since that's the entire point of this sharing mode (§6).
     public HostsProf getForPublicLink(String hostId) {
         var hosts = get(hostId);
-        if (hosts == null || !"public".equals(hosts.getVisibility()) || hosts.getLinkContent() == null) return null;
+        if (hosts == null || !"workspace".equals(hosts.getShareScope()) || hosts.getLinkContent() == null) return null;
         return hosts;
     }
 

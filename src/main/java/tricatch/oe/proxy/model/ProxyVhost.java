@@ -9,7 +9,7 @@ public class ProxyVhost extends Auditable {
     private String vhostContent;
     private boolean selected;
     private int sortOrder;
-    private String visibility;
+    private String shareScope;
     private String parentId;
     private String userId;
     private String updatedByUserId;
@@ -32,8 +32,8 @@ public class ProxyVhost extends Auditable {
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 
-    public String getVisibility() { return visibility; }
-    public void setVisibility(String visibility) { this.visibility = visibility; }
+    public String getShareScope() { return shareScope; }
+    public void setShareScope(String shareScope) { this.shareScope = shareScope; }
 
     public String getParentId() { return parentId; }
     public void setParentId(String parentId) { this.parentId = parentId; }

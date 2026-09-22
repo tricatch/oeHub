@@ -241,7 +241,7 @@ class HostsShareViewTest {
         firstCopyHostsId = (String) copy.get("hostsId");
 
         var decrypted = (String) memberPage.evaluate(
-            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope)",
             copy);
         assertThat(decrypted).contains(PROBE_LINE);
     }
@@ -291,7 +291,7 @@ class HostsShareViewTest {
         assertThat((String) imported.get("hostsContent")).doesNotContain("share-view-probe");
 
         var decrypted = (String) memberPage.evaluate(
-            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope)",
             imported);
         assertThat(decrypted).contains(PROBE_LINE);
     }

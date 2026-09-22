@@ -19,14 +19,14 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// Import/restore files are user-supplied. A row whose visibility the file doesn't spell out as
-// "public" must come in private - the old default made a hand-written or older-format file publish
-// everything (anonymously readable via /share in self-hosted mode).
-class ImportVisibilityDefaultTest extends MapperTestBase {
+// Import/restore files are user-supplied. A hosts or vhost row whose share scope the file doesn't
+// spell out as "workspace" must come in private - the old default made a hand-written or
+// older-format file publish everything (anonymously readable via /share in self-hosted mode).
+class ImportShareScopeDefaultTest extends MapperTestBase {
 
     private static final String VHOST_YAML = """
             virtual:
-              - domain: import-visibility.example.com
+              - domain: import-share-scope.example.com
                 location:
                   - host: http://127.0.0.1:36912
                     path:
@@ -49,98 +49,99 @@ class ImportVisibilityDefaultTest extends MapperTestBase {
         });
     }
 
-    /** A hosts entry as it appears in an export/backup; visibility is left out when null. */
-    private static Map<String, Object> hostsEntry(String name, String visibility) {
+    /** A hosts entry as it appears in an export/backup; shareScope is left out when null. */
+    private static Map<String, Object> hostsEntry(String name, String shareScope) {
         var m = new HashMap<String, Object>();
         m.put("hostsProfile", name);
         m.put("hostsContent", "127.0.0.1 " + name + ".oe");
-        if (visibility != null) m.put("visibility", visibility);
+        if (shareScope != null) m.put("shareScope", shareScope);
         return m;
     }
 
-    private static Map<String, Object> vhostEntry(String name, String visibility) {
+    /** A vhost entry as it appears in an export/backup; shareScope is left out when null. */
+    private static Map<String, Object> vhostEntry(String name, String shareScope) {
         var m = new HashMap<String, Object>();
         m.put("vhostProfile", name);
         m.put("vhostContent", VHOST_YAML);
-        if (visibility != null) m.put("visibility", visibility);
+        if (shareScope != null) m.put("shareScope", shareScope);
         return m;
     }
 
-    private Map<String, String> hostsVisibilityByName(HubUser user) {
+    private Map<String, String> hostsShareScopeByName(HubUser user) {
         return hostsService.list(user.getUserNo()).stream()
-            .collect(Collectors.toMap(p -> p.getHostsProfile(), p -> p.getVisibility()));
+            .collect(Collectors.toMap(p -> p.getHostsProfile(), p -> p.getShareScope()));
     }
 
-    private Map<String, String> vhostVisibilityByName(HubUser user) {
+    private Map<String, String> vhostShareScopeByName(HubUser user) {
         return vhostService.list(user.getUserNo()).stream()
-            .collect(Collectors.toMap(v -> v.getVhostProfile(), v -> v.getVisibility()));
+            .collect(Collectors.toMap(v -> v.getVhostProfile(), v -> v.getShareScope()));
     }
 
     @Test
-    void hostsImport_onlyAnExplicitPublicStaysPublic() throws Exception {
+    void hostsImport_onlyAnExplicitWorkspaceStaysWorkspace() throws Exception {
         var user = insertUser("import-hosts");
         var body = Map.of("hosts", List.of(
             hostsEntry("no-field", null),
             hostsEntry("explicit-private", "private"),
-            hostsEntry("explicit-public", "public"),
+            hostsEntry("explicit-workspace", "workspace"),
             hostsEntry("unknown-value", "everyone"),
             // Needs a live parent reference an import can't recreate - imported as a standalone
-            // public row, as before (VisibilityUtil.forImport).
+            // workspace-scoped row, as before (ShareScopeUtil.forImport).
             hostsEntry("was-collabo", "collabo")));
 
         JavalinTest.test(appAs(user), (server, client) ->
             assertThat(client.post("/api/hosts/import?merge=true", body).code()).isEqualTo(200));
 
-        assertThat(hostsVisibilityByName(user)).containsOnly(
+        assertThat(hostsShareScopeByName(user)).containsOnly(
             Map.entry("no-field", "private"),
             Map.entry("explicit-private", "private"),
-            Map.entry("explicit-public", "public"),
+            Map.entry("explicit-workspace", "workspace"),
             Map.entry("unknown-value", "private"),
-            Map.entry("was-collabo", "public"));
+            Map.entry("was-collabo", "workspace"));
     }
 
     @Test
-    void vhostImport_onlyAnExplicitPublicStaysPublic() throws Exception {
+    void vhostImport_onlyAnExplicitWorkspaceStaysWorkspace() throws Exception {
         var user = insertUser("import-vhosts");
         var body = Map.of("vhosts", List.of(
             vhostEntry("no-field", null),
             vhostEntry("explicit-private", "private"),
-            vhostEntry("explicit-public", "public")));
+            vhostEntry("explicit-workspace", "workspace")));
 
         JavalinTest.test(appAs(user), (server, client) ->
             assertThat(client.post("/api/proxy/vhosts/import?merge=true", body).code()).isEqualTo(200));
 
-        assertThat(vhostVisibilityByName(user)).containsOnly(
+        assertThat(vhostShareScopeByName(user)).containsOnly(
             Map.entry("no-field", "private"),
             Map.entry("explicit-private", "private"),
-            Map.entry("explicit-public", "public"));
+            Map.entry("explicit-workspace", "workspace"));
     }
 
     @Test
-    void backupRestore_keepsVisibilityForBothHostsAndVhosts_andDefaultsToPrivate() throws Exception {
+    void backupRestore_keepsShareScopeForHostsAndVhosts_andDefaultsToPrivate() throws Exception {
         var user = insertUser("restore-both");
         var body = Map.of(
             "hosts", Map.of("profiles", List.of(
                 hostsEntry("h-no-field", null),
                 hostsEntry("h-private", "private"),
-                hostsEntry("h-public", "public"))),
+                hostsEntry("h-workspace", "workspace"))),
             "proxy", Map.of("vhosts", List.of(
                 vhostEntry("v-no-field", null),
                 vhostEntry("v-private", "private"),
-                vhostEntry("v-public", "public"))));
+                vhostEntry("v-workspace", "workspace"))));
 
         JavalinTest.test(appAs(user), (server, client) ->
             assertThat(client.post("/api/user/restore?merge=true", body).code()).isEqualTo(200));
 
-        assertThat(hostsVisibilityByName(user)).containsOnly(
+        assertThat(hostsShareScopeByName(user)).containsOnly(
             Map.entry("h-no-field", "private"),
             Map.entry("h-private", "private"),
-            Map.entry("h-public", "public"));
-        // Restore never read visibility for vhosts at all, so every one of these used to come back
-        // 'public' regardless of what the backup said.
-        assertThat(vhostVisibilityByName(user)).containsOnly(
+            Map.entry("h-workspace", "workspace"));
+        // Restore never read share scope for vhosts at all, so every one of these used to come
+        // back 'public' (now 'workspace') regardless of what the backup said.
+        assertThat(vhostShareScopeByName(user)).containsOnly(
             Map.entry("v-no-field", "private"),
             Map.entry("v-private", "private"),
-            Map.entry("v-public", "public"));
+            Map.entry("v-workspace", "workspace"));
     }
 }

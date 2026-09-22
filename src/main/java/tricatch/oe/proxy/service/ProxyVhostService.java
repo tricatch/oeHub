@@ -69,7 +69,7 @@ public class ProxyVhostService {
             vhost.setUpdatedBy(userNo);
             vhost.setCreateAt(now);
             vhost.setUpdatedAt(now);
-            vhost.setVisibility("public");
+            vhost.setShareScope("workspace");
             mapper.insertWithAutoSortOrder(vhost);
             session.commit();
             return mapper.findByVhostId(vhost.getVhostId());
@@ -148,7 +148,7 @@ public class ProxyVhostService {
 
     /**
      * Removes everything the user owns because they asked for it ("delete all my vhosts"): every
-     * vhost goes, 'public' ones included - the same as deleting each one by hand, or a
+     * vhost goes, 'workspace' ones included - the same as deleting each one by hand, or a
      * replace-import. Account removal is different, see {@link #deleteAllForAccountRemoval}.
      */
     public void deleteAll(Long userNo) {
@@ -159,7 +159,7 @@ public class ProxyVhostService {
     }
 
     /**
-     * Removes a user's vhosts because their ACCOUNT is being deleted. 'public' vhosts are
+     * Removes a user's vhosts because their ACCOUNT is being deleted. 'workspace' vhosts are
      * reassigned to the workspace's wss account rather than deleted with the account -
      * 'private'/'collabo' still go away (cloudGroupService design doc §2.5 orphan handling). Must
      * not be used for a user-requested "delete all": that must really delete.
@@ -206,7 +206,7 @@ public class ProxyVhostService {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var source = mapper.findByVhostId(sourceVhostId);
             if (source == null) return null;
-            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getShareScope())) return null;
             var copy = new ProxyVhost();
             copy.setVhostId(newId());
             copy.setUserNo(userNo);
@@ -218,7 +218,7 @@ public class ProxyVhostService {
             copy.setUpdatedBy(userNo);
             copy.setCreateAt(now);
             copy.setUpdatedAt(now);
-            copy.setVisibility("public");
+            copy.setShareScope("workspace");
             mapper.insertWithAutoSortOrder(copy);
             session.commit();
             return mapper.findByVhostId(copy.getVhostId());
@@ -229,7 +229,7 @@ public class ProxyVhostService {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var parent = mapper.findByVhostId(parentId);
-            if (parent == null || parent.getUserNo() >= 0 || !"collabo".equals(parent.getVisibility())) return null;
+            if (parent == null || parent.getUserNo() >= 0 || !"collabo".equals(parent.getShareScope())) return null;
             var existing = mapper.findReferencesByUserNo(userNo);
             if (existing.stream().anyMatch(r -> parentId.equals(r.getParentId()))) return null;
             var ref = new ProxyVhost();
@@ -243,7 +243,7 @@ public class ProxyVhostService {
             ref.setUpdatedBy(userNo);
             ref.setCreateAt(now);
             ref.setUpdatedAt(now);
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parentId);
             mapper.insertWithAutoSortOrder(ref);
             session.commit();
@@ -251,16 +251,16 @@ public class ProxyVhostService {
         }
     }
 
-    public ProxyVhost updateVisibility(String vhostId, Long userNo, String visibility) {
-        if ("collabo".equals(visibility)) {
+    public ProxyVhost updateShareScope(String vhostId, Long userNo, String shareScope) {
+        if ("collabo".equals(shareScope)) {
             return convertToCollabo(vhostId, userNo);
         }
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var vhost = mapper.findByVhostId(vhostId);
             if (vhost == null || !vhost.getUserNo().equals(userNo) || vhost.getUserNo() < 0) return null;
-            if ("collabo".equals(vhost.getVisibility())) return null;
-            mapper.updateVisibility(vhostId, userNo, visibility, LocalDateTime.now());
+            if ("collabo".equals(vhost.getShareScope())) return null;
+            mapper.updateShareScope(vhostId, userNo, shareScope, LocalDateTime.now());
             session.commit();
             return mapper.findByVhostId(vhostId);
         }
@@ -286,7 +286,7 @@ public class ProxyVhostService {
             parent.setUpdatedBy(userNo);
             parent.setCreateAt(now);
             parent.setUpdatedAt(now);
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
             mapper.setAsCollaboRef(vhostId, userNo, parent.getVhostId(), now);
             session.commit();
@@ -316,7 +316,7 @@ public class ProxyVhostService {
                 entry.setUpdatedBy(userNo);
                 entry.setCreateAt(now);
                 entry.setUpdatedAt(now);
-                if (entry.getVisibility() == null) entry.setVisibility("private");
+                if (entry.getShareScope() == null) entry.setShareScope("private");
                 mapper.insert(entry);
             }
             session.commit();
@@ -339,8 +339,8 @@ public class ProxyVhostService {
             v.setSelected(Boolean.TRUE.equals(m.get("selected")));
             v.setSortOrder(tricatch.oe.hub.util.ImportFields.intValue(m, "sortOrder", 0));
             // Import creates standalone entries, never collabo refs, and a file that doesn't say
-            // "public" must not make the row public - see VisibilityUtil.forImport.
-            v.setVisibility(tricatch.oe.hub.util.VisibilityUtil.forImport(m.get("visibility")));
+            // "workspace" must not make the row workspace-scoped - see ShareScopeUtil.forImport.
+            v.setShareScope(tricatch.oe.hub.util.ShareScopeUtil.forImport(m.get("shareScope")));
             entries.add(v);
         }
         return entries;

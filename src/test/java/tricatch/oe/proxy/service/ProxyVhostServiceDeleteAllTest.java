@@ -15,9 +15,9 @@ class ProxyVhostServiceDeleteAllTest extends MapperTestBase {
         var owner = insertUser("vhostDeleteAllOwner");
         var service = new ProxyVhostService(FACTORY);
 
-        var publicVhost = service.create(owner.getUserNo()); // defaults to visibility='public'
+        var publicVhost = service.create(owner.getUserNo()); // defaults to shareScope='workspace'
         var privateVhost = service.create(owner.getUserNo());
-        service.updateVisibility(privateVhost.getVhostId(), owner.getUserNo(), "private");
+        service.updateShareScope(privateVhost.getVhostId(), owner.getUserNo(), "private");
 
         service.deleteAllForAccountRemoval(owner.getUserNo());
 
@@ -54,9 +54,9 @@ class ProxyVhostServiceDeleteAllTest extends MapperTestBase {
         var owner = insertUser("vhostUserRequestedDeleteAll");
         var service = new ProxyVhostService(FACTORY);
 
-        var publicVhost = service.create(owner.getUserNo()); // defaults to visibility='public'
+        var publicVhost = service.create(owner.getUserNo()); // defaults to shareScope='workspace'
         var privateVhost = service.create(owner.getUserNo());
-        service.updateVisibility(privateVhost.getVhostId(), owner.getUserNo(), "private");
+        service.updateShareScope(privateVhost.getVhostId(), owner.getUserNo(), "private");
 
         service.deleteAll(owner.getUserNo());
 

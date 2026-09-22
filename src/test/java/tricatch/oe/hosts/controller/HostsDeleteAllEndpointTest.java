@@ -12,8 +12,9 @@ import tricatch.oe.mapper.MapperTestBase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 // "Delete all" is a user's request to remove their profiles. It used to share the account-removal
-// path, which keeps 'public' profiles alive by handing them to the workspace's system account - so
-// most profiles (new ones default to 'public') silently survived, still searchable and shared.
+// path, which keeps 'workspace' scoped profiles alive by handing them to the workspace's system
+// account - so most profiles (new ones default to 'workspace' scope) silently survived, still
+// searchable and shared.
 class HostsDeleteAllEndpointTest extends MapperTestBase {
 
     private Javalin appAs(HubUser actor) {
@@ -30,7 +31,7 @@ class HostsDeleteAllEndpointTest extends MapperTestBase {
         var wsSystem = insertWsSystem(TEST_WS_NO);
         var owner = insertUser("delete-all-endpoint");
         var service = new HostsProfService(FACTORY);
-        var publicProfile = service.create(owner.getUserNo()); // defaults to visibility='public'
+        var publicProfile = service.create(owner.getUserNo()); // defaults to share_scope='workspace'
 
         JavalinTest.test(appAs(owner), (server, client) ->
             assertThat(client.delete("/api/hosts").code()).isEqualTo(204));

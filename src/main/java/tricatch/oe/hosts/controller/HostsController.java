@@ -175,7 +175,7 @@ public class HostsController {
         var hostsId = ctx.pathParam("hostsId");
         var hosts = hostsProfService.get(hostsId);
         if (hosts == null) { ctx.status(404); return; }
-        if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
+        if ("private".equals(hosts.getShareScope())) { ctx.status(403); return; }
         if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
             var viewer = AuthController.currentUser(ctx);
             var ownerWsNo = hostsProfService.getOwnerWsNo(hostsId);
@@ -187,7 +187,7 @@ public class HostsController {
         result.put("hostsProfile", hosts.getHostsProfile());
         result.put("hostsContent", hosts.getHostsContent());
         result.put("wrappedContentKey", hosts.getWrappedContentKey());
-        result.put("visibility", hosts.getVisibility());
+        result.put("shareScope", hosts.getShareScope());
         result.put("userId", owner != null ? owner : "");
         result.put("updatedAt", hosts.getUpdatedAt());
         ctx.json(result);
@@ -197,7 +197,7 @@ public class HostsController {
         var hostsId = ctx.pathParam("hostsId");
         var hosts = hostsProfService.get(hostsId);
         if (hosts == null) { ctx.status(404); return; }
-        if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
+        if ("private".equals(hosts.getShareScope())) { ctx.status(403); return; }
         var workspaceMode = tricatch.oe.hub.config.AppHome.isWorkspaceMode();
         // Encrypted content (oe.mode=workspace) can't be decrypted by an anonymous visitor - the
         // server never holds the workspace key. So under workspace mode this route stops being a
@@ -382,7 +382,7 @@ public class HostsController {
         var hostId = ctx.pathParam("hostsId");
         var hosts = hostsProfService.get(hostId);
         if (hosts == null) { ctx.status(404); return; }
-        if ("private".equals(hosts.getVisibility())) { ctx.status(403); return; }
+        if ("private".equals(hosts.getShareScope())) { ctx.status(403); return; }
         if (hosts.getWrappedContentKey() != null) {
             // Encrypted (oe.mode=workspace): this endpoint returns a single synchronous plaintext
             // body, but the server never holds the workspace key needed to decrypt (server-blind
@@ -399,16 +399,16 @@ public class HostsController {
         ctx.contentType("text/plain; charset=utf-8").result(header + hosts.getHostsContent());
     }
 
-    public void apiUpdateVisibility(Context ctx) throws Exception {
+    public void apiUpdateShareScope(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
         var hostId = ctx.pathParam("hostsId");
         var body = objectMapper.readValue(ctx.body(), Map.class);
-        var visibility = (String) body.get("visibility");
+        var shareScope = (String) body.get("shareScope");
         var wrappedContentKey = (String) body.get("wrappedContentKey");
-        if (visibility == null || (!visibility.equals("public") && !visibility.equals("private") && !visibility.equals("collabo"))) {
+        if (shareScope == null || (!shareScope.equals("workspace") && !shareScope.equals("private") && !shareScope.equals("collabo"))) {
             ctx.status(400); return;
         }
-        var updated = hostsProfService.updateVisibility(hostId, hubUser.getUserNo(), visibility, wrappedContentKey);
+        var updated = hostsProfService.updateShareScope(hostId, hubUser.getUserNo(), shareScope, wrappedContentKey);
         if (updated == null) { ctx.status(404); return; }
         ctx.json(updated);
     }

@@ -19,7 +19,7 @@ class ProxyVhostMapperTest extends MapperTestBase {
         v.setVhostContent(content);
         v.setSelected(false);
         v.setSortOrder(0);
-        v.setVisibility("public");
+        v.setShareScope("workspace");
         // The real actor is always positive, even for a collabo parent row whose user_no is
         // stored negative (see ProxyVhostService.convertToCollabo) - mirror that here too.
         v.setCreatedBy(Math.abs(userNo));
@@ -41,7 +41,7 @@ class ProxyVhostMapperTest extends MapperTestBase {
             assertThat(found.getVhostProfile()).isEqualTo("my vhost");
             assertThat(found.getVhostContent()).isEqualTo("server: {}");
             assertThat(found.isSelected()).isFalse();
-            assertThat(found.getVisibility()).isEqualTo("public");
+            assertThat(found.getShareScope()).isEqualTo("workspace");
             assertThat(found.getParentId()).isNull();
             assertThat(found.getUpdatedAt()).isNotNull();
         }
@@ -154,14 +154,14 @@ class ProxyVhostMapperTest extends MapperTestBase {
     }
 
     @Test
-    void updateVisibility() {
+    void updateShareScope() {
         var user = insertUser("ivan");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var vhost = newVhost(user.getUserNo(), "profile", "content");
             mapper.insert(vhost);
-            mapper.updateVisibility(vhost.getVhostId(), user.getUserNo(), "private", LocalDateTime.now());
-            assertThat(mapper.findByVhostId(vhost.getVhostId()).getVisibility()).isEqualTo("private");
+            mapper.updateShareScope(vhost.getVhostId(), user.getUserNo(), "private", LocalDateTime.now());
+            assertThat(mapper.findByVhostId(vhost.getVhostId()).getShareScope()).isEqualTo("private");
         }
     }
 
@@ -242,7 +242,7 @@ class ProxyVhostMapperTest extends MapperTestBase {
 
             // collabo 부모 (user_no < 0)
             var parent = newVhost(-owner.getUserNo(), "shared vhost", "original: true");
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
 
             // 원본을 collabo 참조로 전환
@@ -250,7 +250,7 @@ class ProxyVhostMapperTest extends MapperTestBase {
 
             // collab 사용자가 참조 등록
             var ref = newVhost(collab.getUserNo(), "shared vhost", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parent.getVhostId());
             mapper.insert(ref);
 
@@ -291,16 +291,16 @@ class ProxyVhostMapperTest extends MapperTestBase {
 
             // 고아 부모: 참조 없음 → 삭제 대상
             var orphan = newVhost(-owner.getUserNo(), "orphan", "content");
-            orphan.setVisibility("collabo");
+            orphan.setShareScope("collabo");
             mapper.insert(orphan);
 
             // 활성 부모: 참조 있음 → 보존 대상
             var active = newVhost(-owner.getUserNo(), "active", "content");
-            active.setVisibility("collabo");
+            active.setShareScope("collabo");
             mapper.insert(active);
 
             var ref = newVhost(owner.getUserNo(), "active ref", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(active.getVhostId());
             mapper.insert(ref);
 
@@ -318,7 +318,7 @@ class ProxyVhostMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var pub = newVhost(other.getUserNo(), "public vhost", "content");
-            pub.setVisibility("public");
+            pub.setShareScope("workspace");
             mapper.insert(pub);
 
             var results = mapper.searchOthers(searcher.getUserNo(), "public");
@@ -334,9 +334,9 @@ class ProxyVhostMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
 
-            // collabo 부모: user_no < 0, visibility='collabo'
+            // collabo 부모: user_no < 0, share_scope='collabo'
             var parent = newVhost(-owner.getUserNo(), "team vhost", "content");
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
 
             // searcher가 아직 참여하지 않은 상태 → 검색에 노출
@@ -346,7 +346,7 @@ class ProxyVhostMapperTest extends MapperTestBase {
 
             // searcher가 참여(ref 생성) → NOT EXISTS 조건으로 제외
             var ref = newVhost(searcher.getUserNo(), "team vhost", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parent.getVhostId());
             mapper.insert(ref);
 

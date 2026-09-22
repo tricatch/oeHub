@@ -213,7 +213,7 @@ class WorkspaceKeyRotationTest {
         assertThat((String) raw.get("wrappedContentKey")).isNotEqualTo(wrappedContentKeyBefore);
 
         var decrypted = (String) stayPage.evaluate(
-            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope)",
             raw);
         assertThat(decrypted).contains(PROBE_LINE);
     }
@@ -280,7 +280,7 @@ class WorkspaceKeyRotationTest {
             "async (id) => { const list = await (await fetch('/api/hosts')).json(); return list.find(p => p.hostsId === id); }",
             hostsId);
         var decrypted = (String) stayPage.evaluate(
-            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope)",
             raw);
         assertThat(decrypted).contains(PROBE_LINE);
     }

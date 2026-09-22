@@ -284,9 +284,9 @@
 .oe-list-toggle .form-check-input { cursor: pointer; width: 1.6rem; height: 0.88rem; margin-top: 0; }
 .oe-list-toggle .form-check-input:checked { background-color: #a8d878; border-color: #8ec45a; }
 
-/* Visibility select */
-.oe-visibility-wrap { display: flex; align-items: center; gap: 0.3rem; }
-.oe-visibility-select {
+/* Share scope select (oeHosts profiles, oeProxy vhosts) */
+.oe-share-scope-wrap { display: flex; align-items: center; gap: 0.3rem; }
+.oe-share-scope-select {
   font-size: 0.75rem;
   padding: 0.15rem 0.3rem;
   border: 1px solid #dee2e6;

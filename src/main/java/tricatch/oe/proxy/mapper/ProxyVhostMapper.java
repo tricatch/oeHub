@@ -11,7 +11,7 @@ public interface ProxyVhostMapper {
     @Select("""
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
-               h.selected, h.sort_order, h.visibility,
+               h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
@@ -27,7 +27,7 @@ public interface ProxyVhostMapper {
     @Select("""
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
-               h.selected, h.sort_order, h.visibility,
+               h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.updated_at
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
@@ -38,7 +38,7 @@ public interface ProxyVhostMapper {
     @Select("""
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
-               h.selected, h.sort_order, h.visibility,
+               h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.updated_at
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
@@ -50,7 +50,7 @@ public interface ProxyVhostMapper {
     @Select("""
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
-               h.selected, h.sort_order, h.visibility,
+               h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
@@ -63,20 +63,20 @@ public interface ProxyVhostMapper {
     ProxyVhost findByVhostId(String vhostId);
 
     @Select("""
-        SELECT h.vhost_id, h.user_no, h.vhost_profile, h.selected, h.sort_order, h.visibility,
+        SELECT h.vhost_id, h.user_no, h.vhost_profile, h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.updated_at
         FROM PROXY_VHOST h
-        WHERE h.visibility = 'public'
+        WHERE h.share_scope = 'workspace'
           AND h.parent_id IS NULL
           AND h.user_no != #{userNo}
           AND h.user_no > 0
           AND LOWER(h.vhost_profile) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
         UNION ALL
-        SELECT h.vhost_id, h.user_no, h.vhost_profile, h.selected, h.sort_order, h.visibility,
+        SELECT h.vhost_id, h.user_no, h.vhost_profile, h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.updated_at
         FROM PROXY_VHOST h
         WHERE h.user_no < 0
-          AND h.visibility = 'collabo'
+          AND h.share_scope = 'collabo'
           AND NOT EXISTS (
             SELECT 1 FROM PROXY_VHOST r WHERE r.parent_id = h.vhost_id AND r.user_no = #{userNo}
           )
@@ -88,18 +88,18 @@ public interface ProxyVhostMapper {
 
     @Insert("""
         INSERT INTO PROXY_VHOST (vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order,
-                                 visibility, parent_id, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, created_by, updated_by, create_at, updated_at)
         VALUES (#{vhostId}, #{userNo}, #{vhostProfile}, #{vhostContent}, #{selected}, #{sortOrder},
-                #{visibility}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
+                #{shareScope}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
         """)
     void insert(ProxyVhost vhost);
 
     @Insert("""
         INSERT INTO PROXY_VHOST (vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order,
-                                 visibility, parent_id, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, created_by, updated_by, create_at, updated_at)
         SELECT #{vhostId}, #{userNo}, #{vhostProfile}, #{vhostContent}, #{selected},
                COALESCE(MAX(sort_order), -1) + 1,
-               #{visibility}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
+               #{shareScope}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
         FROM PROXY_VHOST
         WHERE user_no = #{userNo}
         """)
@@ -124,10 +124,10 @@ public interface ProxyVhostMapper {
     @Update("UPDATE PROXY_VHOST SET sort_order = #{sortOrder} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
     void updateSortOrder(@Param("vhostId") String vhostId, @Param("userNo") Long userNo, @Param("sortOrder") int sortOrder);
 
-    @Update("UPDATE PROXY_VHOST SET visibility = #{visibility}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
-    void updateVisibility(@Param("vhostId") String vhostId, @Param("userNo") Long userNo, @Param("visibility") String visibility, @Param("updatedAt") LocalDateTime updatedAt);
+    @Update("UPDATE PROXY_VHOST SET share_scope = #{shareScope}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
+    void updateShareScope(@Param("vhostId") String vhostId, @Param("userNo") Long userNo, @Param("shareScope") String shareScope, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE PROXY_VHOST SET parent_id = #{parentId}, vhost_content = '', visibility = 'collabo', updated_by = #{userNo}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
+    @Update("UPDATE PROXY_VHOST SET parent_id = #{parentId}, vhost_content = '', share_scope = 'collabo', updated_by = #{userNo}, updated_at = #{updatedAt} WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
     void setAsCollaboRef(@Param("vhostId") String vhostId, @Param("userNo") Long userNo, @Param("parentId") String parentId, @Param("updatedAt") LocalDateTime updatedAt);
 
     @Delete("DELETE FROM PROXY_VHOST WHERE vhost_id = #{vhostId} AND user_no = #{userNo}")
@@ -139,9 +139,9 @@ public interface ProxyVhostMapper {
     @Delete("DELETE FROM PROXY_VHOST WHERE user_no = #{userNo}")
     void deleteByUserNo(Long userNo);
 
-    // 'public' rows survive account deletion (cloudGroupService design doc §2.5 orphan handling)
+    // 'workspace' rows survive account deletion (cloudGroupService design doc §2.5 orphan handling)
     // - fetched before the delete above so the caller can reassign them to ws_system first.
-    @Select("SELECT vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order, visibility, parent_id, created_by, updated_by, create_at, updated_at FROM PROXY_VHOST WHERE user_no = #{userNo} AND visibility = 'public'")
+    @Select("SELECT vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order, share_scope, parent_id, created_by, updated_by, create_at, updated_at FROM PROXY_VHOST WHERE user_no = #{userNo} AND share_scope = 'workspace'")
     List<ProxyVhost> findPublicByUserNo(Long userNo);
 
     // created_by is left untouched - it's the immutable "who actually made this" audit trail
@@ -154,7 +154,7 @@ public interface ProxyVhostMapper {
     @Delete("DELETE FROM PROXY_VHOST WHERE user_no = -#{userNo} AND vhost_id NOT IN (SELECT DISTINCT parent_id FROM PROXY_VHOST WHERE parent_id IS NOT NULL)")
     void deleteOrphanedParentsByCreator(Long userNo);
 
-    @Select("SELECT vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order, visibility, parent_id, updated_at FROM PROXY_VHOST WHERE user_no = #{userNo} AND parent_id IS NOT NULL")
+    @Select("SELECT vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order, share_scope, parent_id, updated_at FROM PROXY_VHOST WHERE user_no = #{userNo} AND parent_id IS NOT NULL")
     List<ProxyVhost> findReferencesByUserNo(Long userNo);
 
     @Select("SELECT COUNT(*) FROM PROXY_VHOST WHERE parent_id = #{parentId}")

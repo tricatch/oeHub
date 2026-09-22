@@ -2,7 +2,7 @@ package tricatch.oe.hub.model;
 
 // Workspace -> team is one level only, no nesting (cloudGroupService design doc §2.9). Teams are
 // a pure organizational label/filter - they carry no search or sharing scope of their own, and
-// HOSTS_PFILE.visibility is untouched by this table.
+// HOSTS_PFILE.share_scope is untouched by this table.
 public class Team extends Auditable {
     private Long teamNo;
     private Long wsNo;

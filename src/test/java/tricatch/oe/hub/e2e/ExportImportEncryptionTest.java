@@ -28,7 +28,7 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
  * way back in, so a restored/imported row's ciphertext would land with no key at all and get
  * treated/displayed as if it were plaintext. Re-wrapping is never needed here - importing back
  * into the SAME account/workspace means the existing wrap (personal key for 'private', workspace
- * key for 'public'/'collabo', identical either way per §6) is still valid unchanged.
+ * key for 'workspace'/'collabo', identical either way per §6) is still valid unchanged.
  */
 @Tag("e2e")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -141,7 +141,7 @@ class ExportImportEncryptionTest {
         assertThat((String) imported.get("wrappedContentKey")).isNotBlank();
 
         var decrypted = (String) page.evaluate(
-            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+            "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope)",
             imported);
         assertThat(decrypted).contains(PROBE_LINE);
     }
@@ -170,7 +170,7 @@ class ExportImportEncryptionTest {
         for (var o : mine) {
             var row = (Map<?, ?>) o;
             var decrypted = (String) page.evaluate(
-                "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility)",
+                "(row) => OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope)",
                 row);
             assertThat(decrypted).contains(PROBE_LINE);
         }

@@ -47,7 +47,7 @@ class ProxyControllerCollaboInvalidationTest extends MapperTestBase {
 
         // Owner creates a vhost and turns it into a shared/collabo one.
         var ownerVhost = vhostService.create(owner.getUserNo());
-        var ownerRef = vhostService.updateVisibility(ownerVhost.getVhostId(), owner.getUserNo(), "collabo");
+        var ownerRef = vhostService.updateShareScope(ownerVhost.getVhostId(), owner.getUserNo(), "collabo");
 
         // Collaborator joins it and marks it selected.
         var collabRef = vhostService.registerCollabo(collaborator.getUserNo(), ownerRef.getParentId());

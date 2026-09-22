@@ -57,11 +57,11 @@
       <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.profile'] }}" disabled>
         <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
       </button>
-      <span class="oe-visibility-wrap d-none" id="visibilityWrap">
-        <select class="oe-visibility-select" id="visibilitySelect">
-          <option value="public">{{ msg['visibility.public'] }}</option>
-          <option value="private">{{ msg['visibility.private'] }}</option>
-          <option value="collabo">{{ msg['visibility.collabo'] }}</option>
+      <span class="oe-share-scope-wrap d-none" id="shareScopeWrap">
+        <select class="oe-share-scope-select" id="shareScopeSelect">
+          <option value="workspace">{{ msg['share.scope.workspace'] }}</option>
+          <option value="private">{{ msg['share.scope.private'] }}</option>
+          <option value="collabo">{{ msg['share.scope.collabo'] }}</option>
         </select>
       </span>
     </div>
@@ -398,7 +398,7 @@ function proxyServerOn() {
       // OE_CONTENT_CRYPTO.decrypt() helper (also used by hosts-share.pebble) doesn't expose -
       // unwrap it here directly instead of calling the helper.
       let dek;
-      if (p.visibility === 'private') {
+      if (p.shareScope === 'private') {
         const privateKey = await OE_SESSION_KEYS.loadPrivateKey();
         if (!privateKey) { p.hostsContent = ''; return true; }
         dek = await OE_CRYPTO.unwrapContentKeyWithPersonalKey(p.wrappedContentKey, privateKey);
@@ -437,8 +437,8 @@ function proxyServerOn() {
     return JSON.stringify(enc);
   }
 
-  // Generates a fresh DEK for a brand-new row, wrapped for the visibility it starts as
-  // ('public' for a new/copied profile - both use the workspace key, e2eEncryption design doc
+  // Generates a fresh DEK for a brand-new row, wrapped for the share scope it starts as
+  // ('workspace' for a new/copied profile - both use the workspace key, e2eEncryption design doc
   // §6). Returns {encryptedContent, wrappedContentKey} to send along with the create, or null
   // in self-hosted / when session keys aren't available yet.
   async function encryptNewContent(plaintext) {
@@ -470,7 +470,7 @@ function proxyServerOn() {
     const res = await fetch('/api/hosts/' + hostsId + '/view');
     if (!res.ok) throw new Error('view failed');
     const row = await res.json();
-    return OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.visibility);
+    return OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope);
   }
 
   // Request options for POST /api/hosts/{id}/copy. In workspace mode HostsProfService.copyProfile
@@ -518,8 +518,8 @@ function proxyServerOn() {
   const userAgentInput   = document.getElementById('userAgent');
   let uaPresets = [];
   let urlPresets = [];
-  const visibilityWrap   = document.getElementById('visibilityWrap');
-  const visibilitySelect = document.getElementById('visibilitySelect');
+  const shareScopeWrap   = document.getElementById('shareScopeWrap');
+  const shareScopeSelect = document.getElementById('shareScopeSelect');
 
   // ── Render sidebar ─────────────────────────────────────────
   function renderProfiles() {
@@ -542,8 +542,8 @@ function proxyServerOn() {
       item.dataset.hostsId = p.hostsId;
       item.draggable = true;
       item.innerHTML = `
-        <span class="oe-list-drag${p.visibility === 'private' ? ' private' : p.visibility === 'collabo' ? ' collabo' : ''}">&#9776;</span>
-        <span class="oe-list-name${p.visibility === 'private' ? ' private' : p.visibility === 'collabo' ? ' collabo' : ''}" data-hostsid="${p.hostsId}">${escHtml(p.hostsProfile)}</span>
+        <span class="oe-list-drag${p.shareScope === 'private' ? ' private' : p.shareScope === 'collabo' ? ' collabo' : ''}">&#9776;</span>
+        <span class="oe-list-name${p.shareScope === 'private' ? ' private' : p.shareScope === 'collabo' ? ' collabo' : ''}" data-hostsid="${p.hostsId}">${escHtml(p.hostsProfile)}</span>
         <div class="form-check form-switch mb-0 oe-list-toggle">
           <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${p.selected ? 'checked' : ''}>
         </div>`;
@@ -589,10 +589,10 @@ function proxyServerOn() {
     editor.setReadOnly(readonly);
     document.getElementById('cmHostsEditor').classList.toggle('readonly', readonly);
     btnDelete.disabled = readonly;
-    visibilityWrap.classList.toggle('d-none', readonly);
-    visibilitySelect.value = p.visibility || 'public';
-    visibilitySelect.disabled = !!p.parentId;
-    applyVisibilityStyle();
+    shareScopeWrap.classList.toggle('d-none', readonly);
+    shareScopeSelect.value = p.shareScope || 'workspace';
+    shareScopeSelect.disabled = !!p.parentId;
+    applyShareScopeStyle();
     updateShareButtons();
     btnDownload.disabled = false;
     saveStatus.textContent = '';
@@ -619,7 +619,7 @@ function proxyServerOn() {
     btnDelete.disabled = true;
     btnShare.disabled = false;
     btnDownload.disabled = false;
-    visibilityWrap.classList.add('d-none');
+    shareScopeWrap.classList.add('d-none');
     saveStatus.textContent = '';
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
@@ -744,7 +744,7 @@ function proxyServerOn() {
     btnDelete.disabled = true;
     btnShare.disabled = true;
     btnDownload.disabled = true;
-    visibilityWrap.classList.add('d-none');
+    shareScopeWrap.classList.add('d-none');
     updateEditorMeta(null);
     renderProfiles();
   });
@@ -1052,7 +1052,7 @@ function proxyServerOn() {
     btn.innerHTML = BUSY_HTML;
     feedback.style.display = 'none';
     try {
-      // The source row is 'public'-only (collabo can't be reached this way - no /register
+      // The source row is 'workspace'-scope-only (collabo can't be reached this way - no /register
       // fallback here, since a pasted link never carries the "is this collabo" info register vs
       // copy needs).
       const res = await fetch('/api/hosts/' + hostId + '/copy', await copyRequestOptions(hostId));
@@ -1339,34 +1339,34 @@ function proxyServerOn() {
       : '';
   }
 
-  function applyVisibilityStyle() {
-    visibilitySelect.style.color = visibilitySelect.value === 'private' ? '#CC7722' : visibilitySelect.value === 'collabo' ? '#3b7dd8' : '';
+  function applyShareScopeStyle() {
+    shareScopeSelect.style.color = shareScopeSelect.value === 'private' ? '#CC7722' : shareScopeSelect.value === 'collabo' ? '#3b7dd8' : '';
   }
 
   function updateShareButtons() {
     const p = profiles.find(x => x.hostsId === activeHostId);
     if (!p) return;
-    const disabled = p.visibility === 'private';
+    const disabled = p.shareScope === 'private';
     btnShare.disabled = disabled;
-    // Fully-public link (e2eEncryption design doc §6's last item) only makes sense for 'public'
-    // visibility - 'collabo' is a restricted audience by design, defeating the "anyone, no login"
+    // Fully-public link (e2eEncryption design doc §6's last item) only makes sense for 'workspace'
+    // share scope - 'collabo' is a restricted audience by design, defeating the "anyone, no login"
     // point, and the button itself only exists in workspace mode (see its init-time unhide below).
-    if (btnPublicLink) btnPublicLink.disabled = p.visibility !== 'public';
+    if (btnPublicLink) btnPublicLink.disabled = p.shareScope !== 'workspace';
   }
 
-  // ── Visibility select ──────────────────────────────────────
+  // ── Share scope select ──────────────────────────────────────
   let _pendingCollabo = false;
-  let _prevVisibility = null;
+  let _prevShareScope = null;
 
-  // The DEK itself never changes on a visibility flip - only which KEK wraps it (e2eEncryption
-  // design doc §7). 'collabo' and 'public' both use the workspace key, so switching between
-  // them (or confirming collabo from public) needs no new wrap at all; only a flip to/from
+  // The DEK itself never changes on a share-scope flip - only which KEK wraps it (e2eEncryption
+  // design doc §7). 'collabo' and 'workspace' both use the workspace key, so switching between
+  // them (or confirming collabo from workspace) needs no new wrap at all; only a flip to/from
   // 'private' does. Reuses the already-known DEK from load rather than re-deriving anything.
-  async function computeRewrapForVisibility(hostId, newVisibility) {
+  async function computeRewrapForShareScope(hostId, newShareScope) {
     if (!window.OE_WORKSPACE_MODE) return null;
     const dek = dekByHostId[hostId];
     if (!dek) return null;
-    if (newVisibility === 'private') {
+    if (newShareScope === 'private') {
       const res = await fetch('/api/user/crypto-keys');
       if (!res.ok) return null;
       const data = await res.json();
@@ -1378,25 +1378,25 @@ function proxyServerOn() {
     return wsKey ? OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey) : null;
   }
 
-  async function doUpdateVisibility(visibility) {
-    const wrappedContentKey = await computeRewrapForVisibility(activeHostId, visibility).catch(() => null);
-    const res = await fetch('/api/hosts/' + activeHostId + '/visibility', {
+  async function doUpdateShareScope(shareScope) {
+    const wrappedContentKey = await computeRewrapForShareScope(activeHostId, shareScope).catch(() => null);
+    const res = await fetch('/api/hosts/' + activeHostId + '/share-scope', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({visibility, wrappedContentKey})
+      body: JSON.stringify({shareScope, wrappedContentKey})
     });
     if (res.ok) {
       const updated = await res.json();
       const p = profiles.find(x => x.hostsId === activeHostId);
       if (p) {
-        p.visibility = updated.visibility; p.parentId = updated.parentId; p.wrappedContentKey = updated.wrappedContentKey;
-        // The server auto-revokes any live link when visibility leaves 'public' (design doc §6),
+        p.shareScope = updated.shareScope; p.parentId = updated.parentId; p.wrappedContentKey = updated.wrappedContentKey;
+        // The server auto-revokes any live link when share scope leaves 'workspace' (design doc §6),
         // so updated.wrappedLinkKey already reflects that - just mirror it and drop the cached DEK.
         p.wrappedLinkKey = updated.wrappedLinkKey;
         if (!p.wrappedLinkKey) delete linkDekByHostId[activeHostId];
       }
       const updatedP = profiles.find(x => x.hostsId === activeHostId);
-      visibilitySelect.disabled = !!(updatedP && updatedP.parentId);
-      applyVisibilityStyle();
+      shareScopeSelect.disabled = !!(updatedP && updatedP.parentId);
+      applyShareScopeStyle();
       updateShareButtons();
       renderProfiles();
       document.querySelectorAll('.oe-list-item').forEach(el => {
@@ -1405,29 +1405,29 @@ function proxyServerOn() {
     }
   }
 
-  visibilitySelect.addEventListener('change', e => {
+  shareScopeSelect.addEventListener('change', e => {
     if (!activeHostId) return;
     if (e.target.value === 'collabo') {
-      _prevVisibility = profiles.find(x => x.hostsId === activeHostId)?.visibility || 'public';
+      _prevShareScope = profiles.find(x => x.hostsId === activeHostId)?.shareScope || 'workspace';
       _pendingCollabo = true;
       new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
       return;
     }
-    doUpdateVisibility(e.target.value);
+    doUpdateShareScope(e.target.value);
   });
 
   document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
     bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
     if (_pendingCollabo && activeHostId) {
       _pendingCollabo = false;
-      await doUpdateVisibility('collabo');
+      await doUpdateShareScope('collabo');
     }
   });
 
   document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
     if (_pendingCollabo) {
-      visibilitySelect.value = _prevVisibility;
-      applyVisibilityStyle();
+      shareScopeSelect.value = _prevShareScope;
+      applyShareScopeStyle();
       _pendingCollabo = false;
     }
   });

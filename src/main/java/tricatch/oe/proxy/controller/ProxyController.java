@@ -229,15 +229,15 @@ public class ProxyController {
         ctx.json(updated);
     }
 
-    public void apiUpdateVisibility(Context ctx) throws Exception {
+    public void apiUpdateShareScope(Context ctx) throws Exception {
         var hubUser       = AuthController.currentUser(ctx);
         var vhostId    = ctx.pathParam("vhostId");
         var body       = objectMapper.readValue(ctx.body(), Map.class);
-        var visibility = (String) body.get("visibility");
-        if (visibility == null || (!visibility.equals("public") && !visibility.equals("private") && !visibility.equals("collabo"))) {
+        var shareScope = (String) body.get("shareScope");
+        if (shareScope == null || (!shareScope.equals("workspace") && !shareScope.equals("private") && !shareScope.equals("collabo"))) {
             ctx.status(400); return;
         }
-        var updated = vhostService.updateVisibility(vhostId, hubUser.getUserNo(), visibility);
+        var updated = vhostService.updateShareScope(vhostId, hubUser.getUserNo(), shareScope);
         if (updated == null) { ctx.status(404); return; }
         ctx.json(updated);
     }
@@ -322,7 +322,7 @@ public class ProxyController {
         var vhostId = ctx.pathParam("vhostId");
         var vhost   = vhostService.get(vhostId);
         if (vhost == null) { ctx.status(404); return; }
-        if ("private".equals(vhost.getVisibility())) { ctx.status(403); return; }
+        if ("private".equals(vhost.getShareScope())) { ctx.status(403); return; }
         var model = new HashMap<String, Object>();
         model.put("vhost",       vhost);
         model.put("owner",       vhostService.getOwnerUsername(vhostId));
@@ -334,7 +334,7 @@ public class ProxyController {
         var vhostId = ctx.pathParam("vhostId");
         var vhost   = vhostService.get(vhostId);
         if (vhost == null) { ctx.status(404); return; }
-        if ("private".equals(vhost.getVisibility())) { ctx.status(403); return; }
+        if ("private".equals(vhost.getShareScope())) { ctx.status(403); return; }
         var owner  = vhostService.getOwnerUsername(vhostId);
         var modDt  = vhost.getUpdatedAt() != null
             ? vhost.getUpdatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "";

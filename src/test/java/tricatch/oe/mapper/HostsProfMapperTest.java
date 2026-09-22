@@ -19,7 +19,7 @@ class HostsProfMapperTest extends MapperTestBase {
         h.setHostsContent(content);
         h.setSelected(false);
         h.setSortOrder(0);
-        h.setVisibility("public");
+        h.setShareScope("workspace");
         // The real actor is always positive, even for a collabo parent row whose user_no is
         // stored negative (see HostsProfService.convertToCollabo) - mirror that here too.
         h.setCreatedBy(Math.abs(userNo));
@@ -41,7 +41,7 @@ class HostsProfMapperTest extends MapperTestBase {
             assertThat(found.getHostsProfile()).isEqualTo("my profile");
             assertThat(found.getHostsContent()).isEqualTo("127.0.0.1 foo.oe");
             assertThat(found.isSelected()).isFalse();
-            assertThat(found.getVisibility()).isEqualTo("public");
+            assertThat(found.getShareScope()).isEqualTo("workspace");
             assertThat(found.getParentId()).isNull();
             assertThat(found.getUpdatedAt()).isNotNull();
         }
@@ -121,21 +121,21 @@ class HostsProfMapperTest extends MapperTestBase {
     }
 
     @Test
-    void updateVisibility() {
+    void updateShareScope() {
         var user = insertUser("grace");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = newHosts(user.getUserNo(), "profile", "content");
             mapper.insert(hosts);
-            mapper.updateVisibility(hosts.getHostsId(), user.getUserNo(), "private", null, LocalDateTime.now());
-            assertThat(mapper.findByHostsId(hosts.getHostsId()).getVisibility()).isEqualTo("private");
+            mapper.updateShareScope(hosts.getHostsId(), user.getUserNo(), "private", null, LocalDateTime.now());
+            assertThat(mapper.findByHostsId(hosts.getHostsId()).getShareScope()).isEqualTo("private");
         }
     }
 
     @Test
-    void wrappedContentKey_roundTripsThroughInsertAndUpdateVisibility() {
+    void wrappedContentKey_roundTripsThroughInsertAndUpdateShareScope() {
         // e2eEncryption design doc §3/§7 - the DEK wrap travels with the row and is re-wrapped
-        // (not re-derived) on a visibility flip.
+        // (not re-derived) on a share-scope flip.
         var user = insertUser("wrapKeyUser");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
@@ -144,7 +144,7 @@ class HostsProfMapperTest extends MapperTestBase {
             mapper.insert(hosts);
             assertThat(mapper.findByHostsId(hosts.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-with-workspace-key");
 
-            mapper.updateVisibility(hosts.getHostsId(), user.getUserNo(), "private", "wrapped-with-personal-key", LocalDateTime.now());
+            mapper.updateShareScope(hosts.getHostsId(), user.getUserNo(), "private", "wrapped-with-personal-key", LocalDateTime.now());
             assertThat(mapper.findByHostsId(hosts.getHostsId()).getWrappedContentKey()).isEqualTo("wrapped-with-personal-key");
         }
     }
@@ -158,12 +158,12 @@ class HostsProfMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var parent = newHosts(-owner.getUserNo(), "shared profile", "content");
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             parent.setWrappedContentKey("wrapped-with-workspace-key");
             mapper.insert(parent);
 
             var ref = newHosts(owner.getUserNo(), "shared profile ref", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parent.getHostsId());
             ref.setWrappedContentKey(null);
             mapper.insert(ref);
@@ -249,7 +249,7 @@ class HostsProfMapperTest extends MapperTestBase {
 
             // collabo 부모 (user_no < 0)
             var parent = newHosts(-owner.getUserNo(), "shared profile", "original content");
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
 
             // 원본을 collabo 참조로 전환
@@ -257,7 +257,7 @@ class HostsProfMapperTest extends MapperTestBase {
 
             // collab 사용자가 참조 등록
             var ref = newHosts(collab.getUserNo(), "shared profile", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parent.getHostsId());
             mapper.insert(ref);
 
@@ -298,16 +298,16 @@ class HostsProfMapperTest extends MapperTestBase {
 
             // 고아 부모: 참조 없음 → 삭제 대상
             var orphan = newHosts(-owner.getUserNo(), "orphan profile", "content");
-            orphan.setVisibility("collabo");
+            orphan.setShareScope("collabo");
             mapper.insert(orphan);
 
             // 활성 부모: 참조 있음 → 보존 대상
             var active = newHosts(-owner.getUserNo(), "active profile", "content");
-            active.setVisibility("collabo");
+            active.setShareScope("collabo");
             mapper.insert(active);
 
             var ref = newHosts(owner.getUserNo(), "active profile ref", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(active.getHostsId());
             mapper.insert(ref);
 
@@ -325,7 +325,7 @@ class HostsProfMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var pub = newHosts(other.getUserNo(), "public hosts", "content");
-            pub.setVisibility("public");
+            pub.setShareScope("workspace");
             mapper.insert(pub);
 
             var results = mapper.searchOthers(searcher.getUserNo(), TEST_WS_NO, "public");
@@ -343,7 +343,7 @@ class HostsProfMapperTest extends MapperTestBase {
 
             // collabo 부모: user_no < 0, HUB_USR JOIN 대상 = owner
             var parent = newHosts(-owner.getUserNo(), "team hosts", "content");
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
 
             // searcher가 아직 참여하지 않은 상태 → 검색에 노출
@@ -353,7 +353,7 @@ class HostsProfMapperTest extends MapperTestBase {
 
             // searcher가 참여(ref 생성) → NOT EXISTS 조건으로 제외
             var ref = newHosts(searcher.getUserNo(), "team hosts", "");
-            ref.setVisibility("collabo");
+            ref.setShareScope("collabo");
             ref.setParentId(parent.getHostsId());
             mapper.insert(ref);
 
@@ -386,11 +386,12 @@ class HostsProfMapperTest extends MapperTestBase {
 
             var mapper = session.getMapper(HostsProfMapper.class);
             var pub = newHosts(otherUser.getUserNo(), "outsider public hosts", "content");
-            pub.setVisibility("public");
+            pub.setShareScope("workspace");
             mapper.insert(pub);
 
             // Same keyword search from a user in TEST_WS_NO must not surface another workspace's
-            // public profile, even though visibility='public' (cloudGroupService design doc §2.4).
+            // workspace-scoped profile, even though share_scope='workspace' (cloudGroupService
+            // design doc §2.4).
             var results = mapper.searchOthers(searcher.getUserNo(), TEST_WS_NO, "outsider");
             assertThat(results).isEmpty();
         }
@@ -398,30 +399,30 @@ class HostsProfMapperTest extends MapperTestBase {
 
     // Workspace-key rotation support (e2eEncryption design doc §7).
     @Test
-    void findEncryptedRowsByWsNo_returnsOnlyEncryptedPublicOrCollaboRowsInThatWorkspace() {
+    void findEncryptedRowsByWsNo_returnsOnlyEncryptedWorkspaceOrCollaboRowsInThatWorkspace() {
         var alice = insertUser("rotAlice");
         var bob = insertUser("rotBob");
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
 
             var alicePublic = newHosts(alice.getUserNo(), "alice public", "content");
-            alicePublic.setVisibility("public");
+            alicePublic.setShareScope("workspace");
             alicePublic.setWrappedContentKey("wrapped-alice");
             mapper.insert(alicePublic);
 
             // 'private' must never be included - rotation only touches workspace-key-wrapped rows.
             var alicePrivate = newHosts(alice.getUserNo(), "alice private", "content");
-            alicePrivate.setVisibility("private");
+            alicePrivate.setShareScope("private");
             alicePrivate.setWrappedContentKey("wrapped-alice-private");
             mapper.insert(alicePrivate);
 
             // Unencrypted (self-hosted-style) row - wrappedContentKey left null.
             var bobPlain = newHosts(bob.getUserNo(), "bob plain", "content");
-            bobPlain.setVisibility("public");
+            bobPlain.setShareScope("workspace");
             mapper.insert(bobPlain);
 
             var bobCollaboParent = newHosts(-bob.getUserNo(), "bob collabo parent", "content");
-            bobCollaboParent.setVisibility("collabo");
+            bobCollaboParent.setShareScope("collabo");
             bobCollaboParent.setWrappedContentKey("wrapped-bob-collabo");
             mapper.insert(bobCollaboParent);
 
@@ -438,7 +439,7 @@ class HostsProfMapperTest extends MapperTestBase {
         try (var session = FACTORY.openSession(true)) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var pub = newHosts(alice.getUserNo(), "alice public 2", "content");
-            pub.setVisibility("public");
+            pub.setShareScope("workspace");
             pub.setWrappedContentKey("wrapped-old");
             mapper.insert(pub);
 

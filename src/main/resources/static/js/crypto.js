@@ -5,7 +5,7 @@
 //
 // Algorithm choices (design doc §2):
 //   - Personal keypair: RSA-OAEP 2048 / SHA-256 - wraps/unwraps the workspace key and, for
-//     'private' visibility, the content key directly. Small payloads only (<=190 bytes), which
+//     'private' share scope, the content key directly. Small payloads only (<=190 bytes), which
 //     both a 32-byte AES key and a wrapped-key blob comfortably fit under.
 //   - Password -> two independent secrets: PBKDF2-SHA256 (600,000 iterations - OWASP Password
 //     Storage Cheat Sheet's current minimum recommendation as of this writing; re-check and bump
@@ -217,7 +217,7 @@ const OE_CRYPTO = (function () {
     return new TextDecoder().decode(plaintextBuf);
   }
 
-  // 'private' visibility: content key wrapped directly by the owner's personal key pair.
+  // 'private' share scope: content key wrapped directly by the owner's personal key pair.
   async function wrapContentKeyWithPersonalKey(contentKey, publicKey) {
     const wrapped = await crypto.subtle.wrapKey('raw', contentKey, publicKey, { name: 'RSA-OAEP' });
     return bufToBase64(wrapped);
@@ -232,7 +232,7 @@ const OE_CRYPTO = (function () {
     );
   }
 
-  // 'collabo'/'public' visibility: content key wrapped by the shared workspace key (design doc
+  // 'collabo'/'workspace' share scope: content key wrapped by the shared workspace key (design doc
   // §6 - both grades use the identical wrap, differing only in search/discovery scope).
   async function wrapContentKeyWithWorkspaceKey(contentKey, workspaceKey) {
     const wrapped = await crypto.subtle.wrapKey('raw', contentKey, workspaceKey, { name: 'AES-KW' });

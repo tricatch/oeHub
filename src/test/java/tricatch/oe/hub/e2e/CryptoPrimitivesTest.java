@@ -316,7 +316,7 @@ class CryptoPrimitivesTest {
     }
 
     @Test
-    void contentKey_privateVisibility_wrappedWithPersonalKey_roundTrips() {
+    void contentKey_privateShareScope_wrappedWithPersonalKey_roundTrips() {
         var page = newPage();
         Object ok = page.evaluate("""
             async () => {
@@ -360,7 +360,7 @@ class CryptoPrimitivesTest {
     }
 
     @Test
-    void rotation_privateToWorkspaceVisibility_dekUnchanged_onlyRewrapped() {
+    void rotation_privateToWorkspaceShareScope_dekUnchanged_onlyRewrapped() {
         // Mirrors e2eEncryption design doc §7's "private ↔ collabo/public 전환" - content itself
         // (and its DEK) never changes, only which KEK wraps the DEK.
         var page = newPage();

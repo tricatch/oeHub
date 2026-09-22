@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * only ever stores ciphertext (a fresh, independent fetch confirms it, not the app's own
  * already-decrypted in-memory copy), the editor still shows real plaintext after a full page
  * reload (a fresh unwrap via the cached workspace key, not a leftover JS variable), and a
- * private<->public visibility flip re-wraps the same DEK without corrupting the content.
+ * private<->workspace share-scope flip re-wraps the same DEK without corrupting the content.
  * See aidoc/e2eEncryption/00-design.md §1's correction: this only applies to HOSTS_PFILE under
  * oe.mode=workspace - the self-hosted editing e2e tests elsewhere exercise the unencrypted path.
  */
@@ -140,17 +140,17 @@ class HostsContentEncryptionTest {
 
     @Test
     @Order(4)
-    void togglingVisibilityToPrivateAndBack_rewrapsWithoutLosingContent() {
-        page.locator("#visibilitySelect").selectOption("private");
+    void togglingShareScopeToPrivateAndBack_rewrapsWithoutLosingContent() {
+        page.locator("#shareScopeSelect").selectOption("private");
         page.waitForTimeout(300);
         var afterPrivate = (Map<?, ?>) page.evaluate("async (id) => { const list = await (await fetch('/api/hosts')).json(); return list.find(p => p.hostsId === id); }", hostsId);
-        assertThat((String) afterPrivate.get("visibility")).isEqualTo("private");
+        assertThat((String) afterPrivate.get("shareScope")).isEqualTo("private");
         assertThat((String) afterPrivate.get("wrappedContentKey")).isNotBlank();
 
-        page.locator("#visibilitySelect").selectOption("public");
+        page.locator("#shareScopeSelect").selectOption("workspace");
         page.waitForTimeout(300);
         var afterPublic = (Map<?, ?>) page.evaluate("async (id) => { const list = await (await fetch('/api/hosts')).json(); return list.find(p => p.hostsId === id); }", hostsId);
-        assertThat((String) afterPublic.get("visibility")).isEqualTo("public");
+        assertThat((String) afterPublic.get("shareScope")).isEqualTo("workspace");
 
         page.reload();
         page.waitForTimeout(500);

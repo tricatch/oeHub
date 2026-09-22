@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface HostsProfMapper {
 
-    // Shared by findByUserNo/findByHostsId: resolves a collabo/public reference row's real owner
+    // Shared by findByUserNo/findByHostsId: resolves a collabo/workspace reference row's real owner
     // (CASE WHEN ... ELSE -p.user_no, since a reference row's own user_no is stored negative) and
     // whichever of the row itself or its parent was updated more recently, for display.
     String JOIN_FOR_DISPLAY = """
@@ -21,7 +21,7 @@ public interface HostsProfMapper {
     @Select("""
         SELECT h.hosts_id, h.user_no, h.hosts_profile,
                COALESCE(p.hosts_content, h.hosts_content) AS hosts_content,
-               h.selected, h.sort_order, h.visibility,
+               h.selected, h.sort_order, h.share_scope,
                h.parent_id, COALESCE(p.wrapped_content_key, h.wrapped_content_key) AS wrapped_content_key,
                h.wrapped_link_key,
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
@@ -36,7 +36,7 @@ public interface HostsProfMapper {
     @Select("""
         SELECT h.hosts_id, h.user_no, h.hosts_profile,
                COALESCE(p.hosts_content, h.hosts_content) AS hosts_content,
-               h.selected, h.sort_order, h.visibility,
+               h.selected, h.sort_order, h.share_scope,
                h.parent_id, COALESCE(p.wrapped_content_key, h.wrapped_content_key) AS wrapped_content_key,
                h.link_content,
                h.wrapped_link_key,
@@ -52,22 +52,22 @@ public interface HostsProfMapper {
     // workspace) but the actual search/discovery boundary in workspace mode (cloudGroupService
     // design doc §2.4). u already joins to the owning user either way, so this adds no new join.
     @Select("""
-        SELECT h.hosts_id, h.user_no, h.hosts_profile, h.selected, h.sort_order, h.visibility,
+        SELECT h.hosts_id, h.user_no, h.hosts_profile, h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.updated_at, u.user_id
         FROM HOSTS_PFILE h
         JOIN HUB_USR u ON u.user_no = h.user_no
-        WHERE h.visibility = 'public'
+        WHERE h.share_scope = 'workspace'
           AND h.parent_id IS NULL
           AND h.user_no != #{userNo}
           AND u.ws_no = #{wsNo}
           AND LOWER(h.hosts_profile) LIKE LOWER(CONCAT('%', #{keyword}, '%'))
         UNION ALL
-        SELECT h.hosts_id, h.user_no, h.hosts_profile, h.selected, h.sort_order, h.visibility,
+        SELECT h.hosts_id, h.user_no, h.hosts_profile, h.selected, h.sort_order, h.share_scope,
                h.parent_id, h.updated_at, u.user_id
         FROM HOSTS_PFILE h
         JOIN HUB_USR u ON u.user_no = (-h.user_no)
         WHERE h.user_no < 0
-          AND h.visibility = 'collabo'
+          AND h.share_scope = 'collabo'
           AND u.ws_no = #{wsNo}
           AND NOT EXISTS (
             SELECT 1 FROM HOSTS_PFILE r WHERE r.parent_id = h.hosts_id AND r.user_no = #{userNo}
@@ -80,18 +80,18 @@ public interface HostsProfMapper {
 
     @Insert("""
         INSERT INTO HOSTS_PFILE (hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order,
-                                 visibility, parent_id, wrapped_content_key, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, wrapped_content_key, created_by, updated_by, create_at, updated_at)
         VALUES (#{hostsId}, #{userNo}, #{hostsProfile}, #{hostsContent}, #{selected}, #{sortOrder},
-                #{visibility}, #{parentId}, #{wrappedContentKey}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
+                #{shareScope}, #{parentId}, #{wrappedContentKey}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
         """)
     void insert(HostsProf hostsProf);
 
     @Insert("""
         INSERT INTO HOSTS_PFILE (hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order,
-                                 visibility, parent_id, wrapped_content_key, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, wrapped_content_key, created_by, updated_by, create_at, updated_at)
         SELECT #{hostsId}, #{userNo}, #{hostsProfile}, #{hostsContent}, #{selected},
                COALESCE(MAX(sort_order), -1) + 1,
-               #{visibility}, #{parentId}, #{wrappedContentKey}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
+               #{shareScope}, #{parentId}, #{wrappedContentKey}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
         FROM HOSTS_PFILE
         WHERE user_no = #{userNo}
         """)
@@ -123,13 +123,13 @@ public interface HostsProfMapper {
     void updateSortOrder(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("sortOrder") int sortOrder);
 
     // wrappedContentKey is always sent (even in self-hosted/null) - the DEK itself never changes
-    // on a private<->public flip (e2eEncryption design doc §7), only which KEK wraps it, so the
+    // on a private<->workspace flip (e2eEncryption design doc §7), only which KEK wraps it, so the
     // client always recomputes the new wrap and this just stores whatever it sends (null is a
     // no-op in self-hosted, where content/keys are never encrypted at all - design doc §1).
-    @Update("UPDATE HOSTS_PFILE SET visibility = #{visibility}, wrapped_content_key = #{wrappedContentKey}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
-    void updateVisibility(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("visibility") String visibility, @Param("wrappedContentKey") String wrappedContentKey, @Param("updatedAt") LocalDateTime updatedAt);
+    @Update("UPDATE HOSTS_PFILE SET share_scope = #{shareScope}, wrapped_content_key = #{wrappedContentKey}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    void updateShareScope(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("shareScope") String shareScope, @Param("wrappedContentKey") String wrappedContentKey, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE HOSTS_PFILE SET parent_id = #{parentId}, hosts_content = '', wrapped_content_key = NULL, visibility = 'collabo', updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    @Update("UPDATE HOSTS_PFILE SET parent_id = #{parentId}, hosts_content = '', wrapped_content_key = NULL, share_scope = 'collabo', updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
     void setAsCollaboRef(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("parentId") String parentId, @Param("updatedAt") LocalDateTime updatedAt);
 
     @Delete("DELETE FROM HOSTS_PFILE WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
@@ -141,9 +141,9 @@ public interface HostsProfMapper {
     @Delete("DELETE FROM HOSTS_PFILE WHERE user_no = #{userNo}")
     void deleteByUserNo(Long userNo);
 
-    // 'public' rows survive account deletion (cloudGroupService design doc §2.5 orphan handling)
+    // 'workspace' rows survive account deletion (cloudGroupService design doc §2.5 orphan handling)
     // - fetched before the delete below so the caller can reassign them to wss first.
-    @Select("SELECT hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order, visibility, parent_id, created_by, updated_by, create_at, updated_at FROM HOSTS_PFILE WHERE user_no = #{userNo} AND visibility = 'public'")
+    @Select("SELECT hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order, share_scope, parent_id, created_by, updated_by, create_at, updated_at FROM HOSTS_PFILE WHERE user_no = #{userNo} AND share_scope = 'workspace'")
     List<HostsProf> findPublicByUserNo(Long userNo);
 
     // created_by is left untouched - it's the immutable "who actually made this" audit trail
@@ -156,7 +156,7 @@ public interface HostsProfMapper {
     @Delete("DELETE FROM HOSTS_PFILE WHERE user_no = -#{userNo} AND hosts_id NOT IN (SELECT DISTINCT parent_id FROM HOSTS_PFILE WHERE parent_id IS NOT NULL)")
     void deleteOrphanedParentsByCreator(Long userNo);
 
-    @Select("SELECT hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order, visibility, parent_id, updated_at FROM HOSTS_PFILE WHERE user_no = #{userNo} AND parent_id IS NOT NULL")
+    @Select("SELECT hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order, share_scope, parent_id, updated_at FROM HOSTS_PFILE WHERE user_no = #{userNo} AND parent_id IS NOT NULL")
     List<HostsProf> findReferencesByUserNo(Long userNo);
 
     @Select("SELECT COUNT(*) FROM HOSTS_PFILE WHERE parent_id = #{parentId}")
@@ -175,7 +175,7 @@ public interface HostsProfMapper {
         JOIN HUB_USR u ON u.user_no = CASE WHEN h.user_no < 0 THEN -h.user_no ELSE h.user_no END
         WHERE u.ws_no = #{wsNo}
           AND h.wrapped_content_key IS NOT NULL
-          AND h.visibility IN ('public', 'collabo')
+          AND h.share_scope IN ('workspace', 'collabo')
         """)
     List<HostsProf> findEncryptedRowsByWsNo(Long wsNo);
 
@@ -217,15 +217,15 @@ public interface HostsProfMapper {
     // Issues (both non-null) or revokes (both null) the fully-public, no-login link (e2eEncryption
     // design doc §6 "living link" redesign). Deliberately does NOT touch hosts_content/
     // wrapped_content_key - the link uses its own separate DEK, so the normal (workspace-key)
-    // access path is completely unaffected by issuing or revoking a link. Scoped to 'public' rows
-    // in the caller's own workspace - any member may issue/revoke, matching §8's "public is
-    // jointly owned" model, the same reasoning already applied to updateContentByParentId for
-    // collabo/public shared edits.
+    // access path is completely unaffected by issuing or revoking a link. Scoped to 'workspace'
+    // share-scope rows in the caller's own workspace - any member may issue/revoke, matching §8's
+    // "workspace-scoped content is jointly owned" model, the same reasoning already applied to
+    // updateContentByParentId for collabo/workspace shared edits.
     @Update("""
         UPDATE HOSTS_PFILE
         SET link_content = #{linkContent}, wrapped_link_key = #{wrappedLinkKey}
         WHERE hosts_id = #{hostsId}
-          AND visibility = 'public'
+          AND share_scope = 'workspace'
           AND hosts_id IN (
             SELECT h.hosts_id FROM HOSTS_PFILE h
             JOIN HUB_USR u ON u.user_no = h.user_no
@@ -252,9 +252,9 @@ public interface HostsProfMapper {
         """)
     void syncLinkContent(@Param("hostsId") String hostsId, @Param("wsNo") Long wsNo, @Param("linkContent") String linkContent);
 
-    // Unconditional auto-revoke used when a row's visibility leaves 'public' (e2eEncryption design
-    // doc §6) - no visibility/workspace guard needed since the caller (HostsProfService) has
-    // already verified ownership/scope for the visibility change itself.
+    // Unconditional auto-revoke used when a row's share scope leaves 'workspace' (e2eEncryption
+    // design doc §6) - no share-scope/workspace guard needed since the caller (HostsProfService)
+    // has already verified ownership/scope for the share-scope change itself.
     @Update("UPDATE HOSTS_PFILE SET link_content = NULL, wrapped_link_key = NULL WHERE hosts_id = #{hostsId}")
     void clearLink(@Param("hostsId") String hostsId);
 

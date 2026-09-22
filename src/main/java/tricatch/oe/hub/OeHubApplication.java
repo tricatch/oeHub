@@ -416,7 +416,7 @@ public class OeHubApplication {
             config.routes.patch("/api/hosts/{hostsId}/content",    hosts::apiUpdateContent);
             config.routes.patch("/api/hosts/{hostsId}/name",       hosts::apiUpdateName);
             config.routes.patch("/api/hosts/{hostsId}/selected",   hosts::apiToggleSelected);
-            config.routes.patch("/api/hosts/{hostsId}/visibility",  hosts::apiUpdateVisibility);
+            config.routes.patch("/api/hosts/{hostsId}/share-scope", hosts::apiUpdateShareScope);
             config.routes.get("/api/hosts/{hostsId}/view",         hosts::apiGetForView);
             config.routes.post("/api/hosts/{hostsId}/link",        hosts::apiSetLink);
             config.routes.post("/api/hosts/{hostsId}/copy",        hosts::apiCopy);
@@ -499,7 +499,7 @@ public class OeHubApplication {
                 config.routes.patch("/api/proxy/vhosts/{vhostId}/content",      proxy::apiUpdateContent);
                 config.routes.patch("/api/proxy/vhosts/{vhostId}/name",         proxy::apiUpdateName);
                 config.routes.patch("/api/proxy/vhosts/{vhostId}/selected",     proxy::apiToggleSelected);
-                config.routes.patch("/api/proxy/vhosts/{vhostId}/visibility",   proxy::apiUpdateVisibility);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/share-scope", proxy::apiUpdateShareScope);
                 config.routes.post("/api/proxy/vhosts/{vhostId}/copy",          proxy::apiCopy);
                 config.routes.post("/api/proxy/vhosts/{vhostId}/register",      proxy::apiRegister);
                 config.routes.delete("/api/proxy/vhosts/{vhostId}",             proxy::apiDelete);
