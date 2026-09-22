@@ -352,8 +352,6 @@
   </div>
 </div>
 
-<input type="file" id="importFileHidden" accept=".json" style="display:none">
-
 <script nonce="{{ cspNonce }}">
 const PROXY_SVR = '{{ proxyIp }}';
 const FWDPROXY_PORT = 36980;
