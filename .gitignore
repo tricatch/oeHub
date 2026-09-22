@@ -34,5 +34,6 @@ oeoid/
 
 aidoc/
 
-
+# Playwright visual scripts - local-only, not checked in
+playwright/
 
