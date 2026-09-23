@@ -126,6 +126,19 @@ public class SettingsController {
         ctx.json(Map.of("domains", domains));
     }
 
+    /** Recently whitelist-blocked hosts (ForwardProxyServer), for the "pick a domain to add"
+     *  helper next to the allowed-domains textarea. Re-fetchable without reloading the page. */
+    public void apiListBlockedDomains(Context ctx) {
+        ctx.json(Map.of("hosts", ForwardProxyServer.getRecentlyBlockedHosts()));
+    }
+
+    public void apiSaveAllowAllDomains(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var enabled = Boolean.TRUE.equals(body.get("enabled"));
+        ForwardProxyServer.setAllowAllDestinations(enabled, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("enabled", enabled));
+    }
+
     // ── PROXY_SVR address (shown on hosts/share pages, see HostsController) ───
 
     public void apiSaveProxySvrAddress(Context ctx) throws IOException {
@@ -316,6 +329,8 @@ public class SettingsController {
         model.put("internalOnlyUpstream", ReverseProxyServer.isInternalOnlyUpstream());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("allowedDomains", ForwardProxyServer.getWhitelist());
+        model.put("allowAllDomains", ForwardProxyServer.isAllowAllDestinations());
+        model.put("recentlyBlockedDomains", ForwardProxyServer.getRecentlyBlockedHosts());
         model.put("proxySvrAddress", ReverseProxyServer.getProxySvrAddress());
         model.put("backupIntervalHours", BackupService.getIntervalHours());
         model.put("backupLastAt", formatBackupLastAt(BackupService.getLastBackupAtDisplay()));

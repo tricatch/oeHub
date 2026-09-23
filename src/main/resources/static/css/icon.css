@@ -49,3 +49,5 @@
 .oe-icon-success      { -webkit-mask-image: url('/icon/lucide/check.svg');        mask-image: url('/icon/lucide/check.svg'); }
 .oe-icon-suspend      { -webkit-mask-image: url('/icon/lucide/circle-stop.svg');  mask-image: url('/icon/lucide/circle-stop.svg'); }
 .oe-icon-reactivate   { -webkit-mask-image: url('/icon/lucide/circle-play.svg');  mask-image: url('/icon/lucide/circle-play.svg'); }
+.oe-icon-refresh      { -webkit-mask-image: url('/icon/lucide/refresh-cw.svg');   mask-image: url('/icon/lucide/refresh-cw.svg'); }
+.oe-icon-sort         { -webkit-mask-image: url('/icon/lucide/arrow-up-down.svg'); mask-image: url('/icon/lucide/arrow-up-down.svg'); }

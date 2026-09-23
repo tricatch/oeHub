@@ -32,6 +32,7 @@ class ForwardProxyServerTest extends MapperTestBase {
     @BeforeEach
     void resetWhitelist() {
         ForwardProxyServer.setWhitelist("", 0L);
+        ForwardProxyServer.setAllowAllDestinations(false, 0L);
     }
 
     private HubUser insertUserWithPassword(String userId, String rawPassword) {
@@ -129,6 +130,25 @@ class ForwardProxyServerTest extends MapperTestBase {
         assertThat(ForwardProxyServer.isWhitelisted("evil.com")).isFalse();
         assertThat(ForwardProxyServer.isWhitelisted(null)).isFalse();
         assertThat(ForwardProxyServer.isWhitelisted("")).isFalse();
+    }
+
+    @Test
+    void isWhitelisted_allowAllOverride_allowsAnyHost_withoutTouchingTheList() {
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
+        ForwardProxyServer.setAllowAllDestinations(true, 0L);
+        try {
+            assertThat(ForwardProxyServer.isWhitelisted("anything.example.com")).isTrue();
+            assertThat(ForwardProxyServer.isWhitelisted("evil.test")).isTrue();
+            // Still not a bypass for a missing/blank host - there's nothing to allow.
+            assertThat(ForwardProxyServer.isWhitelisted(null)).isFalse();
+            assertThat(ForwardProxyServer.isWhitelisted("")).isFalse();
+            // The underlying list is untouched, so turning the override back off restores it exactly.
+            assertThat(ForwardProxyServer.getWhitelist()).isEqualTo("only-this.example.com");
+        } finally {
+            ForwardProxyServer.setAllowAllDestinations(false, 0L);
+        }
+        assertThat(ForwardProxyServer.isWhitelisted("anything.example.com")).isFalse();
+        assertThat(ForwardProxyServer.isWhitelisted("only-this.example.com")).isTrue();
     }
 
     // ── isLoopbackTarget() ──────────────────────────────────────────────────
@@ -252,5 +272,34 @@ class ForwardProxyServerTest extends MapperTestBase {
         var addr = ForwardProxyServer.overrideFor(userId, "foo.oe:443", "10.1.1.1", "127.0.0.1");
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
         assertThat(addr.getPort()).isEqualTo(443); // not redirected to BlockedPageServer's port
+    }
+
+    // ── getRecentlyBlockedHosts() ───────────────────────────────────────────
+
+    @Test
+    void getRecentlyBlockedHosts_recordsANonWhitelistedDestination() {
+        var host = "blocked-" + newId() + ".example.com";
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
+        ForwardProxyServer.overrideFor("anyone", host + ":443", "10.1.1.1", "10.1.1.1");
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).contains(host);
+    }
+
+    @Test
+    void getRecentlyBlockedHosts_excludesLoopbackBlocks() {
+        // Adding 127.0.0.1 to the whitelist would never unblock it (a separate SSRF guard), so it
+        // must never show up as a suggestion.
+        ForwardProxyServer.overrideFor("anyone", "127.0.0.1:9999", "10.1.1.1", "10.1.1.1");
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).doesNotContain("127.0.0.1");
+    }
+
+    @Test
+    void getRecentlyBlockedHosts_stopsListingAHostOnceItsWhitelisted() {
+        var host = "now-allowed-" + newId() + ".example.com";
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
+        ForwardProxyServer.overrideFor("anyone", host + ":443", "10.1.1.1", "10.1.1.1");
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).contains(host);
+
+        ForwardProxyServer.setWhitelist(host, 0L);
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).doesNotContain(host);
     }
 }

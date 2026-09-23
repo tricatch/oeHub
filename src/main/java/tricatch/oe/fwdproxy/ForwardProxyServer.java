@@ -113,6 +113,34 @@ public class ForwardProxyServer {
         return host == null ? null : blockReasonByHost.remove(host.toLowerCase());
     }
 
+    // Destinations recently rejected for not being on the whitelist, shown next to the "허용 도메인"
+    // textarea in Settings so an admin doesn't have to guess/retype exact names while testing - just
+    // pick from what actually got blocked. In-memory only (never persisted, cleared on restart) and
+    // time-bounded like authAttemptsByUser below: this is purely an admin convenience surface, not a
+    // security control, so losing entries costs nothing. Loopback blocks are intentionally excluded
+    // (BLOCK_REASON_WHITELIST only) - adding a loopback target to the whitelist wouldn't unblock it,
+    // that's a separate SSRF guard.
+    private static final java.time.Duration RECENTLY_BLOCKED_TTL = java.time.Duration.ofHours(24);
+    private static final com.github.benmanes.caffeine.cache.Cache<String, java.time.Instant> recentlyBlockedHosts =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(RECENTLY_BLOCKED_TTL)
+                    .maximumSize(200)
+                    .build();
+
+    private static void recordBlockedByWhitelist(String host) {
+        if (host != null) recentlyBlockedHosts.put(host.toLowerCase(), java.time.Instant.now());
+    }
+
+    /** Recently whitelist-blocked hosts, most recent first, already-whitelisted ones filtered out
+     *  (nothing left for the admin to add). See recentlyBlockedHosts above. */
+    public static List<String> getRecentlyBlockedHosts() {
+        return recentlyBlockedHosts.asMap().entrySet().stream()
+                .filter(e -> !isWhitelisted(e.getKey()))
+                .sorted(Map.Entry.<String, java.time.Instant>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
     private static SqlSessionFactory sqlSessionFactory;
     private static HttpProxyServer server;
 
@@ -128,6 +156,11 @@ public class ForwardProxyServer {
 
     private static volatile String whitelistText = "";
     private static volatile List<String> whitelistPatterns = List.of();
+    // Independent on/off escape hatch out of the whitelist's default-deny policy - allows every
+    // destination without touching whitelistText, so a curated domain list stays intact underneath
+    // while this is on and takes effect again the moment it's switched back off.
+    private static final String KEY_ALLOW_ALL = "fwdproxy.allowAll";
+    private static volatile boolean allowAllDestinations = false;
 
     // Per-account auth throttle: this callback (org.littleshoot.proxy.ProxyAuthenticator) gets
     // only userName/password, no client IP, so — unlike AuthController's per-IP login lockout —
@@ -174,6 +207,8 @@ public class ForwardProxyServer {
         sqlSessionFactory = factory;
         var stored = new ProxyConfService(factory).get(KEY_WHITELIST, null);
         applyWhitelist(stored != null ? stored : "");
+        var storedAllowAll = new ProxyConfService(factory).get(KEY_ALLOW_ALL, null);
+        allowAllDestinations = "true".equals(storedAllowAll);
     }
 
     public static String getWhitelist() {
@@ -194,10 +229,22 @@ public class ForwardProxyServer {
                 .toList();
     }
 
-    /** True only when host matches one of the whitelist's patterns; an empty whitelist allows nothing. */
+    public static boolean isAllowAllDestinations() {
+        return allowAllDestinations;
+    }
+
+    public static void setAllowAllDestinations(boolean enabled, Long actorUserNo) {
+        allowAllDestinations = enabled;
+        new ProxyConfService(sqlSessionFactory).set(KEY_ALLOW_ALL, null, String.valueOf(enabled), actorUserNo);
+    }
+
+    /** True when host matches one of the whitelist's patterns, or the allow-all override is on
+     *  (see setAllowAllDestinations); an empty whitelist with the override off allows nothing. */
     public static boolean isWhitelisted(String host) {
+        if (host == null || host.isBlank()) return false;
+        if (allowAllDestinations) return true;
         var patterns = whitelistPatterns;
-        if (patterns.isEmpty() || host == null || host.isBlank()) return false;
+        if (patterns.isEmpty()) return false;
         var h = host.toLowerCase();
         for (var base : patterns) {
             if (h.equals(base) || h.endsWith("." + base)) return true;
@@ -319,6 +366,7 @@ public class ForwardProxyServer {
                                     logger.info("Forward proxy match: user={} method={} host={} whitelisted={} loopbackTarget={} clientIsLoopback={}",
                                             authenticatedUser(ctx), request.method(), host, whitelisted, loopback, clientIsLoopback);
                                     if (loopback || !whitelisted) {
+                                        if (!loopback) recordBlockedByWhitelist(host);
                                         // CONNECT (HTTPS): if the blocked-page server is up, let the tunnel
                                         // succeed here and redirect it there in overrideFor() below, so the
                                         // client completes a real TLS handshake and renders the 403 page
@@ -563,6 +611,7 @@ public class ForwardProxyServer {
             logger.info("Forward proxy override: user={} host={} clientIsLoopback={} blocked=true ({})",
                     userId, target, clientIsLoopback,
                     targetIsLoopback ? "target is loopback/any-local, second check" : "not whitelisted, second check");
+            if (!targetIsLoopback) recordBlockedByWhitelist(target);
             rememberBlockReason(target, targetIsLoopback ? BLOCK_REASON_LOOPBACK : BLOCK_REASON_WHITELIST);
             return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }

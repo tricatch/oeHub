@@ -374,6 +374,8 @@ public class OeHubApplication {
                 config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
                 config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
                 config.routes.post("/api/adm/settings/allowed-domains",    settings::apiSaveAllowedDomains);
+                config.routes.post("/api/adm/settings/allowed-domains/allow-all", settings::apiSaveAllowAllDomains);
+                config.routes.get("/api/adm/settings/blocked-domains",     settings::apiListBlockedDomains);
                 config.routes.post("/api/adm/settings/proxy-svr-address",  settings::apiSaveProxySvrAddress);
                 config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
                 config.routes.post("/api/adm/settings/internal-only-upstream", settings::apiSaveInternalOnlyUpstream);

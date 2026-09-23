@@ -91,3 +91,36 @@
 .btn-oe-icon.url-btn-delete:hover { background: #fde8e8; color: #dc3545; }
 
 .oe-progress-bar-brand { background-color: #a8d878; }
+
+.allowed-domains-textarea { color: #495057; }
+.allowed-domains-textarea:disabled { opacity: 0.5; background-color: #f8f9fa; }
+
+/* Sits below the allowed-domains textarea (not beside it), full width - long domains get plenty
+   of room on their own line before the panel's horizontal scrollbar would ever need to kick in. */
+.blocked-domains-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.3rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 0.4rem;
+  max-height: 110px;
+  overflow: auto;
+}
+.blocked-domain-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  color: #495057;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 1px 7px;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.blocked-domain-chip:hover { background: #dff2b8; border-color: #a8d878; }
+.blocked-domain-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.blocked-domain-chip:disabled:hover { background: #f8f9fa; border-color: #dee2e6; }

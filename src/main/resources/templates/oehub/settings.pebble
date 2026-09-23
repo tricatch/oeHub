@@ -51,10 +51,39 @@
                 <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
               </div>
               <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
-              <label class="form-label small mt-2 mb-1">{{ msg['settings.allowed.title'] }}</label>
-              <textarea id="allowedDomains" class="form-control form-control-sm" rows="4"
+              <div class="form-check mt-2 mb-0">
+                <input class="form-check-input" type="checkbox" id="allowedDomainsModeAllowAll" {% if allowAllDomains %}checked{% endif %}>
+                <label class="form-check-label" for="allowedDomainsModeAllowAll">{{ msg['settings.allowed.allowAll'] }}</label>
+              </div>
+              <div class="form-check d-flex align-items-center gap-1 mb-1">
+                <input class="form-check-input" type="checkbox" id="allowedDomainsModeWhitelist" {% if not allowAllDomains %}checked{% endif %}>
+                <label class="form-check-label mb-0" for="allowedDomainsModeWhitelist">{{ msg['settings.allowed.title'] }}</label>
+                <button class="oe-nav-action-btn" id="btnSortAllowedDomains" type="button" title="{{ msg['btn.sort'] }}">
+                  <span class="oe-icon oe-icon-sort" style="width:12px;height:12px"></span>
+                </button>
+              </div>
+              <textarea id="allowedDomains" class="form-control form-control-sm allowed-domains-textarea" rows="6"
+                        spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
                         placeholder="*.example.com&#10;hub.example.com">{{ allowedDomains }}</textarea>
               <div class="form-text">{{ msg['settings.allowed.help'] }}</div>
+              <div class="d-flex align-items-center gap-1 mt-2 mb-1">
+                <label class="form-label mb-0">{{ msg['settings.allowed.blocked.title'] }}</label>
+                <button class="oe-nav-action-btn" id="btnSortBlockedDomains" type="button" title="{{ msg['btn.sort'] }}">
+                  <span class="oe-icon oe-icon-sort" style="width:12px;height:12px"></span>
+                </button>
+                <button class="oe-nav-action-btn" id="btnRefreshBlockedDomains" type="button" title="{{ msg['btn.refresh'] }}">
+                  <span class="oe-icon oe-icon-refresh" style="width:12px;height:12px"></span>
+                </button>
+              </div>
+              <div id="blockedDomainsList" class="blocked-domains-panel">
+                {% if recentlyBlockedDomains is empty %}
+                <span class="text-muted small">{{ msg['settings.allowed.blocked.empty'] }}</span>
+                {% else %}
+                {% for host in recentlyBlockedDomains %}
+                <button type="button" class="blocked-domain-chip" data-domain="{{ host }}" title="{{ msg['settings.allowed.blocked.add'] }}">{{ host }}</button>
+                {% endfor %}
+                {% endif %}
+              </div>
             </td>
           </tr>
         </tbody>
@@ -338,8 +367,60 @@
   {% if not workspaceMode %}
   (() => {
     const allowedEl = document.getElementById('allowedDomains');
+    const blockedListEl = document.getElementById('blockedDomainsList');
+    const allowAllCheckbox = document.getElementById('allowedDomainsModeAllowAll');
+    const whitelistCheckbox = document.getElementById('allowedDomainsModeWhitelist');
     let lastAllowedDomains = allowedEl.value;
-    allowedEl.addEventListener('blur', async () => {
+
+    // Two checkboxes standing in for a radio pair - exactly one is checked at all times, enforced
+    // in JS below since plain checkboxes don't group themselves the way same-"name" radios would.
+    // Independent on/off override (see ForwardProxyServer.allowAllDestinations) that doesn't touch
+    // the list below at all, so it's still there exactly as typed once the mode is switched back
+    // to "도메인 화이트리스트".
+    function setDomainsSectionDisabled(disabled) {
+      allowedEl.disabled = disabled;
+      blockedListEl.querySelectorAll('.blocked-domain-chip').forEach(chip => chip.disabled = disabled);
+    }
+    setDomainsSectionDisabled(allowAllCheckbox.checked);
+
+    async function saveAllowedDomainsMode(enabled) {
+      allowAllCheckbox.checked = enabled;
+      whitelistCheckbox.checked = !enabled;
+      const res = await fetch('/api/adm/settings/allowed-domains/allow-all', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled})
+      });
+      if (res.ok) {
+        setDomainsSectionDisabled(enabled);
+        showToast(MSG['settings.saved']);
+      } else {
+        allowAllCheckbox.checked = !enabled;
+        whitelistCheckbox.checked = enabled;
+      }
+    }
+    // Turning the whitelist protection off (enabling allow-all) needs a confirm; going back to
+    // it doesn't.
+    function requestAllowedDomainsMode(enabled) {
+      if (enabled && !confirm(MSG['confirm.allow.all.domains'])) {
+        allowAllCheckbox.checked = false;
+        whitelistCheckbox.checked = true;
+        return;
+      }
+      saveAllowedDomainsMode(enabled);
+    }
+    // Clicking the checkbox that's already the active mode just unchecks it natively (there's no
+    // "neither" state) - snap it back to checked instead of treating that as "switch to the
+    // other mode". Only clicking the currently-inactive checkbox actually switches modes.
+    allowAllCheckbox.addEventListener('change', () => {
+      if (allowAllCheckbox.checked) requestAllowedDomainsMode(true);
+      else allowAllCheckbox.checked = true;
+    });
+    whitelistCheckbox.addEventListener('change', () => {
+      if (whitelistCheckbox.checked) requestAllowedDomainsMode(false);
+      else whitelistCheckbox.checked = true;
+    });
+
+    async function saveAllowedDomains() {
       const domains = allowedEl.value;
       if (domains === lastAllowedDomains) return;
       const res = await fetch('/api/adm/settings/allowed-domains', {
@@ -347,6 +428,68 @@
         body: JSON.stringify({domains})
       });
       if (res.ok) { lastAllowedDomains = domains; showToast(MSG['settings.saved']); }
+    }
+
+    allowedEl.addEventListener('blur', saveAllowedDomains);
+
+    document.getElementById('btnSortAllowedDomains').addEventListener('click', () => {
+      const lines = allowedEl.value.split('\n').map(l => l.trim()).filter(Boolean);
+      lines.sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
+      allowedEl.value = lines.join('\n');
+      saveAllowedDomains();
+    });
+
+    // Tracks what's currently rendered so the sort button (client-side re-order) and the
+    // click-to-add handler (below) can update the list without a round trip to the server.
+    let currentBlockedHosts = Array.from(blockedListEl.querySelectorAll('.blocked-domain-chip'))
+      .map(chip => chip.dataset.domain);
+
+    function renderBlockedDomains(hosts) {
+      currentBlockedHosts = hosts;
+      blockedListEl.innerHTML = '';
+      if (!hosts.length) {
+        const empty = document.createElement('span');
+        empty.className = 'text-muted small';
+        empty.textContent = MSG['settings.allowed.blocked.empty'];
+        blockedListEl.appendChild(empty);
+        return;
+      }
+      hosts.forEach(host => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'blocked-domain-chip';
+        chip.dataset.domain = host;
+        chip.title = MSG['settings.allowed.blocked.add'];
+        chip.textContent = host;
+        blockedListEl.appendChild(chip);
+      });
+    }
+
+    // Click a blocked domain to add it to the whitelist immediately (no need to type/retype
+    // exact names) and drop it from the suggestion list; a fresh fetch would filter it out
+    // anyway once it's actually whitelisted, this just avoids the round trip. Added exactly as
+    // blocked (no "*." guess) - working out the right registrable domain to wildcard needs a
+    // public-suffix list to do correctly, so that edit is left to the admin.
+    blockedListEl.addEventListener('click', e => {
+      const chip = e.target.closest('.blocked-domain-chip');
+      if (!chip) return;
+      const domain = chip.dataset.domain;
+      const lines = allowedEl.value.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!lines.includes(domain)) {
+        allowedEl.value = lines.concat(domain).join('\n');
+        saveAllowedDomains();
+      }
+      chip.remove();
+      currentBlockedHosts = currentBlockedHosts.filter(h => h !== domain);
+    });
+
+    document.getElementById('btnSortBlockedDomains').addEventListener('click', () => {
+      renderBlockedDomains([...currentBlockedHosts].sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})));
+    });
+
+    document.getElementById('btnRefreshBlockedDomains').addEventListener('click', async () => {
+      const res = await fetch('/api/adm/settings/blocked-domains');
+      if (res.ok) renderBlockedDomains((await res.json()).hosts);
     });
   })();
   {% endif %}
