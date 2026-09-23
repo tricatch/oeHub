@@ -86,13 +86,7 @@
           {% endif %}
         </div>
 
-        {# ── Step 2: workspace presets - they belong to the workspace /setup creates with the admin,
-             so the tables only appear once the admin exists ── #}
-        {% if adminConfigured %}
-        {% include "templates/oehub/_preset-tables.pebble" %}
-        {% endif %}
-
-        {# ── Step 3: CA Certificate (oeProxy only - not shown in workspace mode) ── #}
+        {# ── Step 2: CA Certificate (oeProxy only - not shown in workspace mode) ── #}
         {% if not workspaceMode %}
         <div class="oe-info-section">
           <table class="oe-info-table mb-0">
@@ -329,45 +323,10 @@
 })();
 </script>
 <script nonce="{{ cspNonce }}">
-  let unsavedPresetCount = 0;
-  function updateLoginBtn() {
-    const btn = document.getElementById('btnGotoLogin');
-    if (!btn) return;
-    const complete = btn.dataset.setupComplete === 'true';
-    btn.disabled = !complete || unsavedPresetCount > 0;
-  }
-  function onPresetDirtyChange(dirty) {
-    unsavedPresetCount += dirty ? 1 : -1;
-    updateLoginBtn();
-  }
   // Not an inline onclick="...": the CSP has no 'unsafe-inline' for scripts, so it would be blocked.
   document.getElementById('btnGotoLogin').addEventListener('click', function () {
     location.href = '/login';
   });
-</script>
-{% if adminConfigured %}
-<script src="/js/preset-table.js"></script>
-<script nonce="{{ cspNonce }}">
-  initUrlPresetTable({
-    apiBase: '/setup/hosts-url',
-    deleteTooltipKey: 'tooltip.url.delete',
-    savedToastKey: 'toast.url.saved',
-    deletedToastKey: 'toast.url.deleted',
-    onDirtyChange: onPresetDirtyChange
-  });
-</script>
-{% endif %}
-
-<script nonce="{{ cspNonce }}">
-  {% if adminConfigured %}
-  initUaPresetTable({
-    apiBase: '/setup/hosts-ua',
-    deleteTooltipKey: 'tooltip.ua.delete',
-    savedToastKey: 'toast.ua.saved',
-    deletedToastKey: 'toast.ua.deleted',
-    onDirtyChange: onPresetDirtyChange
-  });
-  {% endif %}
 </script>
 </body>
 </html>

@@ -295,22 +295,15 @@ public class OeHubApplication {
                     ctx.skipRemainingHandlers();
                 }
             });
-            // The /setup/* CRUD routes (hosts-url, hosts-ua, oid-domain-default, ca/generate,
-            // ca/import) exist so the first-run wizard can manage global presets and the CA
-            // before any admin account/session exists. They must lock down as soon as an admin
-            // account exists — not only once the whole wizard (admin + CA) is complete — otherwise
-            // there is a window after admin creation, before the CA step, where any unauthenticated
-            // caller could POST /setup/ca/import and install their own root CA as the trust root
-            // for the entire SSL reverse proxy. SetupController.processSetup logs the newly-created
-            // admin in immediately so the legitimate wizard flow keeps working once this closes.
+            // The /setup/* CRUD routes (ca/generate, ca/import) exist so the first-run wizard can
+            // manage the CA before any admin account/session exists. They must lock down as soon as
+            // an admin account exists — not only once the whole wizard (admin + CA) is complete —
+            // otherwise there is a window after admin creation, before the CA step, where any
+            // unauthenticated caller could POST /setup/ca/import and install their own root CA as
+            // the trust root for the entire SSL reverse proxy. SetupController.processSetup logs the
+            // newly-created admin in immediately so the legitimate wizard flow keeps working once
+            // this closes.
             config.routes.before("/setup/*", ctx -> {
-                // Presets belong to a workspace, which /setup creates together with the admin: before
-                // that there is nothing to attach them to (the wizard hides the tables until then).
-                if (ctx.path().startsWith("/setup/hosts-") && AuthController.currentUser(ctx) == null) {
-                    ctx.status(401).result("Unauthorized");
-                    ctx.skipRemainingHandlers();
-                    return;
-                }
                 if (SetupController.isAdminConfigured()) {
                     if (!Role.isInstanceAdmin(AuthController.currentUser(ctx))) {
                         ctx.status(403).result("Forbidden");
@@ -346,19 +339,6 @@ public class OeHubApplication {
                 config.routes.post("/setup/ca/generate", setup::generateCa);
                 config.routes.post("/setup/ca/import",   setup::importCa);
             }
-            // The wizard's preset tables use the same workspace-scoped handlers as the settings pages:
-            // they act on the logged-in admin's workspace, which exists once /setup created the admin.
-            config.routes.get("/setup/hosts-url",              adminUrl::apiList);
-            config.routes.post("/setup/hosts-url",             adminUrl::apiCreate);
-            config.routes.patch("/setup/hosts-url/{urlId}",    adminUrl::apiUpdate);
-            config.routes.delete("/setup/hosts-url/{urlId}",   adminUrl::apiDelete);
-            config.routes.put("/setup/hosts-url/order",        adminUrl::apiReorder);
-            config.routes.get("/setup/hosts-ua",               adminUa::apiList);
-            config.routes.post("/setup/hosts-ua",              adminUa::apiCreate);
-            config.routes.patch("/setup/hosts-ua/{uaId}",      adminUa::apiUpdate);
-            config.routes.delete("/setup/hosts-ua/{uaId}",     adminUa::apiDelete);
-            config.routes.put("/setup/hosts-ua/order",         adminUa::apiReorder);
-
             config.routes.get("/", ctx -> {
                 var model = new HashMap<String, Object>();
                 model.put("user", AuthController.currentUser(ctx));
