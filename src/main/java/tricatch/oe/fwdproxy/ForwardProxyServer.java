@@ -73,11 +73,11 @@ public class ForwardProxyServer {
     private static final String PROXY_SVR_PLACEHOLDER = "${PROXY_SVR}";
 
     // Allowed domains (whitelist): only destinations matching one of these patterns may be relayed
-    // through the forward proxy — everything else gets a 403 — and only these names may be looked up
-    // in DNS for the PROXY_SVR address (see HostsController.proxyIpFor). Empty (the default) allows
-    // nothing: the forward proxy is meant for a known set of (typically internal) domains. A pattern may be a bare domain ("foo.com") or
-    // wildcard-prefixed ("*.foo.com"); either form matches the domain itself and all subdomains,
-    // mirroring the requestDomains semantics used by the oeOID Chrome extension (see background.js).
+    // through the forward proxy — everything else gets a 403. Empty (the default) allows nothing:
+    // the forward proxy is meant for a known set of (typically internal) domains. A pattern may be
+    // a bare domain ("foo.com") or wildcard-prefixed ("*.foo.com"); either form matches the domain
+    // itself and all subdomains, mirroring the requestDomains semantics used by the oeOID Chrome
+    // extension (see background.js).
     private static final String KEY_WHITELIST = "fwdproxy.whitelist";
 
     // A client whose own connection to this proxy is itself loopback (127.0.0.1/::1) is exempted

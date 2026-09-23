@@ -110,10 +110,9 @@ oeHosts는 `--host-resolver-rules`의 대안으로 Chrome의 `--proxy-server` �
 내부) 도메인 집합을 대상으로 쓰는 도구이기 때문에, 처음에는 모두 차단하고 허용할 도메인을
 등록하는 정책입니다.
 
-같은 목록이 `PROXY_SVR` 주소를 위한 DNS 조회에도 쓰입니다
-([02-oehosts-and-oelink.md](02-oehosts-and-oelink.md) 참조). 허용 도메인은 oeProxy 설정이므로
-`self-hosted` 전용입니다. `workspace` 모드에는 oeProxy가 없어 `PROXY_SVR`도 의미가 없으므로 설정
-화면에 나타나지 않고, DNS 조회도 하지 않습니다.
+허용 도메인은 `self-hosted` 전용 설정이라 `workspace` 모드에서는 설정 화면에 나타나지 않습니다.
+(hosts/공유 페이지에 표시되는 `PROXY_SVR` 주소는 더 이상 이 목록과 무관합니다 — 관리자가 설정
+화면에서 직접 지정하는 고정 값입니다. [02-oehosts-and-oelink.md](02-oehosts-and-oelink.md) 참조.)
 
 차단된 목적지는 리버스 프록시 자체의 오류 페이지와 일치하는, 브랜드가 적용된 403 오류 페이지를
 받습니다. 차단된 HTTPS 목적지는 CONNECT 터널이 그냥 실패하는 대신, 포트 `36981`의 전용 루프백

@@ -117,13 +117,22 @@ public class SettingsController {
         ctx.json(Map.of("enabled", enabled));
     }
 
-    // ── allowed domains (forward proxy relay + PROXY_SVR lookups) ─────────────────────────────────
+    // ── allowed domains (forward proxy relay only) ─────────────────────────────
 
     public void apiSaveAllowedDomains(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var domains = ((String) body.getOrDefault("domains", "")).trim();
         ForwardProxyServer.setWhitelist(domains, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("domains", domains));
+    }
+
+    // ── PROXY_SVR address (shown on hosts/share pages, see HostsController) ───
+
+    public void apiSaveProxySvrAddress(Context ctx) throws IOException {
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var address = ((String) body.getOrDefault("address", "")).trim();
+        ReverseProxyServer.setProxySvrAddress(address, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("address", ReverseProxyServer.getProxySvrAddress()));
     }
 
     // ── database backup ───────────────────────────────────────────────────────
@@ -307,6 +316,7 @@ public class SettingsController {
         model.put("internalOnlyUpstream", ReverseProxyServer.isInternalOnlyUpstream());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("allowedDomains", ForwardProxyServer.getWhitelist());
+        model.put("proxySvrAddress", ReverseProxyServer.getProxySvrAddress());
         model.put("backupIntervalHours", BackupService.getIntervalHours());
         model.put("backupLastAt", formatBackupLastAt(BackupService.getLastBackupAtDisplay()));
         model.put("ca", loadCaInfo());

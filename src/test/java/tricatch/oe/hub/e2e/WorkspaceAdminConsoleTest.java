@@ -323,7 +323,7 @@ class WorkspaceAdminConsoleTest {
         instAdminPage.navigate(server.baseUrl() + "/adm/settings");
 
         assertThat(instAdminPage.locator("#allowedDomains")).hasCount(0);
-        assertThat(instAdminPage.locator("#btnSaveBackupInterval")).hasCount(1);
+        assertThat(instAdminPage.locator("#backupIntervalHours")).hasCount(1);
         var apiStatus = (Integer) instAdminPage.evaluate(
             "async () => (await fetch('/api/adm/settings/allowed-domains', {method: 'POST', "
                 + "headers: {'Content-Type': 'application/json'}, body: JSON.stringify({domains: 'x.example.com'})})).status");

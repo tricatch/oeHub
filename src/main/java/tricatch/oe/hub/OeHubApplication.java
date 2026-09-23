@@ -341,11 +341,10 @@ public class OeHubApplication {
             config.routes.get("/setup", setup::showSetup);
             config.routes.post("/setup", setup::processSetup);
             if (!workspaceMode) {
-                // CA setup and oID (X-OeHub-Oid) domain defaults only make sense for oeProxy,
-                // which doesn't exist in workspace mode - cloudGroupService design doc §2.6.
+                // CA setup only makes sense for oeProxy, which doesn't exist in workspace mode -
+                // cloudGroupService design doc §2.6.
                 config.routes.post("/setup/ca/generate", setup::generateCa);
                 config.routes.post("/setup/ca/import",   setup::importCa);
-                config.routes.post("/setup/oid-domain-default", setup::saveOidDomainDefault);
             }
             // The wizard's preset tables use the same workspace-scoped handlers as the settings pages:
             // they act on the logged-in admin's workspace, which exists once /setup created the admin.
@@ -389,12 +388,13 @@ public class OeHubApplication {
             config.routes.get("/adm/settings",              settings::showSettings);
             config.routes.post("/api/adm/settings/backup-interval", settings::apiSaveBackupInterval);
             if (!workspaceMode) {
-                // IP identifier / allowed domains (forward-proxy relay whitelist, and the names looked
-                // up for PROXY_SVR) / CA / oeOID domain defaults are all oeProxy-only concerns - meaningless (and their
+                // IP identifier / allowed domains (forward-proxy relay whitelist) / PROXY_SVR address /
+                // CA / oeOID domain defaults are all oeProxy-only concerns - meaningless (and their
                 // backing servers non-existent) under workspace mode.
                 config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
                 config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
                 config.routes.post("/api/adm/settings/allowed-domains",    settings::apiSaveAllowedDomains);
+                config.routes.post("/api/adm/settings/proxy-svr-address",  settings::apiSaveProxySvrAddress);
                 config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
                 config.routes.post("/api/adm/settings/internal-only-upstream", settings::apiSaveInternalOnlyUpstream);
                 config.routes.post("/adm/settings/ca/generate", settings::generateCa);

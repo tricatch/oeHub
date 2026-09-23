@@ -79,6 +79,18 @@ public class ReverseProxyServer {
     // way JwtService persists its signing key, so it survives restarts but never leaves this server.
     private static final String KEY_OID_SECRET = "oid.secret";
 
+    // The address shown as ${PROXY_SVR} on hosts/share pages (see HostsController) and substituted
+    // into their content - what other machines should use to reach this reverse proxy. A plain
+    // admin-set value rather than something derived per visitor: it used to be looked up from DNS
+    // for the domain name the visitor happened to connect with (bounded by an admin allow-list, to
+    // stop an unauthenticated caller from turning the lookup into an arbitrary-domain DNS oracle),
+    // but that only mattered for deployments reachable through several different domains/paths at
+    // once. Defaults to the loopback address, which is only meaningful for a reverse proxy running
+    // on the same machine as its clients; every other deployment needs the admin to set it.
+    private static final String KEY_PROXY_SVR_ADDRESS = "proxysvr.address";
+    private static final String DEFAULT_PROXY_SVR_ADDRESS = "127.0.0.1";
+    private static volatile String proxySvrAddress = DEFAULT_PROXY_SVR_ADDRESS;
+
     public static void init(SqlSessionFactory factory) {
         sqlSessionFactory = factory;
         var stored = new ProxyConfService(factory).get(KEY_IP_IDENTIFIER_ENABLED, null);
@@ -87,6 +99,8 @@ public class ReverseProxyServer {
         trustInternalCertEnabled = !"false".equals(storedTrustInternal);
         var storedInternalOnly = new ProxyConfService(factory).get(KEY_INTERNAL_ONLY_UPSTREAM, null);
         internalOnlyUpstream = !"false".equals(storedInternalOnly);
+        var storedProxySvr = new ProxyConfService(factory).get(KEY_PROXY_SVR_ADDRESS, null);
+        proxySvrAddress = (storedProxySvr != null && !storedProxySvr.isBlank()) ? storedProxySvr : DEFAULT_PROXY_SVR_ADDRESS;
         OidUtil.init(loadOrCreateOidSecret(factory));
     }
 
@@ -141,6 +155,16 @@ public class ReverseProxyServer {
     public static void setInternalOnlyUpstream(boolean enabled, Long actorUserNo) {
         internalOnlyUpstream = enabled;
         new ProxyConfService(sqlSessionFactory).set(KEY_INTERNAL_ONLY_UPSTREAM, null, String.valueOf(enabled), actorUserNo);
+    }
+
+    public static String getProxySvrAddress() {
+        return proxySvrAddress;
+    }
+
+    public static void setProxySvrAddress(String address, Long actorUserNo) {
+        var trimmed = address == null ? "" : address.trim();
+        proxySvrAddress = trimmed.isEmpty() ? DEFAULT_PROXY_SVR_ADDRESS : trimmed;
+        new ProxyConfService(sqlSessionFactory).set(KEY_PROXY_SVR_ADDRESS, null, proxySvrAddress, actorUserNo);
     }
 
     /**

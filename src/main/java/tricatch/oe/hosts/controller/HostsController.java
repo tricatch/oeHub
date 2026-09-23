@@ -18,7 +18,6 @@ import tricatch.oe.hosts.model.HostsUrl;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -26,9 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class HostsController {
 
@@ -37,12 +33,6 @@ public class HostsController {
     private final HostConfService hostConfService;
     private final SettingsController settingsController;
     private final ObjectMapper objectMapper;
-
-    // Hosts pages resolve the caller-supplied Host header via DNS (proxyIpFor below), but only for
-    // names on the allowed-domains list (ProxyIpResolver). Bounding that lookup by a timeout on its own
-    // virtual thread keeps a slow/unresponsive domain from tying up a request-handling thread.
-    private static final ExecutorService DNS_RESOLVER = Executors.newVirtualThreadPerTaskExecutor();
-    private static final long DNS_RESOLVE_TIMEOUT_MS = 500;
 
     public HostsController(SqlSessionFactory sqlSessionFactory, SettingsController settingsController, ObjectMapper objectMapper) {
         this.sqlSessionFactory = sqlSessionFactory;
@@ -642,28 +632,16 @@ public class HostsController {
         ctx.status(204);
     }
 
-    // PROXY_SVR shown on hosts pages. The address comes from a DNS lookup of the Host header's name,
-    // which the caller controls - so only names on the admin's allowed-domains list (Settings) are
-    // looked up, for every caller; everything else falls back to this server's own address. See
-    // ProxyIpResolver. Workspace mode has no oeProxy and does no lookups at all.
+    // PROXY_SVR shown on hosts pages: a plain admin-set address (Settings), not derived from the
+    // caller-controlled Host header. Workspace mode has no oeProxy, so PROXY_SVR means nothing
+    // there - fall back to this server's own local address instead of the configured one.
     private String proxyIpFor(Context ctx) {
-        return proxyIpFor(ctx.header("Host"), ctx.req().getLocalAddr(), HostsController::lookupWithTimeout);
+        return proxyIpFor(ctx.req().getLocalAddr());
     }
 
-    // The lookup is a parameter so a test can observe which names would be resolved.
-    String proxyIpFor(String hostHeader, String localAddress, java.util.function.Function<String, String> lookup) {
-        // oeProxy doesn't run in workspace mode, so PROXY_SVR means nothing there: never look anything up.
+    // Package-private so a test can call it without constructing a Javalin Context.
+    String proxyIpFor(String localAddress) {
         if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) return localAddress;
-        return ProxyIpResolver.resolve(hostHeader, localAddress, ForwardProxyServer::isWhitelisted, lookup);
-    }
-
-    // Bounded on its own virtual thread so a slow or unresponsive name can't tie up a request thread.
-    private static String lookupWithTimeout(String hostname) {
-        try {
-            var future = DNS_RESOLVER.submit(() -> InetAddress.getByName(hostname).getHostAddress());
-            return future.get(DNS_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            return null;
-        }
+        return tricatch.oe.proxy.ReverseProxyServer.getProxySvrAddress();
     }
 }

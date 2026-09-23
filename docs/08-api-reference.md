@@ -161,7 +161,8 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/adm/settings/identifier` | IP 식별 폴백 on/off (`self-hosted` 전용) |
 | POST | `/api/adm/settings/trust-internal-cert` | 내부망 백엔드 인증서 신뢰 on/off (`self-hosted` 전용) |
 | POST | `/api/adm/settings/internal-only-upstream` | 내부망 백엔드만 허용 on/off, 본문 `{"enabled": true}` (`self-hosted` 전용, 기본값 켜짐) |
-| POST | `/api/adm/settings/allowed-domains` | 허용 도메인(화이트리스트) 저장, 본문 `{"domains": "..."}`. 포워드 프록시가 중계할 수 있는 도메인이자 `PROXY_SVR` 주소를 위해 DNS 조회를 허용할 이름의 목록. 비어 있으면 아무것도 허용하지 않음 (`self-hosted` 전용, `workspace` 모드에서는 등록되지 않음) |
+| POST | `/api/adm/settings/allowed-domains` | 허용 도메인(화이트리스트) 저장, 본문 `{"domains": "..."}`. 포워드 프록시가 중계할 수 있는 도메인 목록. 비어 있으면 아무것도 허용하지 않음 (`self-hosted` 전용, `workspace` 모드에서는 등록되지 않음) |
+| POST | `/api/adm/settings/proxy-svr-address` | hosts/공유 페이지에 표시하고 `${PROXY_SVR}` 자리에 대입할 주소 저장, 본문 `{"address": "..."}`. 빈 값이면 기본값(`127.0.0.1`)으로 되돌아감 (`self-hosted` 전용, `workspace` 모드에서는 등록되지 않음) |
 | GET/POST/PATCH/DELETE | `/api/adm/hosts/ua`, `/api/adm/hosts/url` (`+/{id}`, `+/order`) | 인스턴스 관리자가 속한 워크스페이스(`workspace` 모드에서는 `SYSTEM`)의 공유 UA/URL 프리셋 CRUD. `/api/wsa/hosts/*`와 같은 핸들러 |
 
 `/adm/settings/ca/generate`, `/adm/settings/ca/import`(폼 POST, JSON 아님)도 이 그룹에

@@ -190,58 +190,6 @@
         </div>
         {% endif %}
 
-        {# ── Step 4: oeOID Domains (oeProxy only - not shown in workspace mode) ── #}
-        {% if not workspaceMode %}
-        <div class="oe-info-section">
-          <table class="oe-info-table mb-0">
-            <colgroup><col style="width:110px;"><col></colgroup>
-            <thead>
-              <tr>
-                <th>{{ msg['settings.oeoid.title'] }}</th>
-                <th class="text-end">
-                  {% if oidDomainConfigured %}
-                  <span class="badge bg-success">{{ msg['setup.configured'] }}</span>
-                  {% else %}
-                  <button class="oe-nav-action-btn oe-nav-action-save" type="submit" form="oidDomainDefaultForm" title="{{ msg['btn.save'] }}">
-                    <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-                  </button>
-                  {% endif %}
-                </th>
-              </tr>
-            </thead>
-            {% if oidDomainConfigured %}
-            <tbody>
-              <tr>
-                <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
-                <td class="setup-mono setup-pre-line">{{ oidDomainDefault }}</td>
-              </tr>
-            </tbody>
-            {% endif %}
-          </table>
-
-          {% if not oidDomainConfigured %}
-          <div class="pt-3">
-            <form id="oidDomainDefaultForm" method="post" action="/setup/oid-domain-default" autocomplete="off">
-              <input type="hidden" name="_csrf" value="{{ csrfToken }}">
-              <table class="oe-info-table mb-0">
-                <colgroup><col style="width:150px;"><col></colgroup>
-                <tbody>
-                  <tr>
-                    <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
-                    <td>
-                      <textarea name="oidDomainDefault" class="form-control form-control-sm" rows="4"
-                                placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
-                      <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </form>
-          </div>
-          {% endif %}
-        </div>
-        {% endif %}
-
         {# CA is an oeProxy-only requirement - workspace mode never has one, so admin alone is enough #}
         <div class="text-center mt-2 mb-4">
           <button type="button" class="oe-modal-btn" id="btnGotoLogin"
@@ -420,11 +368,6 @@
     onDirtyChange: onPresetDirtyChange
   });
   {% endif %}
-
-  if (new URLSearchParams(location.search).get('savedOid') === '1') {
-    showToast(MSG['settings.saved']);
-    history.replaceState(null, '', '/setup');
-  }
 </script>
 </body>
 </html>

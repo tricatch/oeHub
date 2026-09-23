@@ -277,13 +277,6 @@ public class SetupController {
         }
     }
 
-    public void saveOidDomainDefault(Context ctx) {
-        var domainList = ctx.formParam("oidDomainDefault");
-        if (domainList == null) domainList = "";
-        settings.saveOidDomainDefault(domainList.trim(), AuthController.currentUser(ctx).getUserNo());
-        ctx.redirect("/setup?savedOid=1");
-    }
-
     private HashMap<String, Object> buildModel(String adminError, String caError, String caActiveTab) {
         var model = new HashMap<String, Object>();
         model.put("adminError", adminError);
@@ -300,10 +293,6 @@ public class SetupController {
 
         model.put("caConfigured", settings.isCaConfigured());
         model.put("ca", settings.loadCaInfo());
-
-        var oidDomainDefault = settings.getOidDomainDefault();
-        model.put("oidDomainConfigured", !oidDomainDefault.isBlank());
-        model.put("oidDomainDefault", oidDomainDefault);
 
         return model;
     }
