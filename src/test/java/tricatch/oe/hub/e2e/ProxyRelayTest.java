@@ -223,7 +223,12 @@ class ProxyRelayTest {
         // ReverseProxyServer.resolveOid() has no loopback/sole-account shortcut - a raw TLS
         // client (no X-OeHub-Oid header, see openRelaySocket()) is only ever attributed to this
         // account because this test explicitly claims 127.0.0.1 via ClaimedIpRegistry first,
-        // exactly like clicking "Use This IP" on the oeProxy page would.
+        // exactly like clicking "Use This IP" on the oeProxy page would. IP-based identification
+        // is opt-in (off by default - Settings > Identifier), so it must be enabled before
+        // take-ip will accept the claim (ProxyController.apiTakeIp otherwise 409s).
+        var enableIpResponse = postJson("/api/adm/settings/identifier", "{\"ipEnabled\":true}");
+        assertThat(enableIpResponse.statusCode()).isEqualTo(200);
+
         var takeIpResponse = postJson("/api/proxy/take-ip", null);
         assertThat(takeIpResponse.statusCode()).isEqualTo(200);
     }
