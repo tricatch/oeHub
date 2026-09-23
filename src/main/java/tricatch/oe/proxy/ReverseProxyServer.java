@@ -54,10 +54,10 @@ public class ReverseProxyServer {
     private static SqlSessionFactory sqlSessionFactory = null;
 
     // OID identification (X-OeHub-Oid header) is always available; IP-based identification
-    // is a fallback that an admin can disable via /adm/settings when it's unreliable
-    // (e.g. clients sitting behind a shared/NATed IP).
+    // is an opt-in fallback an admin can enable via /adm/settings for requests without an
+    // OID header. Off by default because client IP is often shared/NATed and unreliable.
     private static final String KEY_IP_IDENTIFIER_ENABLED = "identifier.ip.enabled";
-    private static volatile boolean ipIdentifierEnabled = true;
+    private static volatile boolean ipIdentifierEnabled = false;
 
     // When an https backend's certificate fails validation, the client has no way to tell that's
     // the cause - PassRequestExecutor only ever surfaces a generic BadGatewayException. Internal
@@ -82,7 +82,7 @@ public class ReverseProxyServer {
     public static void init(SqlSessionFactory factory) {
         sqlSessionFactory = factory;
         var stored = new ProxyConfService(factory).get(KEY_IP_IDENTIFIER_ENABLED, null);
-        ipIdentifierEnabled = !"false".equals(stored);
+        ipIdentifierEnabled = "true".equals(stored);
         var storedTrustInternal = new ProxyConfService(factory).get(KEY_TRUST_INTERNAL_CERT_ENABLED, null);
         trustInternalCertEnabled = !"false".equals(storedTrustInternal);
         var storedInternalOnly = new ProxyConfService(factory).get(KEY_INTERNAL_ONLY_UPSTREAM, null);

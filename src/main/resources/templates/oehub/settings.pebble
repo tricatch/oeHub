@@ -25,12 +25,36 @@
 
     {% include "templates/oehub/_preset-tables.pebble" %}
 
-    {# oeProxy-only sections (CA, identifier, upstream certificate): workspace mode never runs oeProxy #}
+    {# oeProxy-only sections (CA, forward proxy, identifier, upstream certificate): workspace mode never runs oeProxy #}
     {% if not workspaceMode %}
+    {# ── Forward Proxy (LittleProxy) ── #}
+    <div class="oe-info-section">
+      <table class="oe-info-table oe-info-table-fixed mb-0">
+        <colgroup><col style="width:140px;"><col></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2">{{ msg['settings.fwdproxy.title'] }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.fwdproxy.status'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="fwdproxyEnabled" checked disabled>
+                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     {# ── CA Certificate ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
             <th colspan="2">
@@ -162,22 +186,23 @@
       </div>
     </div>
 
-    {# ── oeProxy Identifier ── #}
+    {# ── oeProxy (identifier, upstream certificate, upstream address, allowed domains, oeOID domains) ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
-            <th colspan="2">{{ msg['settings.identifier.title'] }}</th>
+            <th colspan="2">{{ msg['settings.oeproxy.title'] }}</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td class="oe-info-label">{{ msg['settings.identifier.label'] }}</td>
+            <td class="oe-info-label">{{ msg['settings.identifier.title'] }}</td>
             <td>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="identifierOid" checked disabled>
                 <label class="form-check-label" for="identifierOid">{{ msg['settings.identifier.oid'] }}</label>
+                <span class="text-muted small">{{ msg['settings.identifier.oid.hint'] }}</span>
               </div>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="identifierIp" {% if ipIdentifierEnabled %}checked{% endif %}>
@@ -186,22 +211,16 @@
               <div class="form-text">{{ msg['settings.identifier.help'] }}</div>
             </td>
           </tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# ── oeProxy Upstream Certificate ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
           <tr>
-            <th colspan="2">{{ msg['settings.trustcert.title'] }}</th>
+            <td class="oe-info-label">{{ msg['settings.oeproxy.oeoid.label'] }}</td>
+            <td>
+              <textarea id="oidDomainDefault" class="form-control form-control-sm" rows="2"
+                        placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
+              <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
+            </td>
           </tr>
-        </thead>
-        <tbody>
           <tr>
-            <td class="oe-info-label">{{ msg['settings.trustcert.label'] }}</td>
+            <td class="oe-info-label">{{ msg['settings.trustcert.title'] }}</td>
             <td>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="trustInternalCert" {% if trustInternalCertEnabled %}checked{% endif %}>
@@ -210,25 +229,8 @@
               <div class="form-text">{{ msg['settings.trustcert.help'] }}</div>
             </td>
           </tr>
-        </tbody>
-      </table>
-    </div>
-
-    {% endif %}
-
-    {# ── oeProxy Upstream Address (where a virtual host's backend may live) - oeProxy is self-hosted only ── #}
-    {% if not workspaceMode %}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
           <tr>
-            <th colspan="2">{{ msg['settings.upstream.title'] }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.upstream.label'] }}</td>
+            <td class="oe-info-label">{{ msg['settings.upstream.title'] }}</td>
             <td>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="internalOnlyUpstream" {% if internalOnlyUpstream %}checked{% endif %}>
@@ -237,29 +239,8 @@
               <div class="form-text">{{ msg['settings.upstream.help'] }}</div>
             </td>
           </tr>
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
-
-    {# ── Allowed domains (forward proxy relay + PROXY_SVR lookups) - oeProxy is self-hosted only ── #}
-    {% if not workspaceMode %}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
           <tr>
-            <th>{{ msg['settings.allowed.title'] }}</th>
-            <th class="text-end">
-              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveAllowedDomains" type="button" title="{{ msg['btn.save'] }}">
-                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.allowed.label'] }}</td>
+            <td class="oe-info-label">{{ msg['settings.allowed.title'] }}</td>
             <td>
               <textarea id="allowedDomains" class="form-control form-control-sm" rows="4"
                         placeholder="*.example.com&#10;hub.example.com">{{ allowedDomains }}</textarea>
@@ -272,65 +253,10 @@
 
     {% endif %}
 
-    {# oeProxy-only sections (forward proxy, oeOID domains) #}
-    {% if not workspaceMode %}
-    {# ── Forward Proxy (LittleProxy) ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
-          <tr>
-            <th colspan="2">{{ msg['settings.fwdproxy.title'] }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.fwdproxy.status'] }}</td>
-            <td>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="fwdproxyEnabled" checked disabled>
-                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
-              </div>
-              <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# ── oeOID Domains ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
-          <tr>
-            <th>{{ msg['settings.oeoid.title'] }}</th>
-            <th class="text-end">
-              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveOidDomainDefault" type="button" title="{{ msg['btn.save'] }}">
-                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
-            <td>
-              <textarea id="oidDomainDefault" class="form-control form-control-sm" rows="4"
-                        placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
-              <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    {% endif %}
-
     {# ── Backup ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
             <th>{{ msg['settings.backup.title'] }}</th>
@@ -372,25 +298,35 @@
 
 <script nonce="{{ cspNonce }}">
   {% if not workspaceMode %}
-  document.getElementById('btnSaveOidDomainDefault').addEventListener('click', async () => {
-    const domainList = document.getElementById('oidDomainDefault').value;
-    const res = await fetch('/api/adm/settings/oid-domain-default', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({domainList})
+  (() => {
+    const oidEl = document.getElementById('oidDomainDefault');
+    let lastOidDomainList = oidEl.value;
+    oidEl.addEventListener('blur', async () => {
+      const domainList = oidEl.value;
+      if (domainList === lastOidDomainList) return;
+      const res = await fetch('/api/adm/settings/oid-domain-default', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domainList})
+      });
+      if (res.ok) { lastOidDomainList = domainList; showToast(MSG['settings.saved']); }
     });
-    if (res.ok) showToast(MSG['settings.saved']);
-  });
+  })();
   {% endif %}
 
   {% if not workspaceMode %}
-  document.getElementById('btnSaveAllowedDomains').addEventListener('click', async () => {
-    const domains = document.getElementById('allowedDomains').value;
-    const res = await fetch('/api/adm/settings/allowed-domains', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({domains})
+  (() => {
+    const allowedEl = document.getElementById('allowedDomains');
+    let lastAllowedDomains = allowedEl.value;
+    allowedEl.addEventListener('blur', async () => {
+      const domains = allowedEl.value;
+      if (domains === lastAllowedDomains) return;
+      const res = await fetch('/api/adm/settings/allowed-domains', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domains})
+      });
+      if (res.ok) { lastAllowedDomains = domains; showToast(MSG['settings.saved']); }
     });
-    if (res.ok) showToast(MSG['settings.saved']);
-  });
+  })();
   {% endif %}
 
   document.getElementById('btnSaveBackupInterval').addEventListener('click', async () => {

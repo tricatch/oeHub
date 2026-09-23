@@ -336,7 +336,7 @@ class WorkspaceAdminConsoleTest {
         // The other oeProxy-only sections (CA, IP identifier, upstream certificate, forward proxy,
         // oeOID domains) are hidden too, and their save routes are unrouted.
         for (var id : new String[] {"identifierIp", "trustInternalCert", "fwdproxyEnabled",
-                                    "oidDomainDefault", "btnSaveOidDomainDefault"}) {
+                                    "oidDomainDefault"}) {
             assertThat(instAdminPage.locator("#" + id)).hasCount(0);
         }
         assertThat(instAdminPage.locator("form[action='/adm/settings/ca/generate']")).hasCount(0);
