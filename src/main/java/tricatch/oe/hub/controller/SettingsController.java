@@ -15,8 +15,9 @@ import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.model.HubConf;
 import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
+import tricatch.oe.hub.proxy.ReverseProxySettings;
+import tricatch.oe.hub.proxy.service.ProxyConfService;
 import tricatch.oe.proxy.ReverseProxyServer;
-import tricatch.oe.proxy.service.ProxyConfService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -95,7 +96,7 @@ public class SettingsController {
     public void apiSaveIdentifier(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var ipEnabled = Boolean.TRUE.equals(body.get("ipEnabled"));
-        ReverseProxyServer.setIpIdentifierEnabled(ipEnabled, AuthController.currentUser(ctx).getUserNo());
+        ReverseProxySettings.setIpIdentifierEnabled(ipEnabled, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("ipEnabled", ipEnabled));
     }
 
@@ -104,7 +105,7 @@ public class SettingsController {
     public void apiSaveTrustInternalCert(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var enabled = Boolean.TRUE.equals(body.get("enabled"));
-        ReverseProxyServer.setTrustInternalCertEnabled(enabled, AuthController.currentUser(ctx).getUserNo());
+        ReverseProxySettings.setTrustInternalCertEnabled(enabled, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("enabled", enabled));
     }
 
@@ -113,7 +114,7 @@ public class SettingsController {
     public void apiSaveInternalOnlyUpstream(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var enabled = Boolean.TRUE.equals(body.get("enabled"));
-        ReverseProxyServer.setInternalOnlyUpstream(enabled, AuthController.currentUser(ctx).getUserNo());
+        ReverseProxySettings.setInternalOnlyUpstream(enabled, AuthController.currentUser(ctx).getUserNo());
         ctx.json(Map.of("enabled", enabled));
     }
 
@@ -144,8 +145,8 @@ public class SettingsController {
     public void apiSaveProxySvrAddress(Context ctx) throws IOException {
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var address = ((String) body.getOrDefault("address", "")).trim();
-        ReverseProxyServer.setProxySvrAddress(address, AuthController.currentUser(ctx).getUserNo());
-        ctx.json(Map.of("address", ReverseProxyServer.getProxySvrAddress()));
+        ReverseProxySettings.setProxySvrAddress(address, AuthController.currentUser(ctx).getUserNo());
+        ctx.json(Map.of("address", ReverseProxySettings.getProxySvrAddress()));
     }
 
     // ── database backup ───────────────────────────────────────────────────────
@@ -324,14 +325,14 @@ public class SettingsController {
         var model = new HashMap<String, Object>();
         model.put("user", AuthController.currentUser(ctx));
         model.put("oidDomainDefault", getOidDomainDefault());
-        model.put("ipIdentifierEnabled", ReverseProxyServer.isIpIdentifierEnabled());
-        model.put("trustInternalCertEnabled", ReverseProxyServer.isTrustInternalCertEnabled());
-        model.put("internalOnlyUpstream", ReverseProxyServer.isInternalOnlyUpstream());
+        model.put("ipIdentifierEnabled", ReverseProxySettings.isIpIdentifierEnabled());
+        model.put("trustInternalCertEnabled", ReverseProxySettings.isTrustInternalCertEnabled());
+        model.put("internalOnlyUpstream", ReverseProxySettings.isInternalOnlyUpstream());
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         model.put("allowedDomains", ForwardProxyServer.getWhitelist());
         model.put("allowAllDomains", ForwardProxyServer.isAllowAllDestinations());
         model.put("recentlyBlockedDomains", ForwardProxyServer.getRecentlyBlockedHosts());
-        model.put("proxySvrAddress", ReverseProxyServer.getProxySvrAddress());
+        model.put("proxySvrAddress", ReverseProxySettings.getProxySvrAddress());
         model.put("backupIntervalHours", BackupService.getIntervalHours());
         model.put("backupLastAt", formatBackupLastAt(BackupService.getLastBackupAtDisplay()));
         model.put("ca", loadCaInfo());

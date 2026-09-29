@@ -3,8 +3,8 @@ package tricatch.oe.fwdproxy;
 import io.github.tricatch.gotpache.cert.KeyTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tricatch.oe.hub.proxy.PebbleErrorPageRenderer;
 import tricatch.oe.proxy.cert.MultiDomainCertKeyManager;
-import tricatch.oe.proxy.util.HtmlUtil;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
@@ -125,8 +125,8 @@ public class BlockedPageServer {
 
             var hostOnly = ForwardProxyServer.hostOnly(host);
             var reason = ForwardProxyServer.takeBlockReason(hostOnly);
-            var locale = HtmlUtil.resolveLocale(cookie, acceptLanguage);
-            var html = HtmlUtil.renderFwdProxyForbidden(hostOnly, reason, locale);
+            var locale = PebbleErrorPageRenderer.resolveLocale(cookie, acceptLanguage);
+            var html = PebbleErrorPageRenderer.renderFwdProxyForbidden(hostOnly, reason, locale);
             var body = html.getBytes(StandardCharsets.UTF_8);
 
             var out = socket.getOutputStream();

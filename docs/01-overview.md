@@ -50,6 +50,12 @@ oeProxy는 브라우저가 아닌 클라이언트와 모바일을 위한 상시 
 실시간 트래픽 모니터와 포워드 프록시의 인증 및 화이트리스트 처리를 포함한 전체 내용은
 [03-oeproxy.md](03-oeproxy.md)를 참고하세요.
 
+리버스 프록시 핵심 엔진(SSL 패스스루, 가상 호스트 라우팅, 오너별 트래픽 이벤트)은 oeHub, DB,
+Javalin, Pebble과 완전히 분리된 별도 라이브러리 **oe-proxy**(`io.github.tricatch:oe-proxy`,
+[tricatch/oeProxy](https://github.com/tricatch/oeProxy))로 개발됩니다. oeHub는 이를 일반
+의존성으로 사용하며, DB 조회·설정 영속화·브랜드 에러 페이지 같은 oeHub 전용 연동 코드는
+`tricatch.oe.hub.proxy` 패키지에 있습니다.
+
 ## 기술 스택
 
 - **[Javalin](https://javalin.io/)** — HTTP 계층: 라우팅, 필터, 요청/응답 처리.

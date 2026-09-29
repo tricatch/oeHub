@@ -19,8 +19,8 @@ import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
 import tricatch.oe.hosts.mapper.HostsUaMapper;
 import tricatch.oe.hosts.mapper.HostsUrlMapper;
-import tricatch.oe.proxy.mapper.ProxyConfMapper;
-import tricatch.oe.proxy.mapper.ProxyVhostMapper;
+import tricatch.oe.hub.proxy.mapper.ProxyConfMapper;
+import tricatch.oe.hub.proxy.mapper.ProxyVhostMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

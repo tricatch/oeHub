@@ -606,7 +606,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     if (!res.ok) showToast(applyFailedMessage(res));
   }
 
-  // ── Use This IP (claims the current browsing IP for 8h - see ReverseProxyServer.resolveOid) ──
+  // ── Use This IP (claims the current browsing IP for 8h - see ReverseProxyServer.resolveIdentifier) ──
   // No button in the DOM at all once already claimed by self (see proxy.pebble's ipClaimedBySelf
   // branch), so this simply doesn't bind in that case.
   document.getElementById('btnTakeIp')?.addEventListener('click', async (e) => {

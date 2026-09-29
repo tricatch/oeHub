@@ -21,7 +21,7 @@ import tricatch.oe.hub.mapper.WsInviteMapper;
 import tricatch.oe.hub.mapper.WsKeyMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.hub.model.Workspace;
-import tricatch.oe.proxy.controller.ProxyController;
+import tricatch.oe.hub.proxy.controller.ProxyController;
 
 import java.nio.file.Files;
 import java.time.LocalDateTime;

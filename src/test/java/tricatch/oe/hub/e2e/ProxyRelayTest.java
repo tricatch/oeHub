@@ -55,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The SSL reverse proxy's HTTPS listener ({@code ReverseProxyServer}) binds a fixed,
  * non-configurable port 443 (unlike the app port, which {@link E2eServer} isolates per test via
  * {@code -Doe.port}) and routes by client IP (falling back from the X-OeHub-Oid header - see
- * {@code ReverseProxyServer.resolveOid()}). So this test always binds 443 on the machine it runs
+ * {@code ReverseProxyServer.resolveIdentifier()}). So this test always binds 443 on the machine it runs
  * on, and every request here - setup, vhost API calls, and the raw TLS relay checks - must go
  * through 127.0.0.1 explicitly (not "localhost", which can resolve to ::1) so they're all seen
  * as the same client IP.
@@ -220,7 +220,7 @@ class ProxyRelayTest {
         var selectResponse = patchJson("/api/proxy/vhosts/" + vhostId + "/selected", null);
         assertThat(selectResponse.statusCode()).isEqualTo(200);
 
-        // ReverseProxyServer.resolveOid() has no loopback/sole-account shortcut - a raw TLS
+        // ReverseProxyServer.resolveIdentifier() has no loopback/sole-account shortcut - a raw TLS
         // client (no X-OeHub-Oid header, see openRelaySocket()) is only ever attributed to this
         // account because this test explicitly claims 127.0.0.1 via ClaimedIpRegistry first,
         // exactly like clicking "Use This IP" on the oeProxy page would. IP-based identification

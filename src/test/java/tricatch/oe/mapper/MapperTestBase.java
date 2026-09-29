@@ -20,8 +20,8 @@ import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
 import tricatch.oe.hosts.mapper.HostsUaMapper;
 import tricatch.oe.hosts.mapper.HostsUrlMapper;
-import tricatch.oe.proxy.mapper.ProxyConfMapper;
-import tricatch.oe.proxy.mapper.ProxyVhostMapper;
+import tricatch.oe.hub.proxy.mapper.ProxyConfMapper;
+import tricatch.oe.hub.proxy.mapper.ProxyVhostMapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -85,10 +85,10 @@ public abstract class MapperTestBase {
             TEST_WS_NO = workspace.getWsNo();
         }
 
-        // Mirrors OeHubApplication.main()'s boot order: ReverseProxyServer.init() loads/creates
+        // Mirrors OeHubApplication.main()'s boot order: ReverseProxySettings.init() loads/creates
         // the OidUtil HMAC secret before anything can call setVirtualHosts()/getVirtualHosts()
         // (see ProxyController), which OidUtil.encode/decode now require.
-        tricatch.oe.proxy.ReverseProxyServer.init(FACTORY);
+        tricatch.oe.hub.proxy.ReverseProxySettings.init(FACTORY);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {

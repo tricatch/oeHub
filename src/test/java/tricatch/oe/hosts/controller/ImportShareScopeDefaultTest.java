@@ -9,8 +9,8 @@ import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.mapper.MapperTestBase;
-import tricatch.oe.proxy.controller.ProxyController;
-import tricatch.oe.proxy.service.ProxyVhostService;
+import tricatch.oe.hub.proxy.controller.ProxyController;
+import tricatch.oe.hub.proxy.service.ProxyVhostService;
 
 import java.util.HashMap;
 import java.util.List;

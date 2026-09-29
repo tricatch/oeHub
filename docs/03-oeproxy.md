@@ -142,7 +142,7 @@ Android의 Wi-Fi 프록시 설정은 인증 지원이 전혀 없어서, 프록�
 추적하는 방식에 영향을 주는 알려진 내부 버그가 있습니다. oeProxy는 특정 기능을 위해 이 내부
 동작에 의존합니다: 포워드 프록시 요청이 oeProxy 자신의 리버스 프록시로 되돌아 들어오는
 (self-loop) 상황을 인식해서, 이를 인증된 포워드 프록시 사용자에게 자동으로 귀속시키는 기능입니다.
-oeHub는 문서화된, 격리된 리플렉션 기반 기법(`tricatch.oe.proxy.util.LittleProxyInternals`)으로
+oeHub는 문서화된, 격리된 리플렉션 기반 기법(`tricatch.oe.fwdproxy.LittleProxyInternals`)으로
 이 버그를 우회하여 필요한 살아있는 연결 상태에 접근합니다.
 
 이 우회책은 의도적으로 안전하게 실패하도록 만들어졌습니다. 미래의 LittleProxy 버전이 의존하는

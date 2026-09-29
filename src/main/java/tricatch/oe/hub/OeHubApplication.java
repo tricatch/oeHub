@@ -32,8 +32,9 @@ import tricatch.oe.hub.controller.WsaSettingsController;
 import tricatch.oe.hosts.controller.HostsController;
 import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
+import tricatch.oe.hub.proxy.ReverseProxySettings;
+import tricatch.oe.hub.proxy.controller.ProxyController;
 import tricatch.oe.proxy.ReverseProxyServer;
-import tricatch.oe.proxy.controller.ProxyController;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -675,15 +676,15 @@ public class OeHubApplication {
         logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub", h2ConsolePort);
 
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
-        ReverseProxyServer.init(sqlSessionFactory);
+        ReverseProxySettings.init(sqlSessionFactory);
         ForwardProxyServer.init(sqlSessionFactory);
         BackupService.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
         // oe.mode=workspace never starts any of the network-level Proxy servers - see
-        // cloudGroupService design doc §2.6. ReverseProxyServer.init()/ForwardProxyServer.init()
+        // cloudGroupService design doc §2.6. ReverseProxySettings.init()/ForwardProxyServer.init()
         // just above are cheap, side-effect-light state setup (OID secret, whitelist load) left
-        // unconditional rather than touching the restricted tricatch.oe.proxy package further.
+        // unconditional rather than touching the oe-proxy library further.
         if (!AppHome.isWorkspaceMode()) {
             try {
                 ReverseProxyServer.startSslPassServer();

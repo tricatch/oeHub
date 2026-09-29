@@ -1,8 +1,8 @@
 package tricatch.oe.mapper;
 
 import org.junit.jupiter.api.Test;
-import tricatch.oe.proxy.mapper.ProxyVhostMapper;
-import tricatch.oe.proxy.model.ProxyVhost;
+import tricatch.oe.hub.proxy.mapper.ProxyVhostMapper;
+import tricatch.oe.hub.proxy.model.ProxyVhost;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;

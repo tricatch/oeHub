@@ -38,6 +38,7 @@
           <tr><td><a class="lib-link" href="https://github.com/LittleProxy/LittleProxy" target="_blank">LittleProxy</a></td><td>2.9.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://logback.qos.ch" target="_blank">Logback</a></td><td>1.5.18</td><td><span class="license-badge badge-mpl">EPL 1.0 / LGPL 2.1</span></td></tr>
           <tr><td><a class="lib-link" href="https://mybatis.org" target="_blank">MyBatis</a></td><td>3.5.19</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://github.com/tricatch/oeProxy" target="_blank">oe-proxy</a></td><td>0.1.0</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
           <tr><td><a class="lib-link" href="https://pebbletemplates.io" target="_blank">Pebble Templates</a></td><td>4.1.1</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://www.slf4j.org" target="_blank">SLF4J</a></td><td>2.0.18</td><td><span class="license-badge badge-mit">MIT</span></td></tr>
           <tr><td><a class="lib-link" href="https://ace.c9.io" target="_blank">Ace Editor</a></td><td>1.32</td><td><span class="license-badge badge-mit">BSD</span></td></tr>

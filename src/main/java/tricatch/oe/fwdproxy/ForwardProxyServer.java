@@ -28,10 +28,9 @@ import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
+import tricatch.oe.hub.proxy.PebbleErrorPageRenderer;
+import tricatch.oe.hub.proxy.service.ProxyConfService;
 import tricatch.oe.proxy.ReverseProxyServer;
-import tricatch.oe.proxy.service.ProxyConfService;
-import tricatch.oe.proxy.util.HtmlUtil;
-import tricatch.oe.proxy.util.LittleProxyInternals;
 import tricatch.oe.proxy.util.SelfLoopOwnerRegistry;
 
 import java.net.InetAddress;
@@ -86,7 +85,7 @@ public class ForwardProxyServer {
     // through the proxy grants it nothing new. Not persisted/exposed anywhere; a plain code toggle.
     private static final boolean EXEMPT_LOOPBACK_CLIENTS = true;
 
-    // Reason codes for the 403 page (HtmlUtil.renderFwdProxyForbidden picks its copy by this
+    // Reason codes for the 403 page (PebbleErrorPageRenderer.renderFwdProxyForbidden picks its copy by this
     // value); anything else (including missing/expired) falls back to the whitelist copy.
     static final String BLOCK_REASON_LOOPBACK = "loopback";
     static final String BLOCK_REASON_WHITELIST = "whitelist";
@@ -574,10 +573,10 @@ public class ForwardProxyServer {
 
     /** Builds the 403 response for a blocked destination, styled like oeProxy's other error pages. */
     private static HttpResponse blockedResponse(HttpRequest request, String host, String reason) {
-        var locale = HtmlUtil.resolveLocale(
+        var locale = PebbleErrorPageRenderer.resolveLocale(
                 request.headers().get(HttpHeaderNames.COOKIE),
                 request.headers().get(HttpHeaderNames.ACCEPT_LANGUAGE));
-        var html = HtmlUtil.renderFwdProxyForbidden(host, reason, locale);
+        var html = PebbleErrorPageRenderer.renderFwdProxyForbidden(host, reason, locale);
         var body = Unpooled.copiedBuffer(html, StandardCharsets.UTF_8);
         var response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, body);
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=utf-8");

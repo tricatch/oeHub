@@ -67,9 +67,9 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.85")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
     implementation("org.bouncycastle:bcutil-jdk18on:1.85")
-    implementation("io.github.azagniotov:ant-style-path-matcher:1.0.0")
     implementation("io.github.littleproxy:littleproxy:2.9.0")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
+    implementation("io.github.tricatch:oe-proxy:0.1.0")
 
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")

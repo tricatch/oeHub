@@ -362,7 +362,7 @@ public class HostsController {
     }
 
     // Plain-text {locale -> messages} lookup for the handful of controller-rendered (non-Pebble)
-    // responses below - mirrors tricatch.oe.proxy.util.HtmlUtil's identical need in that package.
+    // responses below - mirrors tricatch.oe.hub.proxy.PebbleErrorPageRenderer's identical need there.
     private static final Map<String, Map<String, String>> SHARE_MESSAGES = Map.of(
         "en", new tricatch.oe.hub.i18n.Messages("en").asMap(),
         "ko", new tricatch.oe.hub.i18n.Messages("ko").asMap()
@@ -642,6 +642,6 @@ public class HostsController {
     // Package-private so a test can call it without constructing a Javalin Context.
     String proxyIpFor(String localAddress) {
         if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) return localAddress;
-        return tricatch.oe.proxy.ReverseProxyServer.getProxySvrAddress();
+        return tricatch.oe.hub.proxy.ReverseProxySettings.getProxySvrAddress();
     }
 }

@@ -1,6 +1,6 @@
 package tricatch.oe.hub.model;
 
-import tricatch.oe.proxy.util.OidUtil;
+import tricatch.oe.hub.proxy.OidUtil;
 
 import java.time.LocalDateTime;
 

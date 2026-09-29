@@ -16,8 +16,8 @@ import tricatch.oe.hub.mapper.WsInviteMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.hub.model.Team;
 import tricatch.oe.hub.model.WsInvite;
-import tricatch.oe.proxy.mapper.ProxyConfMapper;
-import tricatch.oe.proxy.service.ProxyVhostService;
+import tricatch.oe.hub.proxy.mapper.ProxyConfMapper;
+import tricatch.oe.hub.proxy.service.ProxyVhostService;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
