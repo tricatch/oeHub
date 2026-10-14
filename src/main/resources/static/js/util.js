@@ -62,6 +62,13 @@ function wrapDelayedUrl(url) {
   return `data:text/html,<script>setTimeout(()=>location.replace('${safe}'),1000)</script>`;
 }
 
+// The start-URL argument for a Chrome launch. The delayed redirect only exists to give the oeID
+// extension time to start before the first request; workspace mode has no oeID (no oeProxy), so
+// the URL is passed as-is there.
+function chromeOpenUrlArg(url) {
+  return window.OE_WORKSPACE_MODE ? url : wrapDelayedUrl(url);
+}
+
 function getCookie(name) {
   const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\/+^])/g, '\\$1') + '=([^;]*)'));
   return m ? decodeURIComponent(m[1]) : null;

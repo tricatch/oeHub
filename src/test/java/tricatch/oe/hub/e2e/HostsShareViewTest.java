@@ -311,6 +311,9 @@ class HostsShareViewTest {
                 new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
         assertThat(popup.locator("#toggleDevTools")).isChecked();
         assertThat(popup.locator("#toggleUserDataDir")).not().isChecked();
+        // Workspace mode has no oeID extension to wait for, so the start URL is not wrapped in the
+        // delayed-redirect data: page.
+        assertThat(popup.evaluate("() => chromeOpenUrlArg('https://a.example/')")).isEqualTo("https://a.example/");
         popup.close();
     }
 

@@ -257,7 +257,7 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
     const oelinkValue = chromeOelinkValue(uddEnabled, userDataDir);
     if (oelinkEnabled) parts.unshift(`--oelink=${oelinkValue}`);
     if (urlEnabled && url) {
-      const wrapped = wrapDelayedUrl(url);
+      const wrapped = chromeOpenUrlArg(url);
       parts.push(isWin ? wrapped : macArgQuote(wrapped));
     }
     return parts.join(' ');
@@ -393,7 +393,7 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
       uaEnabled: document.getElementById('toggleUserAgent').checked,
       userAgent: document.getElementById('userAgent').value.trim(),
     });
-    if (urlEnabled && url) parts.push(wrapDelayedUrl(url));
+    if (urlEnabled && url) parts.push(chromeOpenUrlArg(url));
     const uddOn = document.getElementById('toggleUserDataDir').checked && userDataDir;
     openChromeCmdModal(os, buildChromeCommandLine(os, parts), uddOn ? userDataDir : '');
   }
