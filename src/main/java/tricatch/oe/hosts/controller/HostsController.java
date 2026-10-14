@@ -198,7 +198,12 @@ public class HostsController {
         // original fully-public, no-login behavior below.
         if (workspaceMode) {
             var viewer = AuthController.currentUser(ctx);
-            if (viewer == null) { ctx.redirect("/login?redirect=" + ctx.path()); return; }
+            if (viewer == null) {
+                // Keep the query string (the sharer's ?chromeArgs= browser options) across the login detour.
+                var back = ctx.queryString() != null ? ctx.path() + "?" + ctx.queryString() : ctx.path();
+                ctx.redirect("/login?redirect=" + java.net.URLEncoder.encode(back, java.nio.charset.StandardCharsets.UTF_8));
+                return;
+            }
             var ownerWsNo = hostsProfService.getOwnerWsNo(hostsId);
             if (ownerWsNo == null || !ownerWsNo.equals(viewer.getWsNo())) { ctx.status(403); return; }
         }

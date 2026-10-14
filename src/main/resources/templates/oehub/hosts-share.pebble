@@ -71,10 +71,10 @@
       </div>
       <div class="hosts-browser-option hosts-browser-option-url">
         <div class="form-check form-switch mb-0">
-          <input type="checkbox" class="form-check-input" id="toggleUserDataDir" role="switch" checked>
+          <input type="checkbox" class="form-check-input" id="toggleUserDataDir" role="switch">
         </div>
         <span>--user-data-dir</span>
-        <input type="text" class="form-control form-control-sm" id="userDataDir">
+        <input type="text" class="form-control form-control-sm" id="userDataDir" disabled>
       </div>
       <div class="hosts-browser-option hosts-browser-option-extra">
         <div class="form-check form-switch mb-0">

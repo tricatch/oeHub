@@ -118,7 +118,8 @@ class PublicLinkTest {
         assertThat(page.locator("#publicLinkResultWrap")).isVisible(
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
         linkUrl = page.locator("#publicLinkValue").inputValue();
-        assertThat(linkUrl).contains("/link/" + hostsId + "/oelink#key=");
+        // The browser link carries the sharer's browser options (?chromeArgs=) ahead of the key fragment.
+        assertThat(linkUrl).containsPattern("/link/" + hostsId + "/oelink\\?chromeArgs=[A-Za-z0-9_-]+#key=");
         textUrl = page.locator("#publicLinkTextValue").inputValue();
         assertThat(textUrl).contains("/link/" + hostsId + "/oelink/text?key=");
 

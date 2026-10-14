@@ -298,4 +298,40 @@ class HostsShareViewTest {
             imported);
         assertThat(decrypted).contains(PROBE_LINE);
     }
+
+    @Test
+    @Order(100)
+    void shareButton_carriesTheEditorsBrowserOptions() {
+        founderPage.navigate(server.baseUrl() + "/oehub/hosts");
+        founderPage.locator("#profileList .oe-list-item").first().click();
+        // Flip a default so the test proves the value travelled rather than matching a default.
+        founderPage.evaluate("() => { document.getElementById('toggleDevTools').checked = true; }");
+        var popup = founderPage.waitForPopup(() -> founderPage.locator("#btnShare").click());
+        assertThat(popup.locator("#rawContent")).containsText(PROBE_LINE,
+                new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+        assertThat(popup.locator("#toggleDevTools")).isChecked();
+        assertThat(popup.locator("#toggleUserDataDir")).not().isChecked();
+        popup.close();
+    }
+
+    @Test
+    @Order(101)
+    void shareLinkWithoutOptions_leavesUserDataDirOff() {
+        founderPage.navigate(shareUrl);
+        assertThat(founderPage.locator("#rawContent")).containsText(PROBE_LINE,
+                new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+        assertThat(founderPage.locator("#toggleUserDataDir")).not().isChecked();
+        assertThat(founderPage.locator("#userDataDir")).isDisabled();
+    }
+
+    @Test
+    @Order(102)
+    void anonymousVisitor_keepsTheOptionsAcrossTheLoginRedirect() {
+        var anonPage = browser.newPage();
+        anonPage.navigate(shareUrl + "?chromeArgs=abc");
+        anonPage.waitForURL(Pattern.compile(".*/login.*"));
+        assertThat(anonPage.locator("input[name=redirect]"))
+                .hasValue("/share/" + hostsId + "/oelink?chromeArgs=abc");
+        anonPage.close();
+    }
 }

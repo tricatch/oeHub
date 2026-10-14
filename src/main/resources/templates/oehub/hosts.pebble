@@ -814,8 +814,9 @@ function proxyServerOn() {
   }
 
   // ── Share ──────────────────────────────────────────────────
-  document.getElementById('btnShare').addEventListener('click', () => {
-    if (!activeHostId) return;
+  // Snapshot of the browser options, carried to the share page as ?chromeArgs= so it opens with
+  // the same toggles the sharer had on.
+  function shareChromeArgsQuery() {
     const args = {
       oelink:          document.getElementById('toggleOelink').checked,
       devTools:        document.getElementById('toggleDevTools').checked,
@@ -831,7 +832,12 @@ function proxyServerOn() {
       uaEnabled:       document.getElementById('toggleUserAgent').checked,
       ua:              userAgentInput.value.trim()
     };
-    window.open('/share/' + activeHostId + '/oelink?chromeArgs=' + toBase64Url(JSON.stringify(args)), '_blank');
+    return '?chromeArgs=' + toBase64Url(JSON.stringify(args));
+  }
+
+  document.getElementById('btnShare').addEventListener('click', () => {
+    if (!activeHostId) return;
+    window.open('/share/' + activeHostId + '/oelink' + shareChromeArgsQuery(), '_blank');
   });
 
   // ── Public (no-login) link ────────────────────────────────
@@ -843,8 +849,12 @@ function proxyServerOn() {
   // the key in the URL fragment (never sent to the server), the text link puts the same key in
   // the query string instead so non-JS clients like SwitchHosts can supply it in a plain GET
   // (e2eEncryption design doc §6's text-link decision).
-  function toPublicLinkTextUrl(browserUrl) {
-    return browserUrl.replace('/oelink#key=', '/oelink/text?key=');
+  // The browser link also carries the current browser options (?chromeArgs=, same as btnShare);
+  // the text link has no use for them.
+  function showPublicLinkUrls(hostId, keyB64url) {
+    const base = location.origin + '/link/' + hostId + '/oelink';
+    document.getElementById('publicLinkValue').value = base + shareChromeArgsQuery() + '#key=' + keyB64url;
+    document.getElementById('publicLinkTextValue').value = base + '/text?key=' + keyB64url;
   }
 
   document.getElementById('btnPublicLink').addEventListener('click', async () => {
@@ -872,9 +882,7 @@ function proxyServerOn() {
       const rawKeyBuf = await crypto.subtle.exportKey('raw', dek);
       const keyB64url = OE_CRYPTO.bufToBase64(rawKeyBuf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       if (activeHostId !== hostId) return; // a newer selection has since taken over
-      const url = location.origin + '/link/' + hostId + '/oelink#key=' + keyB64url;
-      linkValueInput.value = url;
-      textValueInput.value = toPublicLinkTextUrl(url);
+      showPublicLinkUrls(hostId, keyB64url);
       resultWrap.classList.remove('d-none');
       btnRevoke.disabled = false;
     } catch (e) {
@@ -900,9 +908,7 @@ function proxyServerOn() {
       const p = profiles.find(x => x.hostsId === hostId);
       if (p) p.wrappedLinkKey = wrappedLinkKey;
       linkDekByHostId[hostId] = dek;
-      const url = location.origin + '/link/' + hostId + '/oelink#key=' + keyB64url;
-      document.getElementById('publicLinkValue').value = url;
-      document.getElementById('publicLinkTextValue').value = toPublicLinkTextUrl(url);
+      showPublicLinkUrls(hostId, keyB64url);
       document.getElementById('publicLinkResultWrap').classList.remove('d-none');
       document.getElementById('btnRevokePublicLink').disabled = false;
     } catch (e) {
