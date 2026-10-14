@@ -88,3 +88,34 @@ function buildChromeCommandLine(os, parts) {
     ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
     : 'open -na "Google Chrome"';
 }
+
+function regexLiteral(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Renders the command that force-closes the Chrome a fresh launch would collide with: a running
+ * Chrome on the same --user-data-dir ignores new launch flags and just opens a window in itself.
+ * With a user data dir only the processes started on that exact dir are closed; without one there
+ * is no way to tell instances apart, so every Chrome is closed.
+ */
+function buildChromeKillCommand(os, userDataDir) {
+  if (os === 'win') {
+    if (!userDataDir) return 'Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue';
+    const pattern = '--user-data-dir="?' + regexLiteral(userDataDir) + '(?:"|\\s|$)';
+    return `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -match ${winArgQuote(pattern)} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+  }
+  if (!userDataDir) return 'pkill -x "Google Chrome"';
+  // The pattern goes inside a double-quoted shell string: $HOME must still expand there (the
+  // launch command relies on the same expansion), every other character is matched literally.
+  const dir = userDataDir.split('$HOME')
+    .map(seg => regexLiteral(seg).replace(/["`$]/g, '\\$&'))
+    .join('$HOME');
+  return `pkill -f -- "--user-data-dir=${dir}( |\\$)"`;
+}
+
+/** Joins the kill command and the launch command, with a pause so the profile lock is released. */
+function buildChromeKillLaunchCommand(os, launchCmd, userDataDir) {
+  const pause = os === 'win' ? 'Start-Sleep -Seconds 1' : 'sleep 1';
+  return `${buildChromeKillCommand(os, userDataDir)}; ${pause}; ${launchCmd}`;
+}

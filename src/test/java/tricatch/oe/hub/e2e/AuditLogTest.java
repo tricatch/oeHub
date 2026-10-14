@@ -151,9 +151,28 @@ class AuditLogTest {
         // Every one of these was performed by the admin - never the departed user, who by now has
         // no way to be confused with the actor column.
         assertThat(tbody).containsText(ADMIN_ID);
-        // The deleted user's own userId is still readable from the detail column of the role
-        // change / password reset / deletion rows (AuditLogger.detail("userId", ...)), even though
-        // their account and user_no no longer resolve to anything.
-        assertThat(tbody).containsText(USER_ID);
+        // The deleted user's ID string was stripped from every row about them (pseudonymized) and
+        // only the member number remains as the target.
+        assertThat(tbody).not().containsText(USER_ID);
+        assertThat(tbody).containsText("user #");
+    }
+
+    @Test
+    @Order(6)
+    void workspaceOnlyRoutesAreAbsentInSelfHosted() {
+        // The privacy policy and the sign-up notice belong to the public workspace service only.
+        var anon = playwright.request().newContext();
+        try {
+            assertThat(anon.get(server.baseUrl() + "/privacy").status()).isEqualTo(404);
+        } finally {
+            anon.dispose();
+        }
+        page.navigate(server.baseUrl() + "/register");
+        assertThat(page.locator("#agreeNotice")).hasCount(0);
+        assertThat(page.locator("a[href='/privacy']")).hasCount(0);
+        // The admin is logged in here, so a 404 (not 401/403) means the route itself does not exist.
+        var status = page.evaluate("() => fetch('/api/user/delete-account', {method: 'POST',"
+            + " headers: {'Content-Type': 'application/json'}, body: '{}'}).then(r => r.status)");
+        assertThat(status).isEqualTo(404);
     }
 }

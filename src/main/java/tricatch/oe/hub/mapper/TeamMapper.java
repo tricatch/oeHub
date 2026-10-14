@@ -32,6 +32,10 @@ public interface TeamMapper {
     @Select("SELECT COUNT(*) FROM HUB_USR WHERE team_no = #{teamNo}")
     int countMembers(Long teamNo);
 
+    // Whole-workspace deletion - only after the workspace's users and invites are gone.
+    @Delete("DELETE FROM HUB_TEAM WHERE ws_no = #{wsNo}")
+    void deleteByWsNo(Long wsNo);
+
     // HUB_WS_INVITE.team_no carries a real FK to this table (unlike created_by/updated_by
     // elsewhere, which are deliberately soft references) - a used or expired invite that once
     // pre-assigned this team would otherwise block delete() below with a constraint violation even

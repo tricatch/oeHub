@@ -36,6 +36,10 @@ public interface WorkspaceMapper {
     @Update("UPDATE HUB_WS SET created_by = #{userNo}, updated_by = #{userNo}, updated_at = #{updatedAt} WHERE ws_no = #{wsNo}")
     void backfillAudit(@Param("wsNo") Long wsNo, @Param("userNo") Long userNo, @Param("updatedAt") java.time.LocalDateTime updatedAt);
 
+    // Last statement of whole-workspace deletion - every table FK-referencing HUB_WS is already empty.
+    @Delete("DELETE FROM HUB_WS WHERE ws_no = #{wsNo}")
+    void deleteByWsNo(Long wsNo);
+
     @Update("UPDATE HUB_WS SET status = #{status}, updated_by = #{updatedBy}, updated_at = #{updatedAt} WHERE ws_no = #{wsNo}")
     int updateStatus(@Param("wsNo") Long wsNo, @Param("status") String status,
                       @Param("updatedBy") Long updatedBy, @Param("updatedAt") LocalDateTime updatedAt);

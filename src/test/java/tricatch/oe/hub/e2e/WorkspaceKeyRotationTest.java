@@ -75,6 +75,7 @@ class WorkspaceKeyRotationTest {
 
     private void registerAndConfirmRecovery(Page page, String invite, String userId, String pw, boolean withWsName) {
         page.navigate(server.baseUrl() + "/register" + (invite != null ? "?invite=" + invite : ""));
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         if (withWsName) page.locator("input[name=wsName]").fill("Rotation Co");
         page.locator("input[name=userId]").fill(userId);
         page.locator("input[name=password]").fill(pw);

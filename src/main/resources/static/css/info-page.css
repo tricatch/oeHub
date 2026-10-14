@@ -44,3 +44,11 @@
 .badge-bsd     { background: #e8e4ff; color: #3a1a7a; }
 .lib-link { color: inherit; text-decoration: none; }
 .lib-link:hover { color: #a8d878; text-decoration: underline; }
+
+/* Account deletion (workspace mode): neutral at rest, red only on hover - destructive intent. */
+.oe-modal-btn.oe-danger-btn { background: #fff; border-color: #dee2e6; color: #6c757d; }
+.oe-modal-btn.oe-danger-btn:hover { background: #fdecee; border-color: #f1aeb5; color: #b02a37; }
+.oe-danger-zone .oe-info-table th { color: #b02a37; background: #fdecee; border-bottom-color: #f1aeb5; }
+.oe-danger-zone .oe-info-table td { border-bottom-color: #f1aeb5; }
+.oe-danger-zone .oe-danger-desc { color: #495057; }
+.oe-danger-zone .oe-danger-action { width: 1%; white-space: nowrap; text-align: right; }

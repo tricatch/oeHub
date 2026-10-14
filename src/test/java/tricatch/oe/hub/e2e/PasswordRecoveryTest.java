@@ -73,6 +73,7 @@ class PasswordRecoveryTest {
         page.locator("#btnRecoveryCodeContinue").click();
 
         page.navigate(server.baseUrl() + "/register");
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         page.locator("input[name=wsName]").fill("PWR Co");
         page.locator("input[name=userId]").fill(FOUNDER_ID);
         page.locator("input[name=password]").fill(OLD_PW);

@@ -45,6 +45,10 @@ public interface HostsUaMapper {
     @Delete("DELETE FROM HOSTS_UA WHERE user_no = #{userNo}")
     void deleteAllByUserNo(Long userNo);
 
+    // Whole-workspace deletion: also the workspace-wide rows (user_no NULL) that the per-user delete misses.
+    @Delete("DELETE FROM HOSTS_UA WHERE ws_no = #{wsNo}")
+    void deleteAllByWsNo(Long wsNo);
+
     @Select("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM HOSTS_UA WHERE ws_no = #{wsNo} AND user_no IS NULL")
     int nextSortOrder(@Param("wsNo") Long wsNo);
 

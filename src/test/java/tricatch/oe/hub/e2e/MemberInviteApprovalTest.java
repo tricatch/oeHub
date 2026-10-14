@@ -72,6 +72,7 @@ class MemberInviteApprovalTest {
 
     private void registerFounder(Page page, String wsName, String id, String pw) {
         page.navigate(server.baseUrl() + "/register");
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         page.locator("input[name=wsName]").fill(wsName);
         page.locator("input[name=userId]").fill(id);
         page.locator("input[name=password]").fill(pw);
@@ -85,6 +86,7 @@ class MemberInviteApprovalTest {
 
     private void registerWithInvite(Page page, String code, String id, String pw) {
         page.navigate(server.baseUrl() + "/register?invite=" + code);
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         page.locator("input[name=userId]").fill(id);
         page.locator("input[name=password]").fill(pw);
         page.locator("input[name=confirmPassword]").fill(pw);

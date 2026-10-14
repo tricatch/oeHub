@@ -99,6 +99,7 @@ class PasswordNeverSentToServerTest {
         assertThat(page.locator("#btnGotoLogin")).isEnabled();
 
         page.navigate(server.baseUrl() + "/register");
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         page.locator("input[name=wsName]").fill("Pns Co");
         page.locator("input[name=userId]").fill(FOUNDER_ID);
         page.locator("input[name=password]").fill(FOUNDER_PW);

@@ -12,12 +12,15 @@ import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.AuthKey;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.WsKeyMapper;
 import tricatch.oe.hub.model.HubApiToken;
+import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.hub.proxy.model.ProxyVhost;
 import tricatch.oe.hub.proxy.service.ProxyVhostService;
+import tricatch.oe.hub.service.AccountRemovalService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -71,6 +74,7 @@ public class UserController {
     private final HostsProfService hostsProfService;
     private final HostConfService hostConfService;
     private final ProxyVhostService proxyVhostService;
+    private final AccountRemovalService accountRemoval;
     private final ObjectMapper objectMapper;
 
     public UserController(SqlSessionFactory sqlSessionFactory, ObjectMapper objectMapper) {
@@ -78,6 +82,7 @@ public class UserController {
         this.hostsProfService = new HostsProfService(sqlSessionFactory);
         this.hostConfService = new HostConfService(sqlSessionFactory);
         this.proxyVhostService = new ProxyVhostService(sqlSessionFactory);
+        this.accountRemoval = new AccountRemovalService(sqlSessionFactory);
         this.objectMapper = objectMapper;
     }
 
@@ -299,6 +304,52 @@ public class UserController {
             session.commit();
         }
         ctx.status(204);
+    }
+
+    // Self-service account deletion ("withdrawal"), workspace mode only. Gated by the same
+    // current-password re-confirmation (and shared attempt budget) as apiChangePassword, since a
+    // hijacked session cookie must not be able to destroy the account. The last workspace admin
+    // takes the whole workspace with them when nobody else can log in, and is refused otherwise
+    // (someone else must be made admin first). No workspace-key rotation follows: unlike an admin
+    // removing a member, the leaver chose to go and never has to be locked out of anything.
+    public void apiDeleteAccount(Context ctx) throws Exception {
+        var hubUser = AuthController.currentUser(ctx);
+        var body = objectMapper.readValue(ctx.body(), Map.class);
+        var currentPassword = (String) body.get("currentPassword");
+        HubUser target;
+        boolean wholeWorkspace = false;
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HubUserMapper.class);
+            target = mapper.findByUserNo(hubUser.getUserNo());
+            if (target == null) { ctx.status(404); return; }
+            if (Role.ADM.equals(target.getRole())) {
+                ctx.status(400).json(Map.of("error", "instance_admin"));
+                return;
+            }
+            // In workspace mode the "password" is the browser-derived authKey; anything else can
+            // never match the stored hash, so it is just another counted wrong attempt.
+            if (currentPassword == null || !AuthKey.isWellFormed(currentPassword)
+                    || !PasswordUtil.matches(currentPassword, target.getPassword())) {
+                rejectWrongPasswordConfirm(ctx, mapper, session, hubUser.getUserNo());
+                return;
+            }
+            passwordConfirmFailuresByUserNo.invalidate(hubUser.getUserNo());
+            if (Role.WSA.equals(target.getRole()) && mapper.countWsAdmins(target.getWsNo()) <= 1) {
+                if (mapper.countOtherLoginMembers(target.getWsNo(), target.getUserNo()) > 0) {
+                    ctx.status(400).json(Map.of("error", "last_ws_admin"));
+                    return;
+                }
+                wholeWorkspace = true;
+            }
+        }
+        if (wholeWorkspace) {
+            accountRemoval.removeWorkspace(target.getWsNo());
+        } else {
+            accountRemoval.removeAccount(target, "user.withdraw", target.getUserNo());
+        }
+        // End the session like /logout does; the account row is gone, so the cookie is dead anyway.
+        ctx.res().addHeader("Set-Cookie", AuthController.authCookieHeader(ctx, "", 0L));
+        ctx.json(Map.of("result", wholeWorkspace ? "workspace_deleted" : "deleted"));
     }
 
     // Personal API tokens (HUB_API_TOKEN) - see AuthController.resolveUserFromApiToken for the

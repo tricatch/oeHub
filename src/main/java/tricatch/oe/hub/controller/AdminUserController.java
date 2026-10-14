@@ -2,13 +2,8 @@ package tricatch.oe.hub.controller;
 
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
-import tricatch.oe.hosts.mapper.HostsConfMapper;
-import tricatch.oe.hosts.mapper.HostsUaMapper;
-import tricatch.oe.hosts.mapper.HostsUrlMapper;
-import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.Role;
-import tricatch.oe.proxy.ReverseProxyServer;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.mapper.TeamMapper;
@@ -16,8 +11,7 @@ import tricatch.oe.hub.mapper.WsInviteMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.hub.model.Team;
 import tricatch.oe.hub.model.WsInvite;
-import tricatch.oe.hub.proxy.mapper.ProxyConfMapper;
-import tricatch.oe.hub.proxy.service.ProxyVhostService;
+import tricatch.oe.hub.service.AccountRemovalService;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -32,13 +26,11 @@ public class AdminUserController {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final SqlSessionFactory sqlSessionFactory;
-    private final HostsProfService hostsProfService;
-    private final ProxyVhostService proxyVhostService;
+    private final AccountRemovalService accountRemoval;
 
     public AdminUserController(SqlSessionFactory sqlSessionFactory) {
         this.sqlSessionFactory = sqlSessionFactory;
-        this.hostsProfService = new HostsProfService(sqlSessionFactory);
-        this.proxyVhostService = new ProxyVhostService(sqlSessionFactory);
+        this.accountRemoval = new AccountRemovalService(sqlSessionFactory);
     }
 
     public void showUsers(Context ctx) {
@@ -169,8 +161,10 @@ public class AdminUserController {
                 ctx.status(404).result("User not found");
                 return;
             }
+            // No userId in detail: the applicant's account is deleted right below, and a deleted
+            // account's ID must not outlive it in the audit log (same rule as AccountRemovalService).
             AuditLogger.record(session, target.getWsNo(), "user.reject", "user", String.valueOf(target.getUserNo()),
-                AuditLogger.detail("userId", target.getUserId()), currentUser.getUserNo());
+                null, currentUser.getUserNo());
             mapper.deleteByUserNo(userNo);
             session.commit();
             ctx.status(200).result("OK");
@@ -262,11 +256,10 @@ public class AdminUserController {
             ctx.status(400).result("Cannot delete your own account");
             return;
         }
-        String targetUserId;
-        Long targetWsNo;
+        HubUser target;
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HubUserMapper.class);
-            var target = mapper.findByUserNo(userNo);
+            target = mapper.findByUserNo(userNo);
             // 404 (not 403) for a cross-workspace target too, so this endpoint never confirms
             // another workspace's user_no exists (cloudGroupService design doc §2.5 isolation).
             if (target == null || !target.getWsNo().equals(currentUser.getWsNo())) {
@@ -286,29 +279,8 @@ public class AdminUserController {
                 ctx.status(400).json(Map.of("error", "last_ws_admin"));
                 return;
             }
-            targetUserId = target.getUserId();
-            targetWsNo = target.getWsNo();
         }
-        hostsProfService.deleteAllForAccountRemoval(userNo);
-        proxyVhostService.deleteAllForAccountRemoval(userNo);
-        try (var session = sqlSessionFactory.openSession()) {
-            session.getMapper(HostsConfMapper.class).deleteAllByUserNo(userNo);
-            session.getMapper(ProxyConfMapper.class).deleteAllByUserNo(userNo);
-            session.getMapper(HostsUaMapper.class).deleteAllByUserNo(userNo);
-            session.getMapper(HostsUrlMapper.class).deleteAllByUserNo(userNo);
-            session.getMapper(tricatch.oe.hub.mapper.HubApiTokenMapper.class).deleteAllByUserNo(userNo);
-            // Must run before HUB_USR's own delete just below - HUB_WS_KEY has a real (not soft)
-            // FK on user_no (e2eEncryption design doc §3/§9), so deleting the user first would
-            // fail the constraint outright rather than leaving an orphaned row.
-            session.getMapper(tricatch.oe.hub.mapper.WsKeyMapper.class).deleteByUserNo(userNo);
-            session.getMapper(HubUserMapper.class).deleteByUserNo(userNo);
-            AuditLogger.record(session, targetWsNo, "user.delete", "user", String.valueOf(userNo),
-                AuditLogger.detail("userId", targetUserId), currentUser.getUserNo());
-            session.commit();
-        }
-        // Their live oeProxy routing table and IP claim live in memory, not in the rows deleted
-        // above; drop them so the removed member's routes stop serving immediately.
-        ReverseProxyServer.forgetUser(userNo);
+        accountRemoval.removeAccount(target, "user.delete", currentUser.getUserNo());
         ctx.status(200).result("OK");
     }
 

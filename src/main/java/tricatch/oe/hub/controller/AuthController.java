@@ -238,11 +238,13 @@ public class AuthController {
         var redirect = ctx.queryParam("redirect");
         var registered = ctx.queryParam("registered");
         var reset = ctx.queryParam("reset");
+        var deleted = ctx.queryParam("deleted");
         ctx.render("templates/login.pebble", Map.of(
             "redirect", redirect != null ? redirect : "",
             "error", "",
             "info", "pending".equals(registered) ? "auth.info.registered.pending"
                   : "done".equals(reset) ? "auth.info.password.reset"
+                  : "1".equals(deleted) ? "auth.info.account.deleted"
                   : ""
         ));
     }
@@ -361,7 +363,7 @@ public class AuthController {
      * Max-Age); non-null (including 0, used to clear the cookie) sets it explicitly. "Secure" is
      * decided by {@link CookieSecurity}.
      */
-    private static String authCookieHeader(Context ctx, String value, Long maxAgeSeconds) {
+    static String authCookieHeader(Context ctx, String value, Long maxAgeSeconds) {
         var sb = new StringBuilder(COOKIE_NAME).append('=').append(value).append("; Path=/");
         if (maxAgeSeconds != null) sb.append("; Max-Age=").append(maxAgeSeconds);
         sb.append("; HttpOnly; SameSite=Lax");
@@ -419,8 +421,13 @@ public class AuthController {
         var password        = ctx.formParam("password");
         var confirmPassword = ctx.formParam("confirmPassword");
 
-        // Errors follow the on-screen field order, and the workspace name is the first field when
-        // the form founds a new workspace (workspace mode, no invite code).
+        // Errors follow the on-screen field order. In workspace mode the service notice agreement
+        // sits above every field, then the workspace name comes first when the form founds a new
+        // workspace (no invite code).
+        if (AppHome.isWorkspaceMode() && !"on".equals(ctx.formParam("agreeNotice"))) {
+            renderRegisterError(ctx, "auth.error.notice.required", userId != null ? userId : "");
+            return;
+        }
         var inviteParam = ctx.formParam("inviteCode");
         var wsNameParam = ctx.formParam("wsName");
         if (AppHome.isWorkspaceMode() && (inviteParam == null || inviteParam.isBlank())
@@ -647,6 +654,7 @@ public class AuthController {
         model.put("wsName", wsName != null ? wsName : "");
         model.put("inviteWsName", "");
         model.put("inviteError", "");
+        model.put("agreeNotice", "on".equals(ctx.formParam("agreeNotice")));
         if (AppHome.isWorkspaceMode() && inviteCode != null && !inviteCode.isBlank()) {
             try (var session = sqlSessionFactory.openSession()) {
                 var invite = session.getMapper(WsInviteMapper.class).findByCode(inviteCode.trim());

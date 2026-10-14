@@ -87,6 +87,7 @@ class WorkspaceModeKeyWrapTest {
         // onApprovePending) - left unhandled it blocks all further events on the page.
         founderPage.onDialog(com.microsoft.playwright.Dialog::accept);
         founderPage.navigate(server.baseUrl() + "/register");
+        founderPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         founderPage.locator("input[name=wsName]").fill("KeyWrap Co");
         founderPage.locator("input[name=userId]").fill(FOUNDER_ID);
         founderPage.locator("input[name=password]").fill(FOUNDER_PW);
@@ -136,6 +137,7 @@ class WorkspaceModeKeyWrapTest {
     void joinerRegistersWithInviteCode_startsPending() {
         joinerPage = browser.newPage();
         joinerPage.navigate(server.baseUrl() + "/register?invite=" + inviteCode);
+        joinerPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         assertThat(joinerPage.locator("input[name=inviteCode]")).hasValue(inviteCode);
         joinerPage.locator("input[name=userId]").fill(JOINER_ID);
         joinerPage.locator("input[name=password]").fill(JOINER_PW);

@@ -32,6 +32,10 @@ public interface WsInviteMapper {
     // Atomic consume: 0 affected rows means already used, expired, or never existed - the caller
     // treats all three the same way (generic "invalid code" error), see cloudGroupService design
     // doc §2.8. Also defends against two people racing to consume the same code.
+    // Whole-workspace deletion - invites FK-reference both HUB_TEAM and HUB_WS, so they go first.
+    @Delete("DELETE FROM HUB_WS_INVITE WHERE ws_no = #{wsNo}")
+    void deleteByWsNo(Long wsNo);
+
     @Update("UPDATE HUB_WS_INVITE SET used = TRUE, updated_by = #{newUserNo}, updated_at = #{now} WHERE invite_code = #{inviteCode} AND used = FALSE AND expires_at > #{now}")
     int consume(@Param("inviteCode") String inviteCode, @Param("newUserNo") Long newUserNo, @Param("now") LocalDateTime now);
 }

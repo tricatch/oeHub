@@ -361,6 +361,10 @@ public class OeHubApplication {
             config.routes.get("/recover", auth::showRecover);
             if (workspaceMode) {
                 config.routes.get("/api/auth/kdf", auth::apiKdfSalt);
+                // Privacy policy: deliberately anonymous (it is linked from the sign-up notice, before
+                // any account exists) and workspace-mode only - self-hosted gets a plain 404. It lives
+                // outside /oehub/*, so the login filter above never applies to it.
+                config.routes.get("/privacy", ctx -> ctx.render("templates/privacy.pebble", new HashMap<String, Object>()));
             }
             config.routes.post("/api/recover/verify", auth::apiRecoverVerify);
             config.routes.post("/api/recover/reset",  auth::apiRecoverReset);
@@ -449,6 +453,20 @@ public class OeHubApplication {
                     try (var session = sqlSessionFactory.openSession()) {
                         var ws = session.getMapper(tricatch.oe.hub.mapper.WorkspaceMapper.class).findByWsNo(user.getWsNo());
                         model.put("wsName", ws != null ? ws.getWsName() : "");
+                        // What the "delete account" section offers: "user" (just this account),
+                        // "workspace" (last member - the workspace goes too), "blocked" (sole admin
+                        // while others remain), "none" (instance admin - section hidden).
+                        var userMapper = session.getMapper(tricatch.oe.hub.mapper.HubUserMapper.class);
+                        String deleteMode;
+                        if (Role.ADM.equals(user.getRole())) {
+                            deleteMode = "none";
+                        } else if (Role.WSA.equals(user.getRole()) && userMapper.countWsAdmins(user.getWsNo()) <= 1) {
+                            deleteMode = userMapper.countOtherLoginMembers(user.getWsNo(), user.getUserNo()) > 0
+                                ? "blocked" : "workspace";
+                        } else {
+                            deleteMode = "user";
+                        }
+                        model.put("deleteAccountMode", deleteMode);
                     }
                 }
                 ctx.render("templates/oehub/my-info.pebble", model);
@@ -498,6 +516,11 @@ public class OeHubApplication {
             config.routes.post("/api/user/change-password", userCtrl::apiChangePassword);
             config.routes.get("/api/user/crypto-keys", userCtrl::apiMyCryptoKeys);
             config.routes.post("/api/user/recovery-key", userCtrl::apiReissueRecoveryKey);
+            if (workspaceMode) {
+                // Self-service withdrawal - any logged-in account, but only where the service
+                // notice/privacy policy promise it (workspace mode).
+                config.routes.post("/api/user/delete-account", userCtrl::apiDeleteAccount);
+            }
             // Personal API tokens: disabled for now (2026-09-16) - unclear real-world use case
             // yet. UserController.apiListApiTokens/apiCreateApiToken/apiDeleteApiToken and
             // AuthController.resolveUserFromApiToken are left in place, just unrouted/uncalled,

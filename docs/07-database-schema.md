@@ -155,8 +155,9 @@ erDiagram
 
 ## `HUB_AUDIT_LOG` — 감사 로그
 
-보안/접근권한에 관련된 액션(Tier-1)만 남기는 append-only 이력. 무기한 보관하며 별도 자동 삭제가
-없다. `ws_no`는 `NOT NULL`이다 — `self-hosted`는 워크스페이스가 하나뿐이라 항상 그 값이고,
+보안/접근권한에 관련된 액션(Tier-1)만 남기는 이력(사실상 append-only). 무기한 보관하며 별도 자동 삭제가
+없다(워크스페이스 전체가 삭제될 때는 함께 삭제된다). 계정이 삭제되면 그 계정을 대상(`target_type='user'`)으로
+하는 행의 `detail`에서 `userId`만 지워(가명처리) 회원번호(`target_id`)만 남긴다. `ws_no`는 `NOT NULL`이다 — `self-hosted`는 워크스페이스가 하나뿐이라 항상 그 값이고,
 인스턴스 admin이 다른 워크스페이스에 하는 액션(워크스페이스 상태 변경 등)은 **행위자가 아니라
 대상 워크스페이스**의 `ws_no`로 기록되어, 그 워크스페이스의 `wsa`이 자기 로그에서 볼 수 있다.
 조회는 항상 호출자 자신의 `ws_no`로만 스코프되며, 어떤 액션이 기록되는지는
@@ -171,9 +172,9 @@ erDiagram
 | `target_id` | 대상 식별자 (문자열로 저장), nullable |
 | `detail` | 작은 평면 JSON (예: `{"from":"usr","to":"wsa"}`), nullable |
 | `created_by` | 행위자 `user_no` (소프트 레퍼런스) |
-| `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스, 항상 `created_by`와 동일 — 행을 수정하지 않으므로) |
+| `updated_by` | 마지막 수정자 `user_no` (소프트 레퍼런스, 평소에는 `created_by`와 동일하며 가명처리로 고쳐 쓴 행만 그 작업을 한 사용자) |
 | `create_at` | 생성 일시 |
-| `updated_at` | 마지막 수정 일시 (항상 `create_at`과 동일) |
+| `updated_at` | 마지막 수정 일시 (평소에는 `create_at`과 동일, 가명처리된 행만 다름) |
 
 ## `HOSTS_PFILE` — oeHosts 프로필
 

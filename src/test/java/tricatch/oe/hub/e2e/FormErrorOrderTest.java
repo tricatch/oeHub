@@ -86,6 +86,10 @@ class FormErrorOrderTest {
         var page = browser.newPage();
         page.navigate(server.baseUrl() + "/register");
         var submit = page.locator("#btnRegisterSubmit");
+        // The service notice comes first: every field and the button wait for the agreement.
+        assertThat(page.locator("input[name=wsName]")).isDisabled();
+        assertThat(submit).isDisabled();
+        page.locator("#agreeNotice").check();
         assertThat(page.locator("input[name=wsName]")).isFocused();   // first field takes the focus
 
         submit.click();
@@ -178,12 +182,25 @@ class FormErrorOrderTest {
     @Order(3)
     void registerServerReportsWorkspaceNameBeforeUserId() {
         var page = browser.newPage();
+        var bypassSubmit = "() => { const f = document.getElementById('registerForm');"
+            + " const clone = f.cloneNode(true); f.replaceWith(clone); clone.submit(); }";
+
+        // Nothing agreed: the notice is reported before any field.
         page.navigate(server.baseUrl() + "/register");
-        page.evaluate("() => { const f = document.getElementById('registerForm');"
-            + " const clone = f.cloneNode(true); f.replaceWith(clone); clone.submit(); }");
+        page.evaluate(bypassSubmit);
         assertThat(page.locator(".alert-danger")).isVisible();
-        var expected = (String) page.evaluate("k => window.MSG[k]", "auth.error.wsname.required");
+        var expected = (String) page.evaluate("k => window.MSG[k]", "auth.error.notice.required");
         assertThat(page.locator(".alert-danger")).hasText(expected);
+
+        page.navigate(server.baseUrl() + "/register");
+        page.locator("#agreeNotice").check();
+        page.evaluate(bypassSubmit);
+        assertThat(page.locator(".alert-danger")).isVisible();
+        expected = (String) page.evaluate("k => window.MSG[k]", "auth.error.wsname.required");
+        assertThat(page.locator(".alert-danger")).hasText(expected);
+        // The agreement survives the error round-trip, so the fields stay usable.
+        assertThat(page.locator("#agreeNotice")).isChecked();
+        assertThat(page.locator("input[name=wsName]")).isEnabled();
         page.close();
     }
 }

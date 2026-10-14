@@ -133,4 +133,19 @@ public interface HubUserMapper {
 
     @Delete("DELETE FROM HUB_USR WHERE user_no = #{userNo}")
     void deleteByUserNo(Long userNo);
+
+    // Every account of one workspace whatever its role (pending applicants and the 'wss' system
+    // account included) - only whole-workspace deletion needs this, unlike findAll above.
+    @Select("SELECT " + COLS + " FROM HUB_USR u WHERE u.ws_no = #{wsNo} ORDER BY u.user_no")
+    List<HubUser> findAllByWsNo(Long wsNo);
+
+    // Members other than excludedUserNo who can still log in (mirrors Role.canLogin) - a withdrawing
+    // last wsa is only allowed to take the workspace with them when this is 0.
+    @Select("SELECT COUNT(*) FROM HUB_USR WHERE ws_no = #{wsNo} AND user_no != #{excludedUserNo} AND role IN ('"
+        + Role.ADM + "', '" + Role.WSA + "', '" + Role.USR + "')")
+    int countOtherLoginMembers(@Param("wsNo") Long wsNo, @Param("excludedUserNo") Long excludedUserNo);
+
+    // Whole-workspace deletion: users go before HUB_TEAM (HUB_USR.team_no FK) and HUB_WS.
+    @Delete("DELETE FROM HUB_USR WHERE ws_no = #{wsNo}")
+    void deleteByWsNo(Long wsNo);
 }

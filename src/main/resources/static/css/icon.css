@@ -39,6 +39,7 @@
 .oe-icon-record       { -webkit-mask-image: url('/icon/lucide/circle-play.svg'); mask-image: url('/icon/lucide/circle-play.svg'); }
 .oe-icon-content      { -webkit-mask-image: url('/icon/lucide/file-text.svg');   mask-image: url('/icon/lucide/file-text.svg'); }
 .oe-icon-edit         { -webkit-mask-image: url('/icon/lucide/pencil-line.svg');  mask-image: url('/icon/lucide/pencil-line.svg'); }
+.oe-icon-drag-handle  { -webkit-mask-image: url('/icon/lucide/grip-vertical.svg'); mask-image: url('/icon/lucide/grip-vertical.svg'); }
 .oe-icon-reconfigure  { -webkit-mask-image: url('/icon/lucide/settings.svg');      mask-image: url('/icon/lucide/settings.svg'); }
 .oe-icon-cert         { -webkit-mask-image: url('/icon/lucide/shield-check.svg');  mask-image: url('/icon/lucide/shield-check.svg'); }
 .oe-icon-list         { -webkit-mask-image: url('/icon/lucide/list.svg');         mask-image: url('/icon/lucide/list.svg'); }

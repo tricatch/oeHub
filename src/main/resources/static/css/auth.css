@@ -53,3 +53,26 @@ h2.h5 {
 .setup-alert-text { font-size: 0.78rem; }
 
 .auth-col .oe-info-section { margin-bottom: 4rem; }
+
+.register-notice {
+  font-size: 0.78rem;
+  color: #555;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+.register-notice ul { padding-left: 1.1rem; margin-bottom: 0.5rem; }
+.register-notice li + li { margin-top: 0.2rem; }
+.register-notice-warn { color: #b02a37; font-weight: 600; }
+.register-notice .form-check-label { font-weight: 600; color: #333; }
+
+/* Privacy policy page (workspace mode) */
+.privacy-policy { font-size: 0.86rem; color: #333; }
+.privacy-policy h3 { font-size: 0.95rem; font-weight: 700; margin: 1.25rem 0 0.4rem; }
+.privacy-policy ul { padding-left: 1.2rem; }
+.privacy-policy li + li { margin-top: 0.25rem; }
+
+/* Link from the sign-up notice to the privacy policy */
+.register-notice-link { display: inline-block; margin-bottom: 0.5rem; font-size: 0.78rem; color: #5a9e2f; }
+.register-notice-link:hover { color: #5a9e2f; text-decoration: underline; }

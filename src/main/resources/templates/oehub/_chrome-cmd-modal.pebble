@@ -1,0 +1,39 @@
+{# Direct Chrome launch command modal, shared by hosts.pebble and hosts-share.pebble.
+   Filled and opened by openChromeCmdModal() in /js/chrome-cmd-modal.js. #}
+<div class="modal fade" id="chromeCmdModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.chrome.cmd.title'] }} <span class="chrome-cmd-os" id="chromeCmdOs"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="chrome-cmd-block">
+          <div class="chrome-cmd-head">
+            <span class="chrome-cmd-label">{{ msg['modal.chrome.cmd.launch'] }}</span>
+            <button type="button" class="hosts-chrome-cmd-btn" data-copy-from="chromeCmdLaunch">
+              <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>{{ msg['modal.chrome.cmd.copy'] }}
+            </button>
+          </div>
+          <pre class="chrome-cmd-script" id="chromeCmdLaunch"></pre>
+        </div>
+        <div class="chrome-cmd-block">
+          <div class="chrome-cmd-head">
+            <span class="chrome-cmd-label">{{ msg['modal.chrome.cmd.kill'] }}</span>
+            <button type="button" class="hosts-chrome-cmd-btn" data-copy-from="chromeCmdKillLaunch">
+              <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>{{ msg['modal.chrome.cmd.copy'] }}
+            </button>
+          </div>
+          <div class="chrome-cmd-warn">
+            <div>{{ msg['modal.chrome.cmd.kill.why'] }}</div>
+            <div class="chrome-cmd-warn-strong" id="chromeCmdKillWarn"></div>
+          </div>
+          <pre class="chrome-cmd-script" id="chromeCmdKillLaunch"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,10 +1,13 @@
 package tricatch.oe.hub.mapper;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import tricatch.oe.hub.model.HubAuditLog;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface HubAuditLogMapper {
@@ -24,4 +27,19 @@ public interface HubAuditLogMapper {
 
     @Select("SELECT COUNT(*) FROM HUB_AUDIT_LOG WHERE ws_no = #{wsNo}")
     long countByWsNo(Long wsNo);
+
+    // Whole-workspace deletion takes the workspace's audit trail with it.
+    @Delete("DELETE FROM HUB_AUDIT_LOG WHERE ws_no = #{wsNo}")
+    void deleteByWsNo(Long wsNo);
+
+    // Rows about one user as the target - the only rows whose detail may carry that user's ID string.
+    @Select("SELECT audit_id, detail FROM HUB_AUDIT_LOG "
+        + "WHERE ws_no = #{wsNo} AND target_type = 'user' AND target_id = #{targetId} AND detail IS NOT NULL")
+    List<HubAuditLog> findUserTargetRows(@Param("wsNo") Long wsNo, @Param("targetId") String targetId);
+
+    // Pseudonymization rewrite: the only place an audit row is ever modified.
+    @Update("UPDATE HUB_AUDIT_LOG SET detail = #{detail}, updated_by = #{updatedBy}, updated_at = #{updatedAt} "
+        + "WHERE audit_id = #{auditId}")
+    void updateDetail(@Param("auditId") Long auditId, @Param("detail") String detail,
+                      @Param("updatedBy") Long updatedBy, @Param("updatedAt") LocalDateTime updatedAt);
 }

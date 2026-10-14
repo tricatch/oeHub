@@ -93,6 +93,7 @@ class HostsShareViewTest {
         founderPage.addInitScript("try { localStorage.setItem('hostsGuideHidden', 'true'); } catch (e) {}");
 
         founderPage.navigate(server.baseUrl() + "/register");
+        founderPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         founderPage.locator("input[name=wsName]").fill("HSV Co");
         founderPage.locator("input[name=userId]").fill(FOUNDER_ID);
         founderPage.locator("input[name=password]").fill(FOUNDER_PW);
@@ -152,6 +153,7 @@ class HostsShareViewTest {
     void differentWorkspaceMember_getsForbidden() {
         outsiderPage = browser.newPage();
         outsiderPage.navigate(server.baseUrl() + "/register");
+        outsiderPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         outsiderPage.locator("input[name=wsName]").fill("HSV Other Co");
         outsiderPage.locator("input[name=userId]").fill(OUTSIDER_ID);
         outsiderPage.locator("input[name=password]").fill(OUTSIDER_PW);
@@ -186,6 +188,7 @@ class HostsShareViewTest {
         memberPage = browser.newPage();
         memberPage.onDialog(com.microsoft.playwright.Dialog::accept);
         memberPage.navigate(server.baseUrl() + "/register?invite=" + inviteCode);
+        memberPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         memberPage.locator("input[name=userId]").fill(MEMBER_ID);
         memberPage.locator("input[name=password]").fill(MEMBER_PW);
         memberPage.locator("input[name=confirmPassword]").fill(MEMBER_PW);

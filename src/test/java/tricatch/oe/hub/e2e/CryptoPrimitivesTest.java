@@ -59,6 +59,7 @@ class CryptoPrimitivesTest {
         // The account login_unwrapsAndCachesPrivateAndWorkspaceKeys... below logs in as: a real
         // workspace founder, who gets a real keypair, password wrap, and workspace-key wrap.
         setupPage.navigate(server.baseUrl() + "/register");
+        setupPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         setupPage.locator("input[name=wsName]").fill("Crypto Test Co");
         setupPage.locator("input[name=userId]").fill("cryptotest-admin");
         setupPage.locator("input[name=password]").fill("AdminPass123!");

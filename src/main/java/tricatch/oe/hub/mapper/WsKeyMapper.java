@@ -21,4 +21,8 @@ public interface WsKeyMapper {
     // HUB_USR's own row delete, since this table FK-references user_no.
     @Delete("DELETE FROM HUB_WS_KEY WHERE user_no = #{userNo}")
     void deleteByUserNo(Long userNo);
+
+    // Whole-workspace deletion - same ordering constraint as above (before HUB_USR and HUB_WS).
+    @Delete("DELETE FROM HUB_WS_KEY WHERE ws_no = #{wsNo}")
+    void deleteByWsNo(Long wsNo);
 }

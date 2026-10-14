@@ -43,6 +43,24 @@
               {% if workspaceMode and not inviteCode %}
               <input type="hidden" name="founderWrappedWsKey" id="fldFounderWrappedWsKey">
               {% endif %}
+              {% if workspaceMode %}
+              {# Service notice: the form below stays disabled until the user agrees to it. #}
+              <div class="register-notice mb-3">
+                <ul>
+                  <li>{{ msg['auth.notice.free.service'] }}</li>
+                  <li>{{ msg['auth.notice.encryption'] }}</li>
+                  <li class="register-notice-warn">{{ msg['auth.notice.no.recovery'] }}</li>
+                  <li>{{ msg['auth.notice.data.collected'] }}</li>
+                  <li>{{ msg['auth.notice.age'] }}</li>
+                </ul>
+                <a class="register-notice-link" href="/privacy" target="_blank" rel="noopener">{{ msg['auth.notice.privacy.link'] }}</a>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="agreeNotice" value="on" id="agreeNotice"{% if agreeNotice %} checked{% endif %}>
+                  <label class="form-check-label" for="agreeNotice">{{ msg['auth.notice.agree'] }}</label>
+                </div>
+              </div>
+              {% endif %}
+              <fieldset id="registerFields"{% if workspaceMode and not agreeNotice %} disabled{% endif %}>
               {% if workspaceMode and inviteCode %}
               <input type="hidden" name="inviteCode" value="{{ inviteCode }}">
               <div class="mb-3">
@@ -52,7 +70,7 @@
               {% elseif workspaceMode %}
               <div class="mb-3">
                 <label class="form-label">{{ msg['auth.workspace.name'] }}</label>
-                <input type="text" name="wsName" class="form-control" value="{{ wsName }}" autofocus>
+                <input type="text" name="wsName" class="form-control" value="{{ wsName }}"{% if agreeNotice %} autofocus{% endif %}>
                 <div class="form-text">{{ msg['auth.workspace.name.help'] }}</div>
               </div>
               {% endif %}
@@ -60,7 +78,7 @@
                 <label class="form-label">{{ msg['auth.userid'] }}</label>
                 {# The workspace name, when shown, is the first field and takes the initial focus #}
                 <input type="text" name="userId" class="form-control"
-                       value="{{ userId }}"{% if not (workspaceMode and not inviteCode) %} autofocus{% endif %}>
+                       value="{{ userId }}"{% if not workspaceMode or (inviteCode and agreeNotice) %} autofocus{% endif %}>
               </div>
 
               <div class="mb-3">
@@ -76,6 +94,7 @@
               <div class="d-grid">
                 <button type="submit" class="oe-modal-btn justify-content-center" id="btnRegisterSubmit">{{ msg['auth.create.account'] }}</button>
               </div>
+              </fieldset>
             </form>
           </div>
         </div>
@@ -114,9 +133,31 @@
   // Workspace mode: the authKey that stands in for the password when the form is finally submitted.
   var pendingAuthKey = '';
 
+  // Workspace mode: the fields (and the submit button) stay disabled until the service notice is
+  // agreed to; agreeing moves the focus to the first field, which autofocus couldn't take.
+  var agreeBox = document.getElementById('agreeNotice');
+  var fieldset = document.getElementById('registerFields');
+  if (agreeBox) {
+    // Browsers may restore the checkbox on back/forward navigation - keep the fieldset in step.
+    fieldset.disabled = !agreeBox.checked;
+    agreeBox.addEventListener('change', function () {
+      fieldset.disabled = !agreeBox.checked;
+      if (agreeBox.checked) {
+        var first = fieldset.querySelector('input:not([type=hidden]):not([disabled])');
+        if (first) first.focus();
+      }
+    });
+  }
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     if (submitBtn.disabled) return;
+    // The notice sits above every field, so it is checked first (the disabled fieldset normally
+    // makes this unreachable; it guards Enter-key or scripted submits).
+    if (agreeBox && !agreeBox.checked) {
+      showToast(MSG['auth.error.notice.required']);
+      return;
+    }
 
     // Errors are reported in on-screen field order: workspace name (only when founding one),
     // user id, then the password fields.

@@ -72,6 +72,7 @@ class PasswordChangeRewrapTest {
         page.locator("#btnRecoveryCodeContinue").click();
 
         page.navigate(server.baseUrl() + "/register");
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         page.locator("input[name=wsName]").fill("Pw Rewrap Co");
         page.locator("input[name=userId]").fill(USER_ID);
         page.locator("input[name=password]").fill(OLD_PW);

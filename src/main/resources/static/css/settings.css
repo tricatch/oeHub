@@ -64,8 +64,13 @@
 .url-row-readonly .url-view-name { color: #6c757d; }
 .ua-admin-icon,
 .url-admin-icon { margin-left: 5px; vertical-align: -1px; color: #8a939b; }
-.ua-preset-table tbody tr.ua-row[draggable="true"],
-.ua-preset-table tbody tr.url-row[draggable="true"] { cursor: grab; }
+/* Rows are reordered only by dragging this handle, so the rest of the row stays text-selectable. */
+.preset-drag-handle { width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; color: #adb5bd; cursor: grab; }
+.preset-drag-handle:hover { color: #7ab84a; }
+/* While a row is being reordered, block text selection. */
+body.preset-reordering { user-select: none; }
+.preset-drag-ghost { position: fixed; z-index: 1080; margin: 0; pointer-events: none; opacity: 0.8; background: #fff; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+.ua-preset-table tbody tr.drag-source td { background: #f5fbec; }
 .ua-preset-table tbody tr.drag-over { background: #f5fbec; box-shadow: inset 0 2px 0 #a8d878; }
 .ua-view-value,
 .url-view-value {

@@ -92,6 +92,7 @@ class TeamManagementTest {
         // Several flows below (approve pending, delete team) go through a native confirm().
         founderPage.onDialog(Dialog::accept);
         founderPage.navigate(server.baseUrl() + "/register");
+        founderPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         founderPage.locator("input[name=wsName]").fill("Team Co");
         founderPage.locator("input[name=userId]").fill(FOUNDER_ID);
         founderPage.locator("input[name=password]").fill(FOUNDER_PW);
@@ -173,6 +174,7 @@ class TeamManagementTest {
     void joinerRegistersWithInviteCode_startsPending() {
         joinerPage = browser.newPage();
         joinerPage.navigate(server.baseUrl() + "/register?invite=" + inviteCode);
+        joinerPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         assertThat(joinerPage.locator("input[name=inviteCode]")).hasValue(inviteCode);
         joinerPage.locator("input[name=userId]").fill(JOINER_ID);
         joinerPage.locator("input[name=password]").fill(JOINER_PW);
@@ -274,6 +276,7 @@ class TeamManagementTest {
         otherFounderPage = browser.newPage();
         otherFounderPage.onDialog(Dialog::accept);
         otherFounderPage.navigate(server.baseUrl() + "/register");
+        otherFounderPage.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         otherFounderPage.locator("input[name=wsName]").fill("Other Team Co");
         otherFounderPage.locator("input[name=userId]").fill(OTHER_FOUNDER_ID);
         otherFounderPage.locator("input[name=password]").fill(OTHER_FOUNDER_PW);

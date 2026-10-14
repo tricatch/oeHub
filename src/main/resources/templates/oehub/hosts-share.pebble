@@ -142,6 +142,8 @@
 
 </div>
 
+{% include "templates/oehub/_chrome-cmd-modal.pebble" %}
+
 <!-- User-data-dir warning modal -->
 <div class="modal fade" id="uddWarnModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -183,6 +185,7 @@
 <script src="/js/session-keys.js"></script>
 <script src="/js/content-crypto.js"></script>
 <script src="/js/chrome-launch-args.js"></script>
+<script src="/js/chrome-cmd-modal.js"></script>
 <script nonce="{{ cspNonce }}">
 window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
 (async function() {
@@ -374,7 +377,7 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
 
   updatePreview();
 
-  function buildDirectChromeCmd(os) {
+  function showDirectChromeCmd(os) {
     const urlEnabled = document.getElementById('toggleOpenUrl').checked;
     const url         = document.getElementById('openUrl').value.trim();
     const userDataDir = resolveUDD(baseUdd, os);
@@ -391,7 +394,8 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
       userAgent: document.getElementById('userAgent').value.trim(),
     });
     if (urlEnabled && url) parts.push(wrapDelayedUrl(url));
-    return buildChromeCommandLine(os, parts);
+    const uddOn = document.getElementById('toggleUserDataDir').checked && userDataDir;
+    openChromeCmdModal(os, buildChromeCommandLine(os, parts), uddOn ? userDataDir : '');
   }
 
   document.getElementById('btnChrome').addEventListener('click', () => {
@@ -402,13 +406,8 @@ window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
     copyToClipboard('oelink://chrome?' + toBase64Url(buildSchemeArgs())).then(() => flashCopyFeedback(document.getElementById('btnCopyScheme'), 'oelink'));
   });
 
-  document.getElementById('btnCopyWinChrome').addEventListener('click', () => {
-    copyToClipboard(buildDirectChromeCmd('win')).then(() => flashCopyFeedback(document.getElementById('btnCopyWinChrome'), 'Win'));
-  });
-
-  document.getElementById('btnCopyMacChrome').addEventListener('click', () => {
-    copyToClipboard(buildDirectChromeCmd('mac')).then(() => flashCopyFeedback(document.getElementById('btnCopyMacChrome'), 'Mac'));
-  });
+  document.getElementById('btnCopyWinChrome').addEventListener('click', () => showDirectChromeCmd('win'));
+  document.getElementById('btnCopyMacChrome').addEventListener('click', () => showDirectChromeCmd('mac'));
 })();
 </script>
 {% endblock %}

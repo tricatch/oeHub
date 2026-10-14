@@ -12,7 +12,7 @@
 오리진 요청에는 이 헤더를 자동으로 붙여준다.
 
 `workspace` 모드에서는 비밀번호를 받는 모든 필드(`/login`, `/register`, `/setup`의 `password`,
-`/api/user/change-password`의 `currentPassword`·`newPassword`, `/api/user/recovery-key`의
+`/api/user/change-password`의 `currentPassword`·`newPassword`, `/api/user/recovery-key`·`/api/user/delete-account`의
 `currentPassword`, `/api/recover/reset`의 `newPassword`)가 타이핑한 비밀번호가 아니라 브라우저가
 유도한 **authKey**(base64url 43자)를 담는다. 서버는 이를 불투명한 비밀값으로 다루며, 이 형식이 아닌
 값이 새 비밀번호 자리에 오면 `crypto_required`로 거부한다([05](05-end-to-end-encryption.md#로그인과-비밀번호)).
@@ -51,6 +51,7 @@
 | POST | `/api/user/restore` | 위 백업 JSON을 복원 (`?merge=true`면 병합, 아니면 전체 교체) |
 | POST | `/api/user/change-password` | 비밀번호 변경 (개인키 재래핑 포함) |
 | POST | `/api/user/recovery-key` | 비밀번호 재설정 코드 재발급 |
+| POST | `/api/user/delete-account` | 계정 직접 삭제(탈퇴) — **`workspace` 전용**(`self-hosted`에서는 404). 본문 `{"currentPassword": "<authKey>"}`. 성공 시 `200 {"result":"deleted"}`(본인만 삭제, 감사 로그 액션 `user.withdraw`) 또는 `{"result":"workspace_deleted"}`(마지막 관리자이고 로그인 가능한 다른 멤버가 없을 때 워크스페이스 전체 삭제)이며 세션 쿠키도 함께 만료된다. 오류: `400 current_password_invalid`(잔여 시도 횟수 포함, `change-password`와 시도 횟수를 공유), `429 too_many_attempts`(세션 전부 종료), `400 last_ws_admin`(마지막 `wsa`인데 다른 로그인 가능 멤버가 있음 — 먼저 다른 사람을 관리자로 지정), `400 instance_admin`(인스턴스 관리자는 삭제 불가). 워크스페이스 키 회전은 하지 않는다 |
 
 ## oeHosts (`/api/hosts/*`)
 
@@ -175,6 +176,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 |---|---|---|
 | POST | `/api/recover/verify`\|`/api/recover/reset` | 비밀번호 찾기 복구 플로우 |
 | GET | `/api/auth/kdf?userId=` | 로그인 전에 필요한 PBKDF2 salt 조회 (`workspace` 전용). 없는 ID에는 결정적 가짜 salt를 돌려줌 |
+| GET | `/privacy` | 개인정보 처리방침 페이지 (`workspace` 전용, `self-hosted`에서는 404). 가입 화면의 안내문에서 링크된다 |
 | GET | `/share/{hostsId}/oelink`\|`/text` | 로그인 필요 없는 워크스페이스 내부 공유 링크 |
 | GET | `/link/{hostsId}/oelink`\|`/oelink/text` | 완전 공개(비로그인) "살아있는 링크" |
 | GET | `/share/proxy/{vhostId}/view`\|`/text` | 가상 호스트 공유 링크 (self-hosted 전용) |

@@ -282,9 +282,9 @@
         '<td>' + escHtml(u.userId) + '</td>' +
         '<td class="text-center">' + roleIconHtml(u.role) + '</td>' +
         (window.OE_WORKSPACE_MODE ? '<td>' + teamSelectHtml(u) + '</td>' : '') +
-        '<td class="small text-muted">' + escHtml(u.createAt) + '</td>' +
-        '<td class="small text-muted">' + escHtml(u.updatedAt) + '</td>' +
-        '<td class="small text-muted text-center">' + escHtml(u.lastLoginAt || '') + '</td>' +
+        '<td class="small text-muted text-nowrap">' + escHtml(u.createAt) + '</td>' +
+        '<td class="small text-muted text-nowrap">' + escHtml(u.updatedAt) + '</td>' +
+        '<td class="small text-muted text-center text-nowrap">' + escHtml(u.lastLoginAt || '') + '</td>' +
         '<td class="text-end">' + actionHtml(u.userId, u.role) + '</td>' +
         '</tr>';
     }).join('');

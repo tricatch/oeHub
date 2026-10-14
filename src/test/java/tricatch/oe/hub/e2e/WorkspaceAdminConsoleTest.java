@@ -73,6 +73,7 @@ class WorkspaceAdminConsoleTest {
 
     private void registerAndConfirmRecovery(Page page, String wsName, String userId, String pw) {
         page.navigate(server.baseUrl() + "/register");
+        page.locator("#agreeNotice").check();   // the form stays disabled until the notice is agreed to
         page.locator("input[name=wsName]").fill(wsName);
         page.locator("input[name=userId]").fill(userId);
         page.locator("input[name=password]").fill(pw);
