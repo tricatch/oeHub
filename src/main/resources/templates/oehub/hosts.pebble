@@ -542,7 +542,9 @@ function proxyServerOn() {
       item.dataset.hostsId = p.hostsId;
       item.draggable = true;
       item.innerHTML = `
-        <span class="oe-list-drag${p.shareScope === 'private' ? ' private' : p.shareScope === 'collabo' ? ' collabo' : ''}">&#9776;</span>
+        ${p.wrappedLinkKey
+          ? `<span class="oe-list-drag public-link" title="${escHtml(MSG['tooltip.hosts.public.link.issued'])}"><span class="oe-icon oe-icon-public-link-issued"></span></span>`
+          : `<span class="oe-list-drag${p.shareScope === 'private' ? ' private' : p.shareScope === 'collabo' ? ' collabo' : ''}">&#9776;</span>`}
         <span class="oe-list-name${p.shareScope === 'private' ? ' private' : p.shareScope === 'collabo' ? ' collabo' : ''}" data-hostsid="${p.hostsId}">${escHtml(p.hostsProfile)}</span>
         <div class="form-check form-switch mb-0 oe-list-toggle">
           <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${p.selected ? 'checked' : ''}>
@@ -908,6 +910,7 @@ function proxyServerOn() {
       const p = profiles.find(x => x.hostsId === hostId);
       if (p) p.wrappedLinkKey = wrappedLinkKey;
       linkDekByHostId[hostId] = dek;
+      renderProfiles();
       showPublicLinkUrls(hostId, keyB64url);
       document.getElementById('publicLinkResultWrap').classList.remove('d-none');
       document.getElementById('btnRevokePublicLink').disabled = false;
@@ -934,6 +937,7 @@ function proxyServerOn() {
       const p = profiles.find(x => x.hostsId === hostId);
       if (p) p.wrappedLinkKey = null;
       delete linkDekByHostId[hostId];
+      renderProfiles();
       showToast(MSG['toast.public.link.revoked']);
       bootstrap.Modal.getInstance(document.getElementById('publicLinkModal')).hide();
     } else {

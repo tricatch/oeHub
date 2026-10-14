@@ -116,6 +116,9 @@
 }
 .oe-list-drag.private  { color: #CC7722; opacity: 0.8; }
 .oe-list-drag.collabo  { color: #3b7dd8; opacity: 0.8; }
+/* A profile with a live public link shows a share icon in place of the drag glyph. */
+.oe-list-drag.public-link { color: #5a9e2f; opacity: 1; }
+.oe-list-drag.public-link .oe-icon { width: 12px; height: 12px; vertical-align: -1px; }
 
 .oe-list-name {
   flex: 1;
