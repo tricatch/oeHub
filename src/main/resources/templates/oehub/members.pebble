@@ -3,9 +3,9 @@
 {% block title %}{{ msg['members.title'] }}{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/settings.css">
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/settings.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -63,7 +63,7 @@
 
 </div><!-- /settings-app -->
 
-<script src="/js/member-cards.js"></script>
+<script src="{{ asset('/js/member-cards.js') }}"></script>
 <script nonce="{{ cspNonce }}">
 (function () {
   // Regular members can issue invites (into any team) and approve sign-ups; there is no reject here.

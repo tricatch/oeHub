@@ -3,8 +3,8 @@
 {% block title %}{{ msg['my.ua.title'] }}{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/settings.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/settings.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -94,7 +94,7 @@
 </div>
 <script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('mySettingApp'), document.getElementById('btnToggleWidth'));</script>
 
-<script src="/js/preset-table.js"></script>
+<script src="{{ asset('/js/preset-table.js') }}"></script>
 <script nonce="{{ cspNonce }}">
   initUaPresetTable({
     apiBase: '/api/hosts/ua/my',

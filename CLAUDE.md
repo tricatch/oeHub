@@ -106,6 +106,7 @@ Update `Role`, the `HUB_USR.role` column width, the affected mapper SQL, the per
 ## JavaScript
 
 - Scripts used in two or more places must be extracted into a shared file under `src/main/resources/static/js/`.
+- Reference static JS/CSS from templates through the `asset()` Pebble function (`<script src="{{ asset('/js/util.js') }}">`, `<link rel="stylesheet" href="{{ asset('/css/app.css') }}">`), never as a bare path. It appends a content-hash `?v=` so browsers and the proxy in front pick up a changed file immediately.
 
 ## Documentation Language
 

@@ -3,8 +3,8 @@
 {% block title %}oeProxy{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/proxy.css">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/proxy.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -205,7 +205,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js" integrity="sha384-e7M5uM+69Pk0fBAnkRuFwRvZG2nFlXu572zM5jIUo36Pumtw+No4zRokAbDcqSuA" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
-<script src="/js/ace-init.js"></script>
+<script src="{{ asset('/js/ace-init.js') }}"></script>
 <script nonce="{{ cspNonce }}">
 
 let LOCAL_SVR = '{{ localSvr }}';

@@ -3,7 +3,7 @@
 {% block title %}oeProxy Monitor{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/monitor.css">
+<link rel="stylesheet" href="{{ asset('/css/monitor.css') }}">
 {% endblock %}
 
 {% block navActions %}

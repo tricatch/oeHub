@@ -3,9 +3,9 @@
 {% block title %}{{ msg['workspaces.title'] }}{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/settings.css">
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/settings.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 <style>
   .oe-ws-status { display: inline-block; font-size: 0.72rem; padding: 1px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
   .oe-ws-status-active { background: #dff2b8; color: #3a6b1a; }

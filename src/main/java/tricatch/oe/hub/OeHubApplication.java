@@ -646,7 +646,8 @@ public class OeHubApplication {
     }
 
     private static FileRenderer createRenderer(boolean dev, java.util.Map<String, Messages> messagesMap) {
-        var builder = new PebbleEngine.Builder();
+        var builder = new PebbleEngine.Builder()
+            .extension(new tricatch.oe.hub.util.AssetUrlExtension(dev));
         if (dev) {
             var prefix = Path.of("src/main/resources").toAbsolutePath() + "/";
             builder.loader(new FileLoader(prefix)).cacheActive(false);

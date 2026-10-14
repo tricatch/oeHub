@@ -3,8 +3,8 @@
 {% block title %}{{ msg['licenses.title'] }} — oeHub{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 {% endblock %}
 
 {% block content %}

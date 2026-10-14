@@ -1,6 +1,6 @@
 {# Wires the two preset tables of _preset-tables.pebble to their API. The including page sets
    presetApiBase to the prefix serving them ('/api/adm/hosts' or '/api/wsa/hosts'). #}
-<script src="/js/preset-table.js"></script>
+<script src="{{ asset('/js/preset-table.js') }}"></script>
 <script nonce="{{ cspNonce }}">
   initUaPresetTable({
     apiBase: '{{ presetApiBase }}/ua',
