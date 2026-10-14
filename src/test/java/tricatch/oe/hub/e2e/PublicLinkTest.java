@@ -122,7 +122,7 @@ class PublicLinkTest {
         assertThat(linkUrl).containsPattern("/link/" + hostsId + "/oelink\\?chromeArgs=[A-Za-z0-9_-]+#key=");
         textUrl = page.locator("#publicLinkTextValue").inputValue();
         assertThat(textUrl).contains("/link/" + hostsId + "/oelink/text?key=");
-        // The profile list marks a profile with a live link by a share icon.
+        // The profile list marks a profile with a live link by the public-link icon.
         assertThat(page.locator("#profileList .oe-icon-public-link-issued")).hasCount(1);
 
         // The server-persisted row must never contain the raw fragment key or PROBE_LINE in the
