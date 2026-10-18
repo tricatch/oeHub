@@ -21,8 +21,8 @@ oeHub는 하나의 로그인 아래 두 가지 브라우저용 도구를 묶어 
 
 - `oelink://` 프로토콜 핸들러를 통해 프로필의 규칙과 커스텀 플래그(`--user-agent`, `--user-data-dir`, 시크릿 모드, 추가 인수)를 적용해 Chrome을 바로 실행
     - **oelink**는 클라이언트 머신에 설치되는 커스텀 프로토콜 핸들러로, oeHosts는 이를 호출하여 프로필의 `--host-resolver-rules`와 기타 플래그로 Chrome을 실행합니다
-    - Windows와 macOS를 모두 지원하며, 설치/제거 스크립트는 `oelink/win`과 `oelink/mac`에 있습니다
-    - `oelink/` 아래의 설치 파일들(사전 빌드된 Windows용 `oelink.exe` 포함)은 빌드 시점에 생성되는 것이 아니라 그대로 커밋되어 있어서, 전체 Gradle 빌드 없이도 클론 직후 프로토콜 핸들러가 바로 동작합니다
+    - Windows와 macOS를 모두 지원하며, 핸들러는 별도 저장소 [oeLink](https://github.com/tricatch/oeLink)에 있습니다
+    - 설치는 OS별 명령 한 줄(Windows는 PowerShell `irm ... | iex`, macOS는 `curl ... | bash`)이며, oeHosts의 설치 안내 팝업에서 복사할 수 있습니다
 - Chrome에서 여러 hosts 프로필 간 전환
 - 여러 프로필을 동시에 선택하고, 실행 전에 병합된 호스트 리졸버 규칙을 미리보기
 - 공유 링크로 팀과 hosts 프로필 공유

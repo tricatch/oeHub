@@ -12,34 +12,7 @@ java {
     }
 }
 
-val oelinkSrcDir = file("oelink")
-val oelinkStaticDir = file("src/main/resources/static/oelink")
-
-tasks.register<Zip>("zipOelinkMac") {
-    from(oelinkSrcDir) { include("install_macos_oelink_scheme.sh") }
-    archiveFileName = "install_macos_oelink_scheme.sh.zip"
-    destinationDirectory = oelinkStaticDir
-}
-
-tasks.register<Zip>("zipOelinkWindows") {
-    from(oelinkSrcDir) {
-        include("install_windows_oelink_scheme.ps1")
-        include("install_windows_oelink_scheme.cmd")
-    }
-    archiveFileName = "install_windows_oelink_scheme.zip"
-    destinationDirectory = oelinkStaticDir
-}
-
-tasks.register("zipOelinkScripts") {
-    dependsOn("zipOelinkMac", "zipOelinkWindows")
-}
-
-tasks.named("processResources") {
-    dependsOn("zipOelinkScripts")
-}
-
 tasks.register<JavaExec>("run") {
-    dependsOn("zipOelinkScripts")
     // src/main/resources first so Pebble reads templates directly without processResources
     classpath = files("src/main/resources") + sourceSets.main.get().runtimeClasspath
     mainClass = "tricatch.oe.hub.OeHubApplication"

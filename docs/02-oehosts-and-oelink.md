@@ -107,20 +107,20 @@ oelink이 전달할 수 있는 플래그에는 다음이 포함됩니다.
 - 프로필에 설정된 임의의 추가 인수
 - 개발자 도구를 자동으로 여는 옵션
 
-지원되는 OS별로 두 개의 설치 스크립트가 있습니다.
+oelink 핸들러는 별도 저장소 [oeLink](https://github.com/tricatch/oeLink)에 있으며, OS별로 명령 한 줄로
+설치합니다. oeHosts의 설치 안내 팝업이 접속한 OS에 맞는 명령을 복사 버튼과 함께 보여 줍니다.
 
-- **Windows** — `oelink/win`. `install_win_oelink.cmd`는 사전 빌드된 `oelink.exe`를
-  `%LOCALAPPDATA%\oelink`에 복사하고, `HKCU\Software\Classes\oelink` 아래에 `oelink://` URL
-  스킴을 등록합니다. 로컬 CA 인증서가 함께 제공된 경우, 현재 사용자의 신뢰된 루트 저장소에도
-  이를 등록합니다.
-- **macOS** — `oelink/mac`. `install_mac_oelink.sh`는 AppleScript `on open location`
-  핸들러(macOS가 커스텀 URL 스킴을 전달하는 메커니즘)를 감싼 작은 `.app` 번들을 빌드합니다.
-  이 핸들러는 Bash 런처를 셸 아웃으로 호출하고, 런처는 인수 문자열을 base64로 디코드하여
-  검증한 뒤 Chrome을 실행합니다.
+- **Windows** — PowerShell에서 `irm https://raw.githubusercontent.com/tricatch/oeLink/main/win/install.ps1 | iex`.
+  런처 스크립트 `oelink.ps1`을 `%LOCALAPPDATA%\oelink`에 저장하고, `HKCU\Software\Classes\oelink`
+  아래에 `oelink://` URL 스킴을 등록합니다(창 없이 실행되도록 `conhost --headless`로 PowerShell을
+  띄웁니다). 설정 → 앱 → 설치된 앱에 등록되어 거기서 제거할 수 있습니다.
+- **macOS** — 터미널에서 `curl -fsSL https://raw.githubusercontent.com/tricatch/oeLink/main/mac/install.sh | bash`.
+  AppleScript `on open location` 핸들러(macOS가 커스텀 URL 스킴을 전달하는 메커니즘)를 감싼 작은
+  `oelink.app` 번들을 그 Mac에서 직접 빌드합니다. 이 핸들러는 Bash 런처 `oelink.sh`를 호출하고,
+  런처는 인수 문자열을 base64로 디코드하여 검증한 뒤 Chrome을 실행합니다.
 
-`oelink/` 아래의 설치 파일들 — 사전 빌드된 Windows용 `oelink.exe` 포함 — 은 빌드 시점에 생성되지
-않고 저장소에 그대로 커밋되어 있습니다. 그래서 전체 Gradle 빌드를 먼저 하지 않아도, 클론 직후
-프로토콜 핸들러가 바로 동작합니다.
+브라우저가 아니라 PowerShell·curl로 받으므로 "인터넷에서 받은 파일" 표시가 붙지 않아, SmartScreen이나
+Gatekeeper 경고 없이 설치됩니다. 관리자 권한도 필요 없습니다.
 
 ### URL 스킴 형식
 
@@ -145,8 +145,10 @@ CRC32 해시). 이 덕분에 같은 프로필을 다시 실행할 때, 충돌하
 - 거부: 프로그램을 실행하게 하거나(`--renderer-cmd-prefix`, `--gpu-launcher` 등), 샌드박스를
   약화시키거나(`--no-sandbox`, `--disable-web-security`), 디버깅 채널을 여는(`--remote-debugging-*`)
   플래그, 확장 로드(`--load-extension`), 트래픽 우회(`--proxy-pac-url`, `--ignore-certificate-errors*`)
-  플래그, 그리고 `file:` 같은 그 밖의 URL. 거부 목록은 `chrome-launch-args.js`,
-  `install_mac_oelink.sh`, `_oelink_exe.ps1`에 같은 내용으로 있으므로 함께 수정해야 합니다.
+  플래그, 그리고 `file:` 같은 그 밖의 URL. 거부 목록은 oeHub의 `chrome-launch-args.js`와
+  oeLink 저장소의 `mac/oelink.sh`, `win/oelink.ps1`에 같은 내용으로 있으므로 함께 수정해야 합니다.
+  oeHub의 `OelinkLauncherArgsTest`는 옆 폴더 `../oeLink` 체크아웃이 있으면 두 런처의 검증 로직을
+  실제 인터프리터로 실행해 확인하고, 없으면 건너뜁니다.
 
 hosts 내용은 `MAP <호스트> <IP>` 규칙으로 바뀌기 전에 호스트 이름과 IP 형식만 남기고 나머지 줄은
 버립니다. 사용자 에이전트·데이터 디렉터리·추가 인수 값에서는 따옴표와 제어 문자를 제거합니다.

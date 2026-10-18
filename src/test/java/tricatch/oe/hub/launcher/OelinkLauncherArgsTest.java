@@ -18,8 +18,13 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * words without a shell, refuses any word that is not a plain allowed flag or start URL, and starts
  * nothing if one is refused. These tests pull the real splitting/validation functions out of the
  * launcher sources and run them under the real interpreters (skipped where one is not installed).
+ * The launchers live in the separate oeLink repository; like oe-proxy (settings.gradle.kts) they are
+ * read from the sibling ../oeLink checkout, and the tests are skipped when it is not there.
  */
 class OelinkLauncherArgsTest {
+
+    private static final Path MAC_LAUNCHER = Path.of("../oeLink/mac/oelink.sh");
+    private static final Path WIN_LAUNCHER = Path.of("../oeLink/win/oelink.ps1");
 
     private static final String DATA_URL =
         "data:text/html,<script>setTimeout(()=>location.replace('https://x.com/a?b=1'),1000)</script>";
@@ -67,6 +72,11 @@ class OelinkLauncherArgsTest {
         }
     }
 
+    private static String launcher(Path path) throws IOException {
+        assumeTrue(Files.isRegularFile(path), "oeLink checkout not found: " + path);
+        return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
     /** Runs a script fed on stdin with the case line in $OELINK_LINE; returns the exit code. */
     private static int run(String script, String line, String... command) throws Exception {
         var pb = new ProcessBuilder(command).redirectErrorStream(true);
@@ -82,7 +92,7 @@ class OelinkLauncherArgsTest {
     @Test
     void macLauncher_splitsWithoutAShell_andRefusesWordsThatAreNotAllowed() throws Exception {
         assumeTrue(available("bash", "-c", "[[ a == a ]] && exit 0"), "bash not available");
-        String source = Files.readString(Path.of("oelink/mac/install_mac_oelink.sh"), StandardCharsets.UTF_8);
+        String source = launcher(MAC_LAUNCHER);
         String functions = between(source, "# ── Launch-argument parsing", "# Tells the user");
         String script = functions + "\n"
             + "split_args \"$OELINK_LINE\" || exit 1\n"
@@ -96,14 +106,14 @@ class OelinkLauncherArgsTest {
 
     @Test
     void macLauncher_neverEvaluatesTheArguments() throws IOException {
-        String source = Files.readString(Path.of("oelink/mac/install_mac_oelink.sh"), StandardCharsets.UTF_8);
+        String source = launcher(MAC_LAUNCHER);
         assertThat(source).doesNotContain("eval ");
     }
 
     @Test
     void windowsLauncher_splitsWithoutAShell_andRefusesWordsThatAreNotAllowed() throws Exception {
         assumeTrue(available("pwsh", "-NoProfile", "-Command", "exit 0"), "pwsh not available");
-        String source = Files.readString(Path.of("oelink/win/_internal/_oelink_exe.ps1"), StandardCharsets.UTF_8);
+        String source = launcher(WIN_LAUNCHER);
         String functions = between(source, "# The argument string comes", "function Launch-WithArgs");
         String script = functions + "\n"
             + "$words = Split-OelinkArgs $env:OELINK_LINE\n"

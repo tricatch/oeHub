@@ -3,8 +3,8 @@
 // both pages must stay in sync.
 
 // Flags (without the leading --) that run programs, weaken the sandbox, open a debugging channel or
-// redirect traffic. The oelink launchers (oelink/mac/install_mac_oelink.sh and
-// oelink/win/_internal/_oelink_exe.ps1) refuse the same names: keep the three lists in step.
+// redirect traffic. The oelink launchers in the oeLink repository (mac/oelink.sh and win/oelink.ps1)
+// refuse the same names: keep the three lists in step.
 // A trailing * matches any suffix.
 const DENIED_CHROME_FLAGS = [
   'renderer-cmd-prefix', 'gpu-launcher', 'utility-cmd-prefix', 'zygote-cmd-prefix',
