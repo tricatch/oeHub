@@ -13,8 +13,10 @@ function openChromeCmdModal(os, launchCmd, userDataDir) {
   document.getElementById('chromeCmdOs').textContent =
     MSG[os === 'win' ? 'modal.chrome.cmd.os.win' : 'modal.chrome.cmd.os.mac'];
   document.getElementById('chromeCmdKillLaunch').textContent = buildChromeKillLaunchCommand(os, launchCmd, userDataDir);
-  document.getElementById('chromeCmdKillWarn').textContent =
-    MSG[userDataDir ? 'modal.chrome.cmd.kill.warn.profile' : 'modal.chrome.cmd.kill.warn.all'];
+  // The force-close detail is only spelled out for a dedicated --user-data-dir profile.
+  const warn = document.getElementById('chromeCmdKillWarn');
+  warn.textContent = userDataDir ? MSG['modal.chrome.cmd.kill.warn.profile'] : '';
+  warn.classList.toggle('d-none', !userDataDir);
   bootstrap.Modal.getOrCreateInstance(modal).show();
 }
 
