@@ -94,28 +94,51 @@ function regexLiteral(s) {
 }
 
 /**
- * Renders the command that force-closes the Chrome a fresh launch would collide with: a running
- * Chrome on the same --user-data-dir ignores new launch flags and just opens a window in itself.
- * With a user data dir only the processes started on that exact dir are closed; without one there
- * is no way to tell instances apart, so every Chrome is closed.
+ * Renders the one-line script that closes the Chrome a fresh launch would collide with, then
+ * launches: a running Chrome on the same --user-data-dir ignores new launch flags and just opens a
+ * window in itself. With a user data dir only the browser process started on that exact dir is
+ * targeted; without one there is no way to tell instances apart, so every Chrome is.
+ *
+ * When such a Chrome is running the script asks first and does nothing unless the answer is y.
+ * It then asks Chrome to quit (WM_CLOSE via taskkill on Windows, SIGTERM on macOS) so tabs and the
+ * session are saved, waits up to 10 seconds, and force-kills only what is still alive.
+ * Kept on one line on purpose: a multi-line paste into a shell would feed the next pasted line
+ * to the prompt as its answer.
  */
-function buildChromeKillCommand(os, userDataDir) {
-  if (os === 'win') {
-    if (!userDataDir) return 'Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue';
-    const pattern = '--user-data-dir="?' + regexLiteral(userDataDir) + '(?:"|\\s|$)';
-    return `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -match ${winArgQuote(pattern)} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
-  }
-  if (!userDataDir) return 'pkill -x "Google Chrome"';
-  // The pattern goes inside a double-quoted shell string: $HOME must still expand there (the
-  // launch command relies on the same expansion), every other character is matched literally.
-  const dir = userDataDir.split('$HOME')
-    .map(seg => regexLiteral(seg).replace(/["`$]/g, '\\$&'))
-    .join('$HOME');
-  return `pkill -f -- "--user-data-dir=${dir}( |\\$)"`;
-}
-
-/** Joins the kill command and the launch command, with a pause so the profile lock is released. */
 function buildChromeKillLaunchCommand(os, launchCmd, userDataDir) {
-  const pause = os === 'win' ? 'Start-Sleep -Seconds 1' : 'sleep 1';
-  return `${buildChromeKillCommand(os, userDataDir)}; ${pause}; ${launchCmd}`;
+  const prompt = MSG['modal.chrome.cmd.kill.prompt'] + ' [y/N] ';
+  if (os === 'win') {
+    // Only the browser process: helpers carry --type=, and the browser closes them itself.
+    let filter = "$_.CommandLine -notmatch '--type='";
+    if (userDataDir) {
+      const pattern = '--user-data-dir="?' + regexLiteral(userDataDir) + '(?:"|\\s|$)';
+      filter += ` -and $_.CommandLine -match ${winArgQuote(pattern)}`;
+    }
+    return `$p = @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { ${filter} }); `
+      + `if ($p.Count -eq 0 -or (Read-Host ${winArgQuote(prompt.trimEnd())}) -eq 'y') { `
+      + `if ($p) { $p | ForEach-Object { taskkill /PID $_.ProcessId *> $null }; `
+      + 'Wait-Process -Id $p.ProcessId -Timeout 10 -ErrorAction SilentlyContinue; '
+      + 'Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 }; '
+      + `${launchCmd} }`;
+  }
+  let sel, pattern;
+  if (userDataDir) {
+    // The pattern goes inside a double-quoted shell string: $HOME must still expand there (the
+    // launch command relies on the same expansion), every other character is matched literally.
+    // "MacOS/Google Chrome " (with the space) is the browser's own binary, not a Helper.
+    const dir = userDataDir.split('$HOME')
+      .map(seg => regexLiteral(seg).replace(/["`$]/g, '\\$&'))
+      .join('$HOME');
+    sel = '-f --';
+    pattern = `"MacOS/Google Chrome .*--user-data-dir=${dir}( |\\$)"`;
+  } else {
+    sel = '-x';
+    pattern = '"Google Chrome"';
+  }
+  const quoted = "'" + prompt.replace(/'/g, "'\\''") + "'";
+  return `p=${pattern}; `
+    + `if ! pgrep ${sel} "$p" >/dev/null || { printf '%s' ${quoted}; read a; [ "$a" = y ] || [ "$a" = Y ]; }; then `
+    + `if pkill ${sel} "$p"; then i=0; while pgrep ${sel} "$p" >/dev/null && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done; `
+    + `pkill -9 ${sel} "$p"; sleep 1; fi; `
+    + `${launchCmd}; fi`;
 }
