@@ -9,6 +9,7 @@
 <script src="{{ asset('/js/ace-init.js') }}"></script>
 <script src="{{ asset('/js/chrome-launch-args.js') }}"></script>
 <script src="{{ asset('/js/chrome-cmd-modal.js') }}"></script>
+<script src="{{ asset('/js/oelink-cmd-modal.js') }}"></script>
 {% endblock %}
 
 {% block content %}
@@ -199,7 +200,7 @@
           <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
           oelink://chrome
         </button>
-        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.url'] }}">
+        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.cmd'] }}">
           <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>oelink
         </button>
         <button class="hosts-chrome-cmd-btn" id="btnCopyWinChrome" type="button" title="{{ msg['tooltip.copy.win.chrome'] }}">
@@ -282,6 +283,7 @@
 {% set importLinkTitle = "oeHosts" %}
 {% include "templates/oehub/_import-link-modal.pebble" %}
 {% include "templates/oehub/_chrome-cmd-modal.pebble" %}
+{% include "templates/oehub/_oelink-cmd-modal.pebble" %}
 
 <!-- Collabo confirm modal -->
 <div class="modal fade" id="collaboConfirmModal" tabindex="-1">
@@ -1273,8 +1275,7 @@ function proxyServerOn() {
   });
 
   document.getElementById('btnCopyScheme').addEventListener('click', () => {
-    const scheme = 'oelink://chrome?' + toBase64Url(buildSchemeArgs('chrome'));
-    copyToClipboard(scheme).then(() => showToast(MSG['toast.scheme.copied']));
+    openOelinkCmdModal('oelink://chrome?' + toBase64Url(buildSchemeArgs('chrome')));
   });
 
   function showDirectChromeCmd(os) {

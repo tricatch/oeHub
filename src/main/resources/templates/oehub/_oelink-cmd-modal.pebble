@@ -1,0 +1,20 @@
+{# oelink launch command modal (the oelink:// link wrapped in a shell command for the visitor's OS), shared by
+   hosts.pebble and hosts-share.pebble. Filled and opened by openOelinkCmdModal() in /js/oelink-cmd-modal.js. #}
+<div class="modal fade" id="oelinkCmdModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.oelink.cmd.title'] }} <span class="chrome-cmd-os" id="oelinkCmdOs"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ msg['modal.oelink.cmd.hint'] }}</p>
+        <pre class="chrome-cmd-script" id="oelinkCmdScript"></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn" id="oelinkCmdCopyBtn">{{ msg['modal.chrome.cmd.copy'] }}</button>
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
