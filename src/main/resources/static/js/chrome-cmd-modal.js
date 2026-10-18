@@ -1,7 +1,7 @@
 // Shared by the oeHosts editor (hosts.pebble) and its public share page (hosts-share.pebble):
 // shows the direct Chrome launch command for one OS, wrapped in a script that first closes the
 // Chrome it would collide with. Markup lives in _chrome-cmd-modal.pebble.
-// Relies on copyToClipboard() and flashCopyFeedback() from util.js.
+// Relies on copyToClipboard() and showToast() from util.js.
 
 /**
  * @param os          'win' or 'mac'
@@ -18,11 +18,15 @@ function openChromeCmdModal(os, launchCmd, userDataDir) {
   bootstrap.Modal.getOrCreateInstance(modal).show();
 }
 
+// Copying is the only thing left to do in the modal, so it closes right after. The share page's
+// layout has no toast, hence the guard.
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('#chromeCmdModal [data-copy-from]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const text = document.getElementById(btn.dataset.copyFrom).textContent;
-      copyToClipboard(text).then(() => flashCopyFeedback(btn, MSG['modal.chrome.cmd.copy']));
+  const modal = document.getElementById('chromeCmdModal');
+  if (!modal) return;
+  document.getElementById('chromeCmdCopyBtn').addEventListener('click', () => {
+    copyToClipboard(document.getElementById('chromeCmdKillLaunch').textContent).then(() => {
+      bootstrap.Modal.getOrCreateInstance(modal).hide();
+      if (document.getElementById('toast')) showToast(MSG['toast.chrome.cmd.copied']);
     });
   });
 });

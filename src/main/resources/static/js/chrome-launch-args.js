@@ -76,10 +76,21 @@ function buildChromeArgLines(opts) {
   return lines;
 }
 
+// %USERPROFILE% (from resolveUDD) is cmd syntax that PowerShell leaves alone, and Chrome given the
+// literal text cannot use it as a profile path: it hands the launch to the already-running default
+// Chrome instead. Expand such arguments when the command runs.
+function winExpandEnv(quoted) {
+  return `([Environment]::ExpandEnvironmentVariables(${quoted}))`;
+}
+
+function winLaunchArg(p) {
+  return p.includes('%') ? winExpandEnv(winArgQuote(p)) : winArgQuote(p);
+}
+
 /** Renders the win/mac direct-launch command line from an already-built flag list. */
 function buildChromeCommandLine(os, parts) {
   if (os === 'win') {
-    const argList = parts.map(winArgQuote).join(', ');
+    const argList = parts.map(winLaunchArg).join(', ');
     return parts.length > 0
       ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
       : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
@@ -111,8 +122,9 @@ function buildChromeKillLaunchCommand(os, launchCmd, userDataDir) {
     // Only the browser process: helpers carry --type=, and the browser closes them itself.
     let filter = "$_.CommandLine -notmatch '--type='";
     if (userDataDir) {
-      const pattern = '--user-data-dir="?' + regexLiteral(userDataDir) + '(?:"|\\s|$)';
-      filter += ` -and $_.CommandLine -match ${winArgQuote(pattern)}`;
+      // Chrome's command line carries the expanded path, so expand and escape it at run time.
+      const dir = `[regex]::Escape(${winExpandEnv(winArgQuote(userDataDir))})`;
+      filter += ` -and $_.CommandLine -match ('--user-data-dir="?' + ${dir} + '(?:"|\\s|$)')`;
     }
     return `$p = @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { ${filter} }); `
       + `if ($p.Count -eq 0 -or (Read-Host ${winArgQuote(prompt.trimEnd())}) -eq 'y') { `
