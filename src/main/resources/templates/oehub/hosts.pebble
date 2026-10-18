@@ -243,8 +243,24 @@
             <li>{{ msg['hosts.install.step4'] }}</li>
           </ol>
         </div>
-        <div class="d-grid gap-2" id="oelinkDownloadButtons">
-          <!-- populated by JS -->
+        {# One-line installers from the oeLink repo. Fetched by PowerShell/curl rather than a browser,
+           so no Mark-of-the-Web / quarantine flag and no SmartScreen or Gatekeeper prompt. The block
+           for the other OS is hidden by the script below once the visitor's OS is known. #}
+        <div class="chrome-cmd-block" data-oelink-os="win">
+          <div class="chrome-cmd-head">
+            <span class="chrome-cmd-label">{{ msg['hosts.install.os.win'] }}</span>
+            <button type="button" class="hosts-chrome-cmd-btn oelink-install-copy">{{ msg['hosts.install.copy'] }}</button>
+          </div>
+          <pre class="chrome-cmd-script">irm https://raw.githubusercontent.com/tricatch/oeLink/main/win/install.ps1 | iex</pre>
+          <div class="small text-muted mt-1">{{ msg['hosts.install.uninstall.win'] }}</div>
+        </div>
+        <div class="chrome-cmd-block" data-oelink-os="mac">
+          <div class="chrome-cmd-head">
+            <span class="chrome-cmd-label">{{ msg['hosts.install.os.mac'] }}</span>
+            <button type="button" class="hosts-chrome-cmd-btn oelink-install-copy">{{ msg['hosts.install.copy'] }}</button>
+          </div>
+          <pre class="chrome-cmd-script">curl -fsSL https://raw.githubusercontent.com/tricatch/oeLink/main/mac/install.sh | bash</pre>
+          <div class="small text-muted mt-1">{{ msg['hosts.install.uninstall.mac'] }} <code>bash /Applications/oelink.app/Contents/Resources/uninstall.sh</code></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1311,28 +1327,19 @@ function proxyServerOn() {
   });
   {% endif %}
 
-  // ── oelink help popover ─────────────────────────────────────
-  window.addEventListener('load', () => {
-    // ── oelink download buttons by OS ───────────────────────────
+  // ── oelink install commands by OS ───────────────────────────
+  // Shows only the visitor's OS; an unrecognized OS keeps both blocks visible.
+  {
     const ua = navigator.userAgent;
-    const isWin  = ua.includes('Win');
-    const isMac  = ua.includes('Mac');
-    const downloads = isWin ? [
-      { label: MSG['hosts.download.windows'], file: '/oelink/install_windows_oelink_scheme.zip' }
-    ] : isMac ? [
-      { label: MSG['hosts.download.macos'], file: '/oelink/install_macos_oelink_scheme.sh.tar.gz' }
-    ] : null;
-
-    const dlContainer = document.getElementById('oelinkDownloadButtons');
-    (downloads || []).forEach(d => {
-      const a = document.createElement('a');
-      a.href = d.file;
-      a.download = '';
-      a.className = 'oe-modal-btn justify-content-center';
-      a.innerHTML = `<span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>${d.label}`;
-      dlContainer.appendChild(a);
+    const os = ua.includes('Win') ? 'win' : ua.includes('Mac') ? 'mac' : null;
+    document.querySelectorAll('#oelinkInstallModal [data-oelink-os]').forEach(block => {
+      if (os && block.dataset.oelinkOs !== os) block.classList.add('d-none');
+      block.querySelector('.oelink-install-copy').addEventListener('click', () => {
+        copyToClipboard(block.querySelector('pre').textContent)
+          .then(() => showToast(MSG['toast.oelink.install.copied']));
+      });
     });
-  });
+  }
 
 
 
