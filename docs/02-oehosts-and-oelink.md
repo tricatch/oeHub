@@ -120,7 +120,20 @@ oelink 핸들러는 별도 저장소 [oeLink](https://github.com/tricatch/oeLink
   런처는 인수 문자열을 base64로 디코드하여 검증한 뒤 Chrome을 실행합니다.
 
 브라우저가 아니라 PowerShell·curl로 받으므로 "인터넷에서 받은 파일" 표시가 붙지 않아, SmartScreen이나
-Gatekeeper 경고 없이 설치됩니다. 관리자 권한도 필요 없습니다.
+Gatekeeper 경고 없이 설치됩니다. 관리자 권한도 필요 없습니다. 같은 명령을 다시 실행하면 최신 버전으로
+덮어씁니다.
+
+### 제거와 동작 확인
+
+| | Windows | macOS |
+|---|---|---|
+| 제거 | 설정 → 앱 → 설치된 앱에서 oeLink 제거, 또는 `%LOCALAPPDATA%\oelink\uninstall.cmd` | `bash /Applications/oelink.app/Contents/Resources/uninstall.sh` (`~/Applications`에 설치했다면 그 경로) |
+| 로그 | `%TEMP%\oelink_debug.log` | `/tmp/oelink_debug.log` |
+
+- 같은 프로필의 Chrome이 이미 실행 중이면 핸들러가 종료하고 다시 실행할지 묻습니다. 이 확인 창의
+  언어는 oeHub의 언어 설정이 아니라 OS 표시 언어를 따릅니다(한국어면 한국어, 그 밖에는 영어).
+- 허용되지 않는 실행 옵션이 들어 있으면 Chrome을 띄우지 않고 안내 창만 보여 줍니다(아래
+  [인수 검증](#인수-검증) 참고).
 
 ### URL 스킴 형식
 
@@ -129,8 +142,8 @@ Gatekeeper 경고 없이 설치됩니다. 관리자 권한도 필요 없습니�
 `--host-resolver-rules="MAP example.com 127.0.0.1" https://example.com`)을 패딩을 제거한
 base64url로 인코딩한 것입니다.
 
-macOS에서는 추가로 `--oelink=<id>` 인수가 붙어, 특정 실행이 어느 Chrome 인스턴스에 속하는지
-식별합니다(`--user-data-dir`이 없는 기본 프로필은 `0`, 그렇지 않으면 `--user-data-dir` 경로의
+실행 옵션에서 `--oelink`를 켜면(두 OS 공통) 인수 문자열 맨 앞에 `--oelink=<id>` 인수가 붙어,
+특정 실행이 어느 Chrome 인스턴스에 속하는지 식별합니다(`--user-data-dir`이 없는 기본 프로필은 `0`, 그렇지 않으면 `--user-data-dir` 경로의
 CRC32 해시). 이 덕분에 같은 프로필을 다시 실행할 때, 충돌하는 이미 실행 중인 Chrome을 감지하고
 먼저 닫을지 물어볼 수 있습니다.
 
