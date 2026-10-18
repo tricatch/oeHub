@@ -9,9 +9,6 @@
       </div>
       <div class="modal-body">
         <div class="chrome-cmd-block">
-          <div class="chrome-cmd-head">
-            <span class="chrome-cmd-label">{{ msg['modal.chrome.cmd.kill'] }}</span>
-          </div>
           <div class="chrome-cmd-warn">
             <div>{{ msg['modal.chrome.cmd.kill.why'] }}</div>
             <div class="chrome-cmd-warn-strong" id="chromeCmdKillWarn"></div>
