@@ -383,3 +383,16 @@
   background: #fdecee; border: 1px solid #f1aeb5; border-radius: 6px;
 }
 .chrome-cmd-warn-strong { margin-top: 0.25rem; font-weight: 600; }
+
+/* oelink install modal: one-line install command with an icon copy button on its right */
+.oelink-install-cmd { display: flex; align-items: stretch; gap: 0.4rem; }
+.oelink-install-cmd .chrome-cmd-script { flex: 1; min-width: 0; }
+.oelink-install-copy {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; flex-shrink: 0; padding: 0;
+  background: transparent; border: 1px solid #dee2e6; border-radius: 6px;
+  color: #6c757d; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.oelink-install-copy:hover { background: #f5fbec; border-color: #c4e89a; color: #4a7a1e; }
+.oelink-install-copy .oe-icon { width: 14px; height: 14px; }

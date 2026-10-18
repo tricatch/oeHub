@@ -249,17 +249,21 @@
         <div class="chrome-cmd-block" data-oelink-os="win">
           <div class="chrome-cmd-head">
             <span class="chrome-cmd-label">{{ msg['hosts.install.os.win'] }}</span>
-            <button type="button" class="hosts-chrome-cmd-btn oelink-install-copy">{{ msg['hosts.install.copy'] }}</button>
           </div>
-          <pre class="chrome-cmd-script">irm https://raw.githubusercontent.com/tricatch/oeLink/main/win/install.ps1 | iex</pre>
+          <div class="oelink-install-cmd">
+            <pre class="chrome-cmd-script">irm https://raw.githubusercontent.com/tricatch/oeLink/main/win/install.ps1 | iex</pre>
+            <button type="button" class="oelink-install-copy" title="{{ msg['hosts.install.copy'] }}" aria-label="{{ msg['hosts.install.copy'] }}"><span class="oe-icon oe-icon-copy"></span></button>
+          </div>
           <div class="small text-muted mt-1">{{ msg['hosts.install.uninstall.win'] }}</div>
         </div>
         <div class="chrome-cmd-block" data-oelink-os="mac">
           <div class="chrome-cmd-head">
             <span class="chrome-cmd-label">{{ msg['hosts.install.os.mac'] }}</span>
-            <button type="button" class="hosts-chrome-cmd-btn oelink-install-copy">{{ msg['hosts.install.copy'] }}</button>
           </div>
-          <pre class="chrome-cmd-script">curl -fsSL https://raw.githubusercontent.com/tricatch/oeLink/main/mac/install.sh | bash</pre>
+          <div class="oelink-install-cmd">
+            <pre class="chrome-cmd-script">curl -fsSL https://raw.githubusercontent.com/tricatch/oeLink/main/mac/install.sh | bash</pre>
+            <button type="button" class="oelink-install-copy" title="{{ msg['hosts.install.copy'] }}" aria-label="{{ msg['hosts.install.copy'] }}"><span class="oe-icon oe-icon-copy"></span></button>
+          </div>
           <div class="small text-muted mt-1">{{ msg['hosts.install.uninstall.mac'] }} <code>bash /Applications/oelink.app/Contents/Resources/uninstall.sh</code></div>
         </div>
       </div>
