@@ -92,8 +92,8 @@
 
 /* Sidebar tree (list-folders.js): one-level folders interleaved with items. Rows are 36px with
    8px corners; a folder's items hang off a guide line that starts under the folder icon. Colors
-   are the brand greens: BC500 for "on" (folder icon), BC300 for the list switch and the
-   selected row's edge, BC100 for the selected row and the "on" badge. */
+   are the brand greens: BC500 for "on" (folder icon), BC300 for the list switch and drop
+   markers, BC100 for the selected row and the "on" badge. */
 .oe-tree {
   display: flex;
   flex-direction: column;
@@ -111,7 +111,7 @@
   margin-top: -7px;
   padding-top: 7px;
   padding-bottom: 6px;
-  padding-left: 4px; /* keeps a selected row's edge off the guide line */
+  padding-left: 4px; /* keeps a selected row's background off the guide line */
   border-left: 1px solid #D5D7CF;
 }
 
@@ -130,7 +130,7 @@
 .oe-list-item { padding-left: 6px; }
 .oe-list-item:hover,
 .oe-list-folder:hover { background: rgba(0,0,0,0.04); }
-.oe-list-item.active { background: #dff2b8; box-shadow: inset 0 0 0 1px #a8d878; }
+.oe-list-item.active { background: #dff2b8; }
 
 /* Drop targets while dragging: a line above/below, or the folder lit up to take the item in. */
 .oe-list-item.drop-before,
