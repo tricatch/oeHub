@@ -16,6 +16,9 @@
 .oe-icon-share        { -webkit-mask-image: url('/icon/lucide/share-2.svg');     mask-image: url('/icon/lucide/share-2.svg'); }
 .oe-icon-public-link  { -webkit-mask-image: url('/icon/lucide/globe.svg');       mask-image: url('/icon/lucide/globe.svg'); }
 .oe-icon-public-link-issued { -webkit-mask-image: url('/icon/lucide/globe.svg'); mask-image: url('/icon/lucide/globe.svg'); }
+.oe-icon-scope-default { -webkit-mask-image: url('/icon/lucide/file.svg');     mask-image: url('/icon/lucide/file.svg'); }
+.oe-icon-scope-private { -webkit-mask-image: url('/icon/lucide/lock.svg');     mask-image: url('/icon/lucide/lock.svg'); }
+.oe-icon-scope-collabo { -webkit-mask-image: url('/icon/lucide/puzzle.svg');   mask-image: url('/icon/lucide/puzzle.svg'); }
 .oe-icon-import       { -webkit-mask-image: url('/icon/lucide/circle-fading-plus.svg'); mask-image: url('/icon/lucide/circle-fading-plus.svg'); }
 .oe-icon-download     { -webkit-mask-image: url('/icon/lucide/file-down.svg');   mask-image: url('/icon/lucide/file-down.svg'); }
 .oe-icon-copy         { -webkit-mask-image: url('/icon/lucide/copy.svg');          mask-image: url('/icon/lucide/copy.svg'); }
@@ -26,6 +29,9 @@
 .oe-icon-expand       { -webkit-mask-image: url('/icon/lucide/maximize-2.svg');  mask-image: url('/icon/lucide/maximize-2.svg'); }
 .oe-icon-collapse     { -webkit-mask-image: url('/icon/lucide/minimize-2.svg');  mask-image: url('/icon/lucide/minimize-2.svg'); }
 .oe-icon-chevron-down { -webkit-mask-image: url('/icon/lucide/chevron-down.svg'); mask-image: url('/icon/lucide/chevron-down.svg'); }
+.oe-icon-new-folder   { -webkit-mask-image: url('/icon/lucide/folder-plus.svg'); mask-image: url('/icon/lucide/folder-plus.svg'); }
+.oe-icon-folder       { -webkit-mask-image: url('/icon/lucide/folder.svg');      mask-image: url('/icon/lucide/folder.svg'); }
+.oe-icon-folder-open  { -webkit-mask-image: url('/icon/lucide/folder-open.svg'); mask-image: url('/icon/lucide/folder-open.svg'); }
 .oe-icon-logout       { -webkit-mask-image: url('/icon/lucide/log-out.svg');     mask-image: url('/icon/lucide/log-out.svg'); }
 .oe-icon-lang         { -webkit-mask-image: url('/icon/lucide/globe.svg');        mask-image: url('/icon/lucide/globe.svg'); }
 .oe-icon-sse          { -webkit-mask-image: url('/icon/lucide/logs.svg');        mask-image: url('/icon/lucide/logs.svg'); }

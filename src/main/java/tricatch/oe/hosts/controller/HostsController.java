@@ -10,6 +10,7 @@ import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SettingsController;
+import tricatch.oe.hub.util.NameTakenException;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
 
 import tricatch.oe.hosts.model.HostsUa;
@@ -96,7 +97,12 @@ public class HostsController {
         var hostId = ctx.pathParam("hostsId");
         var body = objectMapper.readValue(ctx.body(), Map.class);
         var name = (String) body.get("name");
-        var updated = hostsProfService.updateProfile(hostId, hubUser.getUserNo(), name);
+        HostsProf updated;
+        try {
+            updated = hostsProfService.updateProfile(hostId, hubUser.getUserNo(), name);
+        } catch (NameTakenException e) {
+            ctx.status(409); return;
+        }
         if (updated == null) { ctx.status(404); return; }
         ctx.json(updated);
     }

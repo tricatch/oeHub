@@ -92,6 +92,7 @@ oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습�
 | `-Doe.mode` | `self-hosted` | 배포 모드 — `self-hosted` 또는 `workspace`. 아래 [배포 모드](#배포-모드) 참고. |
 | `-Doe.dev` | `false` | 개발 모드. `true`이면 정적 파일과 Pebble 템플릿을 jar에 번들된 classpath 리소스 대신 `src/main/resources`의 실제 파일에서 직접 읽고 템플릿 캐시를 꺼서, 서버 재시작 없이 수정 내용이 바로 반영됩니다. `./gradlew run`이 자동으로 켜서 실행하며, 배포용 jar 실행 시에는 지정하지 마세요. |
 | `-Doe.secure.cookie` | `false` | `true`이면 인증·CSRF 쿠키에 항상 `Secure`를 붙이고 응답에 `Strict-Transport-Security`를 보냅니다. 앞단 프록시가 TLS를 끝내서 oeHub가 요청을 항상 HTTP로 보는 배포(예: `workspace` 모드 클라우드 배포)에서 켜세요. 기본값에서는 HTTPS로 들어온 요청에만 붙습니다. |
+| `-Doe.migrate` | (없음) | 지정하면 앱을 시작하지 않고, jar에 번들된 스키마 마이그레이션 `<이름>`(`src/main/resources/db/migration/<이름>.sql`)을 기존 데이터베이스에 한 번 적용한 뒤 종료합니다. 아래 [스키마 마이그레이션](#스키마-마이그레이션) 참고. |
 | `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선 사용. 위 실행 예시처럼 항상 켜서 실행하기를 권장합니다. |
 | `-Dlogback.configurationFile` | jar에 번들된 `logback.xml` | 재빌드 없이 로깅 설정을 재정의합니다. 자세한 내용은 아래 [로깅](#로깅) 참고. |
 
@@ -109,6 +110,21 @@ oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습�
 - **`workspace`** — 하나의 실행 중인 인스턴스 뒤에서 여러 독립적인 워크스페이스(회사 또는 팀)를 호스팅하는 멀티테넌트 클라우드 서비스. oeHosts만 사용 가능하며 oeProxy는 아예 비활성화되고, 워크스페이스 콘텐츠에는 종단간 암호화가 적용됩니다.
 
 역할(`adm`/`wsa`/`usr` 등), 가입·승인 흐름, 모드별로 달라지는 동작에 대한 자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
+
+### 스키마 마이그레이션
+
+oeHub는 시작할 때 `CREATE TABLE IF NOT EXISTS`로만 스키마를 만들기 때문에, 새 버전이 **이미 있는 테이블**에 컬럼을 추가한 경우 기존 데이터베이스에는 그 변경이 반영되지 않습니다. 이 상태로 새 jar를 시작하면 `Failed to initialize database schema ... -Doe.migrate=<name>` 오류와 함께 중단됩니다. 이때는 새 jar로 마이그레이션을 한 번 실행한 뒤 다시 시작하세요.
+
+```bash
+# 1. 실행 중인 oeHub를 중지 (실행 중이면 마이그레이션이 "database is in use"로 거부됩니다)
+# 2. 평소와 같은 -Doe.home / -Doe.mode / -Doe.data.dir 로 마이그레이션 실행
+java -Doe.home=/path/to/oeHub -Doe.migrate=<이름> -jar oeHub-<version>.jar
+# 3. 평소처럼 다시 시작
+```
+
+- 실행 전에 H2 `BACKUP`으로 `<data>/backups/oeHub-premigrate-<이름>-<시각>.zip`을 자동으로 만듭니다. 문제가 생기면 이 zip을 풀어 데이터 디렉터리의 DB 파일을 되돌리면 됩니다.
+- 마이그레이션 스크립트는 모두 `IF NOT EXISTS`로 작성되어 있어 두 번 실행해도 아무것도 바뀌지 않습니다. 새로 설치한 데이터베이스에는 실행할 필요가 없습니다.
+- 성공하면 종료 코드 0, 실패하면 1로 끝납니다.
 
 ### 로깅
 

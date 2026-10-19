@@ -142,13 +142,15 @@ class HostsContentEncryptionTest {
     @Test
     @Order(4)
     void togglingShareScopeToPrivateAndBack_rewrapsWithoutLosingContent() {
-        page.locator("#shareScopeSelect").selectOption("private");
+        page.locator("#shareScopeBtn").click();
+        page.locator("#shareScopeMenu [data-value=private]").click();
         page.waitForTimeout(300);
         var afterPrivate = (Map<?, ?>) page.evaluate("async (id) => { const list = await (await fetch('/api/hosts')).json(); return list.find(p => p.hostsId === id); }", hostsId);
         assertThat((String) afterPrivate.get("shareScope")).isEqualTo("private");
         assertThat((String) afterPrivate.get("wrappedContentKey")).isNotBlank();
 
-        page.locator("#shareScopeSelect").selectOption("workspace");
+        page.locator("#shareScopeBtn").click();
+        page.locator("#shareScopeMenu [data-value=workspace]").click();
         page.waitForTimeout(300);
         var afterPublic = (Map<?, ?>) page.evaluate("async (id) => { const list = await (await fetch('/api/hosts')).json(); return list.find(p => p.hostsId === id); }", hostsId);
         assertThat((String) afterPublic.get("shareScope")).isEqualTo("workspace");

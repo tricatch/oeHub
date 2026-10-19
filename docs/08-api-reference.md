@@ -64,7 +64,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/hosts` | 새 프로필 생성 |
 | DELETE | `/api/hosts` | 내 프로필 전체 삭제 |
 | PATCH | `/api/hosts/{hostsId}/content` | 프로필 내용 수정 |
-| PATCH | `/api/hosts/{hostsId}/name` | 프로필 이름 변경 |
+| PATCH | `/api/hosts/{hostsId}/name` | 프로필 이름 변경 (내 다른 프로필과 이름이 겹치면 대소문자 무시로 409) |
 | PATCH | `/api/hosts/{hostsId}/selected` | 선택(활성) 상태 토글 |
 | PATCH | `/api/hosts/{hostsId}/share-scope` | 공개 범위 변경 (`private`/`collabo`/`workspace`) |
 | GET | `/api/hosts/{hostsId}/view` | 단일 프로필 조회 (복호화된 내용 포함) |
@@ -74,8 +74,13 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | DELETE | `/api/hosts/{hostsId}` | 프로필 삭제 |
 | GET | `/api/hosts/search` | 이름으로 프로필 검색 |
 | PUT | `/api/hosts/order` | 정렬 순서 저장 |
-| GET | `/api/hosts/export` | 내보내기 (JSON) |
-| POST | `/api/hosts/import` | 가져오기 |
+| GET | `/api/hosts/folders` | 내 사이드바 폴더 목록 (1단계, 사용자별) |
+| POST | `/api/hosts/folders` | 새 폴더 생성 (본문 `{"name"}` 생략 시 기본 이름, 같은 이름은 409) |
+| PATCH | `/api/hosts/folders/{folderId}` | 폴더 이름 변경(`{"name"}`, 중복 시 409) / 접힘 상태 저장(`{"collapsed"}`) |
+| DELETE | `/api/hosts/folders/{folderId}` | 폴더 삭제 — 안의 프로필은 폴더 밖(루트)으로 이동 |
+| PUT | `/api/hosts/tree-order` | 사이드바 트리 전체를 화면 순서대로 저장 — `[{"type":"folder","id"}, {"type":"item","id","folderId"}, ...]`. 폴더와 폴더 밖 프로필은 하나의 순서로 섞여 저장되고(병합 순서도 이 순서), 각 프로필의 소속 폴더도 함께 저장. 내 폴더가 아닌 `folderId`는 400 |
+| GET | `/api/hosts/export` | 내보내기 (JSON, 각 프로필의 `folderName` 포함) |
+| POST | `/api/hosts/import` | 가져오기 (`folderName`이 있으면 같은 이름의 폴더에 넣고, 없으면 그 폴더의 첫 프로필 바로 앞 위치에 폴더를 만듦) |
 | GET | `/api/hosts/ua/presets` / `/api/hosts/url/presets` | 내 워크스페이스의 공유 UA/URL 프리셋과 내 개인 프리셋 조회 (다른 워크스페이스의 프리셋은 보이지 않음) |
 | GET/POST/PATCH/DELETE | `/api/hosts/ua/my`, `/api/hosts/url/my` (`+/{id}`, `+/order`) | 내 개인 UA/URL 프리셋 CRUD |
 | GET/PUT | `/api/hosts/conf/{name}` | 개인 설정값(`open_url`, `incognito` 등) 조회/저장 |
@@ -95,13 +100,16 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/proxy/vhosts` | 내 가상 호스트 목록 |
 | POST | `/api/proxy/vhosts` | 새 가상 호스트 생성 |
 | DELETE | `/api/proxy/vhosts` | 전체 삭제 |
-| PATCH | `/api/proxy/vhosts/{vhostId}/content`\|`/name`\|`/selected`\|`/share-scope` | 각 필드 수정 |
+| PATCH | `/api/proxy/vhosts/{vhostId}/content`\|`/name`\|`/selected`\|`/share-scope` | 각 필드 수정 (`/name`은 이름이 겹치면 409) |
 | POST | `/api/proxy/vhosts/{vhostId}/copy`\|`/register` | 복사 / `collabo` 등록 |
 | DELETE | `/api/proxy/vhosts/{vhostId}` | 삭제 |
 | GET | `/api/proxy/vhosts/search` | 검색 |
 | PUT | `/api/proxy/vhosts/order` | 정렬 순서 저장 |
-| GET | `/api/proxy/vhosts/export` | 내보내기 |
-| POST | `/api/proxy/vhosts/import` | 가져오기 |
+| GET/POST | `/api/proxy/vhosts/folders` | 사이드바 폴더 목록 / 생성 (oeHosts의 `/api/hosts/folders`와 동일) |
+| PATCH/DELETE | `/api/proxy/vhosts/folders/{folderId}` | 폴더 이름·접힘 상태 변경 / 삭제 (안의 가상 호스트는 루트로 이동) |
+| PUT | `/api/proxy/vhosts/tree-order` | 사이드바 트리 전체 순서 저장 (oeHosts의 `/api/hosts/tree-order`와 동일) |
+| GET | `/api/proxy/vhosts/export` | 내보내기 (각 가상 호스트의 `folderName` 포함) |
+| POST | `/api/proxy/vhosts/import` | 가져오기 (`folderName` 기준으로 폴더 배치) |
 | GET/PUT | `/api/proxy/conf/{name}` | 개인 설정값 조회/저장 |
 
 ## 워크스페이스 관리자 — 사용자/팀 (`/api/wsa/*`, `wsa` 또는 self-hosted `adm`)

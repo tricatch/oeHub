@@ -65,6 +65,7 @@ public abstract class MapperTestBase {
         cfg.addMapper(HostsUrlMapper.class);
         cfg.addMapper(ProxyVhostMapper.class);
         cfg.addMapper(ProxyConfMapper.class);
+        cfg.addMapper(tricatch.oe.hub.folder.ListFolderMapper.class);
         cfg.addMapper(tricatch.oe.hub.mapper.HubApiTokenMapper.class);
         cfg.addMapper(tricatch.oe.hub.mapper.HubAuditLogMapper.class);
 
@@ -208,6 +209,19 @@ public abstract class MapperTestBase {
                     updated_at  TIMESTAMP    NOT NULL
                 )""");
             conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_FOLDER (
+                    folder_id   VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no     BIGINT       NOT NULL,
+                    folder_name VARCHAR(128) NOT NULL,
+                    sort_order  INT          NOT NULL DEFAULT 0,
+                    collapsed   BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_hosts_folder_user_name UNIQUE (user_no, folder_name)
+                )""");
+            conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_PFILE (
                     hosts_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
                     user_no       BIGINT       NOT NULL,
@@ -220,15 +234,19 @@ public abstract class MapperTestBase {
                     wrapped_content_key CLOB   NULL,
                     link_content        CLOB   NULL,
                     wrapped_link_key    CLOB   NULL,
+                    folder_id     VARCHAR(32)  NULL,
                     created_by    BIGINT       NOT NULL,
                     updated_by    BIGINT       NULL,
                     create_at     TIMESTAMP    NOT NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
-                    CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
+                    CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id),
+                    CONSTRAINT fk_hosts_pfile_folder FOREIGN KEY (folder_id) REFERENCES HOSTS_FOLDER(folder_id) ON DELETE SET NULL
                 )""");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_parent ON HOSTS_PFILE(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_folder ON HOSTS_PFILE(folder_id)");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_updated_by ON HOSTS_PFILE(updated_by)");
             conn.createStatement().execute("""
@@ -272,6 +290,19 @@ public abstract class MapperTestBase {
                     CONSTRAINT fk_hosts_url_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )""");
             conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS PROXY_FOLDER (
+                    folder_id   VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no     BIGINT       NOT NULL,
+                    folder_name VARCHAR(128) NOT NULL,
+                    sort_order  INT          NOT NULL DEFAULT 0,
+                    collapsed   BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_proxy_folder_user_name UNIQUE (user_no, folder_name)
+                )""");
+            conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
                     vhost_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
                     user_no       BIGINT       NOT NULL,
@@ -283,15 +314,19 @@ public abstract class MapperTestBase {
                     parent_id     VARCHAR(32)  NULL,
                     wrapped_content_key CLOB   NULL,
                     link_content        CLOB   NULL,
+                    folder_id     VARCHAR(32)  NULL,
                     created_by    BIGINT       NOT NULL,
                     updated_by    BIGINT       NULL,
                     create_at     TIMESTAMP    NOT NULL,
                     updated_at    TIMESTAMP    NOT NULL,
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
-                    CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)
+                    CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id),
+                    CONSTRAINT fk_proxy_vhost_folder FOREIGN KEY (folder_id) REFERENCES PROXY_FOLDER(folder_id) ON DELETE SET NULL
                 )""");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_parent ON PROXY_VHOST(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_folder ON PROXY_VHOST(folder_id)");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_updated_by ON PROXY_VHOST(updated_by)");
             conn.createStatement().execute("""
@@ -321,6 +356,8 @@ public abstract class MapperTestBase {
                 conn.createStatement().execute("DELETE FROM HOSTS_CONF");
                 conn.createStatement().execute("DELETE FROM PROXY_VHOST");
                 conn.createStatement().execute("DELETE FROM HOSTS_PFILE");
+                conn.createStatement().execute("DELETE FROM PROXY_FOLDER");
+                conn.createStatement().execute("DELETE FROM HOSTS_FOLDER");
                 conn.createStatement().execute("DELETE FROM HOSTS_UA");
                 conn.createStatement().execute("DELETE FROM HOSTS_URL");
                 conn.createStatement().execute("DELETE FROM HUB_CONF");

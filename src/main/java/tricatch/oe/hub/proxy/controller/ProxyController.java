@@ -9,6 +9,7 @@ import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.proxy.ReverseProxySettings;
 import tricatch.oe.hub.proxy.model.ProxyVhost;
+import tricatch.oe.hub.util.NameTakenException;
 import tricatch.oe.hub.proxy.service.ProxyConfService;
 import tricatch.oe.hub.proxy.service.ProxyVhostService;
 import tricatch.oe.proxy.ReverseProxyServer;
@@ -213,7 +214,12 @@ public class ProxyController {
         var hubUser    = AuthController.currentUser(ctx);
         var vhostId = ctx.pathParam("vhostId");
         var body    = objectMapper.readValue(ctx.body(), Map.class);
-        var updated = vhostService.updateProfile(vhostId, hubUser.getUserNo(), (String) body.get("name"));
+        ProxyVhost updated;
+        try {
+            updated = vhostService.updateProfile(vhostId, hubUser.getUserNo(), (String) body.get("name"));
+        } catch (NameTakenException e) {
+            ctx.status(409); return;
+        }
         if (updated == null) { ctx.status(404); return; }
         ctx.json(updated);
     }

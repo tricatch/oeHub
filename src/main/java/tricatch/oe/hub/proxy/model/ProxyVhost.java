@@ -11,6 +11,10 @@ public class ProxyVhost extends Auditable {
     private int sortOrder;
     private String shareScope;
     private String parentId;
+    // One-level sidebar folder (PROXY_FOLDER), null = root. folderName is read-only display/export
+    // data joined in by findByUserNo - an import file carries the name, never the id.
+    private String folderId;
+    private String folderName;
     private String userId;
     private String updatedByUserId;
 
@@ -37,6 +41,12 @@ public class ProxyVhost extends Auditable {
 
     public String getParentId() { return parentId; }
     public void setParentId(String parentId) { this.parentId = parentId; }
+
+    public String getFolderId() { return folderId; }
+    public void setFolderId(String folderId) { this.folderId = folderId; }
+
+    public String getFolderName() { return folderName; }
+    public void setFolderName(String folderName) { this.folderName = folderName; }
 
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }

@@ -8,20 +8,31 @@ import java.util.List;
 
 public interface ProxyVhostMapper {
 
+    // The sidebar's order, which is also the merge order of the selected vhosts: folders and the
+    // items outside any folder share one sort_order sequence (interleaved), and a folder's items
+    // follow it in their own sort_order. Needs
+    // "LEFT JOIN PROXY_FOLDER f ON f.folder_id = h.folder_id" - f is the row's own folder, never
+    // the parent's (folders are per user).
+    String LIST_ORDER = """
+        ORDER BY COALESCE(f.sort_order, h.sort_order) ASC, CASE WHEN f.folder_id IS NULL THEN 0 ELSE 1 END,
+                 f.create_at ASC, f.folder_id ASC, h.sort_order ASC, h.updated_at ASC
+        """;
+
     @Select("""
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
                h.selected, h.sort_order, h.share_scope,
-               h.parent_id, h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
+               h.parent_id, h.folder_id, f.folder_name,
+               h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
+        LEFT JOIN PROXY_FOLDER f ON f.folder_id = h.folder_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
         LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
         WHERE h.user_no = #{userNo}
-        ORDER BY h.sort_order ASC, h.updated_at ASC
-        """)
+        """ + LIST_ORDER)
     List<ProxyVhost> findByUserNo(Long userNo);
 
     @Select("""
@@ -31,7 +42,10 @@ public interface ProxyVhostMapper {
                h.parent_id, h.updated_at
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
-        WHERE h.user_no = #{userNo} AND h.selected = TRUE LIMIT 1
+        LEFT JOIN PROXY_FOLDER f ON f.folder_id = h.folder_id
+        WHERE h.user_no = #{userNo} AND h.selected = TRUE
+        """ + LIST_ORDER + """
+        LIMIT 1
         """)
     ProxyVhost findSelectedByUserNo(Long userNo);
 
@@ -42,20 +56,22 @@ public interface ProxyVhostMapper {
                h.parent_id, h.updated_at
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
+        LEFT JOIN PROXY_FOLDER f ON f.folder_id = h.folder_id
         WHERE h.user_no = #{userNo} AND h.selected = TRUE
-        ORDER BY h.sort_order ASC
-        """)
+        """ + LIST_ORDER)
     List<ProxyVhost> findAllSelectedByUserNo(Long userNo);
 
     @Select("""
         SELECT h.vhost_id, h.user_no, h.vhost_profile,
                COALESCE(p.vhost_content, h.vhost_content) AS vhost_content,
                h.selected, h.sort_order, h.share_scope,
-               h.parent_id, h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
+               h.parent_id, h.folder_id, f.folder_name,
+               h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
         FROM PROXY_VHOST h
         LEFT JOIN PROXY_VHOST p ON p.vhost_id = h.parent_id
+        LEFT JOIN PROXY_FOLDER f ON f.folder_id = h.folder_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
         LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
         WHERE h.vhost_id = #{vhostId}
@@ -88,18 +104,21 @@ public interface ProxyVhostMapper {
 
     @Insert("""
         INSERT INTO PROXY_VHOST (vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order,
-                                 share_scope, parent_id, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, folder_id, created_by, updated_by, create_at, updated_at)
         VALUES (#{vhostId}, #{userNo}, #{vhostProfile}, #{vhostContent}, #{selected}, #{sortOrder},
-                #{shareScope}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
+                #{shareScope}, #{parentId}, #{folderId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
         """)
     void insert(ProxyVhost vhost);
 
+    // A new row goes after everything the user has - the sort_order sequence is shared with the
+    // folders (PROXY_FOLDER), which the sidebar interleaves with the rows outside them.
     @Insert("""
         INSERT INTO PROXY_VHOST (vhost_id, user_no, vhost_profile, vhost_content, selected, sort_order,
-                                 share_scope, parent_id, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, folder_id, created_by, updated_by, create_at, updated_at)
         SELECT #{vhostId}, #{userNo}, #{vhostProfile}, #{vhostContent}, #{selected},
-               COALESCE(MAX(sort_order), -1) + 1,
-               #{shareScope}, #{parentId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
+               GREATEST(COALESCE(MAX(sort_order), -1),
+                        COALESCE((SELECT MAX(sort_order) FROM PROXY_FOLDER WHERE user_no = #{userNo}), -1)) + 1,
+               #{shareScope}, #{parentId}, #{folderId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
         FROM PROXY_VHOST
         WHERE user_no = #{userNo}
         """)

@@ -24,6 +24,9 @@
       <button class="oe-nav-action-btn" id="btnSearchToggle" title="{{ msg['tooltip.search'] }}">
         <span class="oe-icon oe-icon-search" style="width:15px;height:15px"></span>
       </button>
+      <button class="oe-nav-action-btn" id="btnAddFolder" title="{{ msg['tooltip.new.folder'] }}">
+        <span class="oe-icon oe-icon-new-folder" style="width:15px;height:15px"></span>
+      </button>
     </div>
     <div class="oe-search-panel d-none" id="searchPanel">
       <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="{{ msg['proxy.search.placeholder'] }}" autocomplete="off">
@@ -51,13 +54,7 @@
       <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.vhost'] }}" disabled>
         <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
       </button>
-      <span class="oe-share-scope-wrap d-none" id="shareScopeWrap">
-        <select class="oe-share-scope-select" id="shareScopeSelect">
-          <option value="workspace">{{ msg['share.scope.workspace'] }}</option>
-          <option value="private">{{ msg['share.scope.private'] }}</option>
-          <option value="collabo">{{ msg['share.scope.collabo'] }}</option>
-        </select>
-      </span>
+      {% include "templates/oehub/share-scope-select.pebble" %}
     </div>
     <span class="oe-save-status" id="saveStatus"></span>
     <div class="proxy-empty" id="emptyState">{{ msg['proxy.empty'] }}</div>
@@ -206,6 +203,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js" integrity="sha384-e7M5uM+69Pk0fBAnkRuFwRvZG2nFlXu572zM5jIUo36Pumtw+No4zRokAbDcqSuA" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
 <script src="{{ asset('/js/ace-init.js') }}"></script>
+<script src="{{ asset('/js/list-folders.js') }}"></script>
+<script src="{{ asset('/js/share-scope-menu.js') }}"></script>
 <script nonce="{{ cspNonce }}">
 
 let LOCAL_SVR = '{{ localSvr }}';
@@ -326,7 +325,6 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
 
   // ── Render sidebar ─────────────────────────────────────────
   function renderVhosts() {
-    vhostList.innerHTML = '';
     document.getElementById('vhostCount').textContent = MSG['proxy.sidebar.count'].replace('{0}', vhosts.length);
     if (vhosts.length === 0) {
       emptyState.classList.remove('d-none');
@@ -335,31 +333,25 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
       emptyState.classList.add('d-none');
       editorBody.style.display = '';
     }
-    vhosts.forEach(v => {
-      const item = document.createElement('div');
-      item.className = 'oe-list-item' + (v.vhostId === activeVhostId ? ' active' : '');
-      item.dataset.vhostId = v.vhostId;
-      item.draggable = true;
-      item.innerHTML = `
-        <span class="oe-list-drag${v.shareScope === 'private' ? ' private' : v.shareScope === 'collabo' ? ' collabo' : ''}">&#9776;</span>
-        <span class="oe-list-name${v.shareScope === 'private' ? ' private' : v.shareScope === 'collabo' ? ' collabo' : ''}" data-vhostid="${v.vhostId}">${escHtml(v.vhostProfile)}</span>
-        <div class="form-check form-switch mb-0 oe-list-toggle">
-          <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${v.selected ? 'checked' : ''}>
-        </div>`;
-
-      item.addEventListener('click', e => { if (e.target.type === 'checkbox') return; activateVhost(v.vhostId, false); });
-      item.querySelector('.oe-list-check').addEventListener('change', () => toggleSelected(v.vhostId));
-      if (!v.parentId) item.querySelector('.oe-list-name').addEventListener('dblclick', e => startRename(e.target, v));
-      item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', v.vhostId); });
-      item.addEventListener('dragover',  e => { e.preventDefault(); item.classList.add('drag-over'); });
-      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-      item.addEventListener('drop', e => {
-        e.preventDefault(); item.classList.remove('drag-over');
-        reorder(e.dataTransfer.getData('text/plain'), v.vhostId);
-      });
-      vhostList.appendChild(item);
-    });
+    folderList.render();
   }
+
+  const folderList = createListFolders({
+    container: vhostList,
+    apiBase: '/api/proxy/vhosts',
+    idKey: 'vhostId',
+    nameKey: 'vhostProfile',
+    getItems: () => vhosts,
+    setItems: items => { vhosts = items; },
+    rerender: renderVhosts,
+    isActive: v => v.vhostId === activeVhostId,
+    publicLinkTitle: () => null,
+    onActivate: v => activateVhost(v.vhostId, false),
+    onToggle: v => toggleSelected(v.vhostId),
+    canRename: v => !v.parentId,
+    onRename: startRename
+  });
+  document.getElementById('btnAddFolder').addEventListener('click', () => folderList.createFolder());
 
 
   // ── Activate ───────────────────────────────────────────────
@@ -375,7 +367,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     shareScopeWrap.classList.toggle('d-none', readonly);
     shareScopeSelect.value = v.shareScope || 'workspace';
     shareScopeSelect.disabled = !!v.parentId;
-    applyShareScopeStyle();
+    syncShareScopeMenu();
     btnShare.disabled = v.shareScope === 'private';
     btnCopyShareLink.disabled = v.shareScope === 'private';
     btnDownload.disabled = false;
@@ -673,7 +665,10 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
         body: JSON.stringify({name: newName})
       });
       if (res.ok) { v.vhostProfile = newName; if (activeVhostId === v.vhostId) editorTitle.textContent = newName; }
-      else { el.textContent = v.vhostProfile; }
+      else {
+        el.textContent = v.vhostProfile;
+        if (res.status === 409) showToast(MSG['toast.vhost.name.taken']);
+      }
     };
     const onKeydown = e => {
       if (e.key === 'Enter')  { e.preventDefault(); el.removeEventListener('keydown', onKeydown); el.blur(); }
@@ -681,20 +676,6 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     };
     el.addEventListener('blur', commit, {once: true});
     el.addEventListener('keydown', onKeydown);
-  }
-
-  // ── Reorder ────────────────────────────────────────────────
-  async function reorder(srcId, targetId) {
-    const srcIdx = vhosts.findIndex(v => v.vhostId === srcId);
-    const tgtIdx = vhosts.findIndex(v => v.vhostId === targetId);
-    if (srcIdx === -1 || tgtIdx === -1) return;
-    const [moved] = vhosts.splice(srcIdx, 1);
-    vhosts.splice(tgtIdx, 0, moved);
-    renderVhosts();
-    await fetch('/api/proxy/vhosts/order', {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(vhosts.map(v => v.vhostId))
-    });
   }
 
   // ── Share ──────────────────────────────────────────────────
@@ -838,10 +819,6 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
       : '';
   }
 
-  function applyShareScopeStyle() {
-    shareScopeSelect.style.color = shareScopeSelect.value === 'private' ? '#CC7722' : shareScopeSelect.value === 'collabo' ? '#3b7dd8' : '';
-  }
-
   let _pendingCollabo = false;
   let _prevShareScope = null;
 
@@ -856,7 +833,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
       if (v) { v.shareScope = updated.shareScope; v.parentId = updated.parentId; }
       const updatedV = vhosts.find(x => x.vhostId === activeVhostId);
       shareScopeSelect.disabled = !!(updatedV && updatedV.parentId);
-      applyShareScopeStyle();
+      syncShareScopeMenu();
       btnShare.disabled = updated.shareScope === 'private';
       btnCopyShareLink.disabled = updated.shareScope === 'private';
       renderVhosts();
@@ -887,7 +864,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
   document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
     if (_pendingCollabo) {
       shareScopeSelect.value = _prevShareScope;
-      applyShareScopeStyle();
+      syncShareScopeMenu();
       _pendingCollabo = false;
     }
   });
@@ -992,7 +969,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
 
   // ── Init ───────────────────────────────────────────────────
   (async () => {
-    const res = await fetch('/api/proxy/vhosts');
+    const [res] = await Promise.all([fetch('/api/proxy/vhosts'), folderList.load()]);
     vhosts = await res.json();
     renderVhosts();
     if (vhosts.length > 0) {

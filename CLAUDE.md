@@ -22,6 +22,7 @@
 ## Database Schema
 
 - Schema migrations use `CREATE TABLE IF NOT EXISTS` only. `ALTER TABLE` is not used during the development phase. To apply schema changes, modify the `CREATE TABLE` statement and restart the application after deleting the H2 database file (`~/oeHub/data/oeHub-h2.*` for `self-hosted` mode, `~/oeHub/data/oeHub-h2-ws.*` for `workspace` mode — see `AppHome.dbFileName()`).
+- When a change to an existing table must reach a deployed database that keeps its data, also add an idempotent script `src/main/resources/db/migration/<yyyy-mm-dd-name>.sql` mirroring the `CREATE TABLE` change (`IF NOT EXISTS` on every statement; `ADD COLUMN ... BEFORE <col>` so the column order matches a fresh database). It is applied on the server with `-Doe.migrate=<name>` (`DbMigration`), never at normal startup. Keep the script in step with `DatabaseConfig` until it has been deployed, and verify it by comparing `INFORMATION_SCHEMA` of a migrated old-schema database against a freshly created one.
 - Timestamp columns use the `_at` suffix (e.g. `create_at`, `updated_at`, `last_login_at`). Never use `_dt`.
 - Column ordering rule: business columns first, then timestamp columns at the end in this order: `create_at`, `updated_at`, additional timestamps (e.g. `last_login_at`).
 - When adding a new non-timestamp column, insert it before the timestamp block.

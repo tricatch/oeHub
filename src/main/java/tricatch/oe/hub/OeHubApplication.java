@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.BackupService;
 import tricatch.oe.hub.config.DatabaseConfig;
+import tricatch.oe.hub.config.DbMigration;
 import tricatch.oe.hub.config.JwtService;
 import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.controller.AdminHostsUaController;
@@ -28,6 +29,8 @@ import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
 import tricatch.oe.hub.controller.MemberController;
 import tricatch.oe.hub.controller.WorkspaceController;
+import tricatch.oe.hub.folder.FolderKind;
+import tricatch.oe.hub.folder.ListFolderController;
 import tricatch.oe.hub.controller.WsaSettingsController;
 import tricatch.oe.hosts.controller.HostsController;
 import tricatch.oe.fwdproxy.BlockedPageServer;
@@ -163,6 +166,8 @@ public class OeHubApplication {
         var setup       = new SetupController(sqlSessionFactory, settings, auth);
         var hosts       = new HostsController(sqlSessionFactory, settings, objectMapper);
         var proxy       = workspaceMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
+        var hostsFolders = new ListFolderController(sqlSessionFactory, FolderKind.HOSTS, objectMapper);
+        var proxyFolders = workspaceMode ? null : new ListFolderController(sqlSessionFactory, FolderKind.PROXY, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
         var adminUser   = new AdminUserController(sqlSessionFactory);
         var auditLogCtrl = new AuditLogController(sqlSessionFactory);
@@ -397,6 +402,13 @@ public class OeHubApplication {
             config.routes.get("/oehub/my/setting",  hosts::showMySetting);
 
             // oeHosts REST API
+            // Sidebar folders and the tree order - registered before the /api/hosts/{hostsId}/...
+            // routes below so a "folders" segment is never read as a hosts id.
+            config.routes.get("/api/hosts/folders",                hostsFolders::apiList);
+            config.routes.post("/api/hosts/folders",               hostsFolders::apiCreate);
+            config.routes.patch("/api/hosts/folders/{folderId}",   hostsFolders::apiUpdate);
+            config.routes.delete("/api/hosts/folders/{folderId}",  hostsFolders::apiDelete);
+            config.routes.put("/api/hosts/tree-order",             hostsFolders::apiSaveTreeOrder);
             config.routes.get("/api/hosts",                       hosts::apiList);
             config.routes.post("/api/hosts",                      hosts::apiCreate);
             config.routes.delete("/api/hosts",                    hosts::apiDeleteAll);
@@ -494,6 +506,12 @@ public class OeHubApplication {
                 config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
 
                 // oeProxy REST API
+                // Sidebar folders - same layout and ordering reason as the /api/hosts/folders routes.
+                config.routes.get("/api/proxy/vhosts/folders",                  proxyFolders::apiList);
+                config.routes.post("/api/proxy/vhosts/folders",                 proxyFolders::apiCreate);
+                config.routes.patch("/api/proxy/vhosts/folders/{folderId}",     proxyFolders::apiUpdate);
+                config.routes.delete("/api/proxy/vhosts/folders/{folderId}",    proxyFolders::apiDelete);
+                config.routes.put("/api/proxy/vhosts/tree-order",               proxyFolders::apiSaveTreeOrder);
                 config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
                 config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);
                 config.routes.delete("/api/proxy/vhosts",                       proxy::apiDeleteAll);
@@ -687,6 +705,13 @@ public class OeHubApplication {
     public static void main(String[] args) throws Exception {
 
         Security.addProvider(new BouncyCastleProvider());
+
+        // -Doe.migrate=<name>: apply one bundled schema migration to the existing database and exit,
+        // before anything (H2 console, schema init, servers) opens the database - see DbMigration.
+        var migration = System.getProperty("oe.migrate");
+        if (migration != null && !migration.isBlank()) {
+            System.exit(DbMigration.run(migration.trim()));
+        }
 
         appPort = resolvePort();
         h2ConsolePort = appPort + 1;

@@ -25,6 +25,10 @@ public class HostsProf extends Auditable {
     // redesign) so any member's browser can re-encrypt linkContent on every save - null until a
     // link has been issued, paired 1:1 with linkContent (both null or both set).
     private String wrappedLinkKey;
+    // One-level sidebar folder (HOSTS_FOLDER), null = root. folderName is read-only display/export
+    // data joined in by findByUserNo - an import file carries the name, never the id.
+    private String folderId;
+    private String folderName;
     private String userId;
     private String updatedByUserId;
 
@@ -60,6 +64,12 @@ public class HostsProf extends Auditable {
 
     public String getWrappedLinkKey() { return wrappedLinkKey; }
     public void setWrappedLinkKey(String wrappedLinkKey) { this.wrappedLinkKey = wrappedLinkKey; }
+
+    public String getFolderId() { return folderId; }
+    public void setFolderId(String folderId) { this.folderId = folderId; }
+
+    public String getFolderName() { return folderName; }
+    public void setFolderName(String folderName) { this.folderName = folderName; }
 
     public String getUserId() {
         return userId;

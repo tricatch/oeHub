@@ -272,7 +272,9 @@ class PublicLinkTest {
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
         assertThat(page.locator("#publicLinkValue")).hasValue(linkUrl);
         assertThat(page.locator("#publicLinkTextValue")).hasValue(textUrl);
-        page.locator("#publicLinkModal .btn-close").click();
+        // With a link issued, the footer offers Close instead of Generate.
+        assertThat(page.locator("#btnGeneratePublicLink")).not().isVisible();
+        page.locator("#btnClosePublicLink").click();
         assertThat(page.locator("#publicLinkModal.show")).not().isVisible(
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));
     }
@@ -280,7 +282,8 @@ class PublicLinkTest {
     @Test
     @Order(11)
     void changingShareScopeAwayFromWorkspace_autoRevokesTheLink() {
-        page.locator("#shareScopeSelect").selectOption("private");
+        page.locator("#shareScopeBtn").click();
+        page.locator("#shareScopeMenu [data-value=private]").click();
         page.waitForTimeout(300);
 
         var anonContext = browser.newContext();
@@ -291,12 +294,15 @@ class PublicLinkTest {
         assertThat(textResp.status()).isEqualTo(404);
         anonContext.close();
 
-        page.locator("#shareScopeSelect").selectOption("workspace");
+        page.locator("#shareScopeBtn").click();
+        page.locator("#shareScopeMenu [data-value=workspace]").click();
         page.waitForTimeout(300);
 
         page.locator("#btnPublicLink").click();
         assertThat(page.locator("#publicLinkModal.show")).isVisible();
         assertThat(page.locator("#publicLinkResultWrap")).not().isVisible();
+        assertThat(page.locator("#btnGeneratePublicLink")).isVisible();
+        assertThat(page.locator("#btnClosePublicLink")).not().isVisible();
         page.locator("#publicLinkModal .btn-close").click();
         assertThat(page.locator("#publicLinkModal.show")).not().isVisible(
                 new com.microsoft.playwright.assertions.LocatorAssertions.IsVisibleOptions().setTimeout(5000));

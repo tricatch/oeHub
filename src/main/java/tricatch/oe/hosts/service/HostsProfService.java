@@ -1,10 +1,15 @@
 package tricatch.oe.hosts.service;
 
+import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.mapper.HubUserMapper;
+import tricatch.oe.hub.folder.FolderKind;
+import tricatch.oe.hub.folder.ListFolderMapper;
+import tricatch.oe.hub.folder.ListFolderService;
+import tricatch.oe.hub.util.NameTakenException;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -135,6 +140,7 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var record = mapper.findByHostsId(hostId);
             if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0 || record.getParentId() != null) return null;
+            if (nameTaken(mapper.findProfileNamesByUserNo(userNo), record.getHostsProfile(), newName)) throw new NameTakenException();
             mapper.updateProfile(hostId, userNo, newName, LocalDateTime.now());
             session.commit();
             return mapper.findByHostsId(hostId);
@@ -183,7 +189,7 @@ public class HostsProfService {
      */
     public void deleteAll(Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
-            removeAllRows(session.getMapper(HostsProfMapper.class), userNo);
+            removeAllRows(session, userNo);
             session.commit();
         }
     }
@@ -215,13 +221,16 @@ public class HostsProfService {
                 }
             }
 
-            removeAllRows(mapper, userNo);
+            removeAllRows(session, userNo);
             session.commit();
         }
     }
 
-    // Deletes every row the user owns, then any shared (collabo) parent left with no references.
-    private void removeAllRows(HostsProfMapper mapper, Long userNo) {
+    // Deletes every row the user owns, then any shared (collabo) parent left with no references,
+    // then the user's folders (rows reassigned elsewhere just before, e.g. to wss on account
+    // removal, drop back to the root through the folder FK's ON DELETE SET NULL).
+    private void removeAllRows(SqlSession session, Long userNo) {
+        var mapper = session.getMapper(HostsProfMapper.class);
         var refs = mapper.findReferencesByUserNo(userNo);
         mapper.deleteByUserNo(userNo);
         for (var ref : refs) {
@@ -230,6 +239,7 @@ public class HostsProfService {
             }
         }
         mapper.deleteOrphanedParentsByCreator(userNo);
+        session.getMapper(ListFolderMapper.class).deleteByUserNo(FolderKind.HOSTS, userNo);
     }
 
     public HostsProf copyProfile(Long userNo, String sourceHostId) {
@@ -382,8 +392,10 @@ public class HostsProfService {
     public List<HostsProf> importProfiles(Long userNo, List<HostsProf> entries, boolean merge) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
-            if (!merge) removeAllRows(mapper, userNo);
+            if (!merge) removeAllRows(session, userNo);
             var existingNames = existingNames(mapper, userNo);
+            var folderMapper = session.getMapper(ListFolderMapper.class);
+            var folderIds = ListFolderService.folderIdsByLowerName(folderMapper, FolderKind.HOSTS, userNo);
             for (var entry : entries) {
                 entry.setHostsId(newId());
                 entry.setUserNo(userNo);
@@ -396,6 +408,7 @@ public class HostsProfService {
                 entry.setCreateAt(now);
                 entry.setUpdatedAt(now);
                 if (entry.getShareScope() == null) entry.setShareScope("private");
+                entry.setFolderId(ListFolderService.folderIdForImport(folderMapper, FolderKind.HOSTS, userNo, entry.getFolderName(), entry.getSortOrder(), folderIds));
                 mapper.insert(entry);
             }
             session.commit();
@@ -426,6 +439,9 @@ public class HostsProfService {
             // Import creates standalone entries, never collabo refs, and a file that doesn't say
             // "workspace" must not make the row workspace-scoped - see ShareScopeUtil.forImport.
             h.setShareScope(tricatch.oe.hub.util.ShareScopeUtil.forImport(m.get("shareScope")));
+            // Folders travel by name (ids are per database); importProfiles/importVhosts finds or
+            // creates the folder.
+            h.setFolderName(tricatch.oe.hub.util.ImportFields.text(m, "folderName", null));
             entries.add(h);
         }
         return entries;
@@ -489,6 +505,13 @@ public class HostsProfService {
         var hosts = get(hostId);
         if (hosts == null || !"workspace".equals(hosts.getShareScope()) || hosts.getLinkContent() == null) return null;
         return hosts;
+    }
+
+    // Another of the user's entries already has newName (case-insensitive, like existingNames).
+    // The entry's own current name doesn't count, so a case-only rename of itself is allowed.
+    private static boolean nameTaken(List<String> names, String currentName, String newName) {
+        var same = names.stream().filter(n -> n.equalsIgnoreCase(newName)).count();
+        return same > (currentName.equalsIgnoreCase(newName) ? 1 : 0);
     }
 
     // Case-insensitive, matching countByUserNoAndProfile's LOWER() comparison this replaces.

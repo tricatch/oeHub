@@ -7,6 +7,7 @@ import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
+import tricatch.oe.hub.folder.ListFolderMapper;
 import tricatch.oe.hub.mapper.HubApiTokenMapper;
 import tricatch.oe.hub.mapper.HubAuditLogMapper;
 import tricatch.oe.hub.mapper.HubConfMapper;
@@ -70,6 +71,7 @@ public class DatabaseConfig {
         config.addMapper(HostsUrlMapper.class);
         config.addMapper(ProxyVhostMapper.class);
         config.addMapper(ProxyConfMapper.class);
+        config.addMapper(ListFolderMapper.class);
 
         var factory = new SqlSessionFactoryBuilder().build(config);
         initSchema(factory);
@@ -81,7 +83,7 @@ public class DatabaseConfig {
     // source or this class could connect and read the whole database, including password hashes,
     // bypassing oeHub's auth entirely. Generate one at first run instead and persist it next to
     // the database file, same trust boundary as the file itself.
-    private static String loadOrCreateDbPassword(Path dataDir) {
+    static String loadOrCreateDbPassword(Path dataDir) {
         var pwFile = dataDir.resolve(".h2-password");
         try {
             if (Files.exists(pwFile)) {
@@ -244,6 +246,22 @@ public class DatabaseConfig {
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hub_audit_log_ws ON HUB_AUDIT_LOG(ws_no, create_at DESC)");
+            // One-level folders for the HOSTS_PFILE list (per user, like the list rows themselves).
+            // An item points at its folder via HOSTS_PFILE.folder_id; no folder = root.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_FOLDER (
+                    folder_id   VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no     BIGINT       NOT NULL,
+                    folder_name VARCHAR(128) NOT NULL,
+                    sort_order  INT          NOT NULL DEFAULT 0,
+                    collapsed   BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_hosts_folder_user_name UNIQUE (user_no, folder_name)
+                )
+                """);
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_PFILE (
                     hosts_id          VARCHAR(32)    NOT NULL PRIMARY KEY,
@@ -257,16 +275,20 @@ public class DatabaseConfig {
                     wrapped_content_key CLOB         NULL,
                     link_content        CLOB         NULL,
                     wrapped_link_key    CLOB         NULL,
+                    folder_id         VARCHAR(32)    NULL,
                     created_by        BIGINT         NOT NULL,
                     updated_by        BIGINT         NULL,
                     create_at         TIMESTAMP      NOT NULL,
                     updated_at        TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
-                    CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
+                    CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id),
+                    CONSTRAINT fk_hosts_pfile_folder FOREIGN KEY (folder_id) REFERENCES HOSTS_FOLDER(folder_id) ON DELETE SET NULL
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_parent ON HOSTS_PFILE(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_folder ON HOSTS_PFILE(folder_id)");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_updated_by ON HOSTS_PFILE(updated_by)");
             conn.createStatement().execute("""
@@ -320,6 +342,22 @@ public class DatabaseConfig {
                 "CREATE INDEX IF NOT EXISTS idx_hosts_url_user_no ON HOSTS_URL(user_no)");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_url_ws_no ON HOSTS_URL(ws_no)");
+            // One-level folders for the PROXY_VHOST list (per user, like the list rows themselves).
+            // An item points at its folder via PROXY_VHOST.folder_id; no folder = root.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS PROXY_FOLDER (
+                    folder_id   VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no     BIGINT       NOT NULL,
+                    folder_name VARCHAR(128) NOT NULL,
+                    sort_order  INT          NOT NULL DEFAULT 0,
+                    collapsed   BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_proxy_folder_user_name UNIQUE (user_no, folder_name)
+                )
+                """);
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
                     vhost_id          VARCHAR(32)    NOT NULL PRIMARY KEY,
@@ -332,16 +370,20 @@ public class DatabaseConfig {
                     parent_id         VARCHAR(32)    NULL,
                     wrapped_content_key CLOB         NULL,
                     link_content        CLOB         NULL,
+                    folder_id         VARCHAR(32)    NULL,
                     created_by        BIGINT         NOT NULL,
                     updated_by        BIGINT         NULL,
                     create_at         TIMESTAMP      NOT NULL,
                     updated_at        TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
-                    CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)
+                    CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id),
+                    CONSTRAINT fk_proxy_vhost_folder FOREIGN KEY (folder_id) REFERENCES PROXY_FOLDER(folder_id) ON DELETE SET NULL
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_parent ON PROXY_VHOST(parent_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_folder ON PROXY_VHOST(folder_id)");
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_updated_by ON PROXY_VHOST(updated_by)");
             conn.createStatement().execute("""
@@ -358,7 +400,10 @@ public class DatabaseConfig {
                 )
                 """);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize database schema", e);
+            // An existing table is never altered here (CREATE ... IF NOT EXISTS only), so a build
+            // that changed one fails on a database created before it - point at the fix.
+            throw new RuntimeException("Failed to initialize database schema. If this build changed an existing table, "
+                    + "stop oeHub and run it once with -Doe.migrate=<name> (src/main/resources/db/migration, see README).", e);
         }
     }
 }

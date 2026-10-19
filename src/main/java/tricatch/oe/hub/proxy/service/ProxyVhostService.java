@@ -1,10 +1,15 @@
 package tricatch.oe.hub.proxy.service;
 
+import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.proxy.mapper.ProxyVhostMapper;
 import tricatch.oe.hub.proxy.model.ProxyVhost;
+import tricatch.oe.hub.folder.FolderKind;
+import tricatch.oe.hub.folder.ListFolderMapper;
+import tricatch.oe.hub.folder.ListFolderService;
+import tricatch.oe.hub.util.NameTakenException;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -105,6 +110,7 @@ public class ProxyVhostService {
             var mapper = session.getMapper(ProxyVhostMapper.class);
             var record = mapper.findByVhostId(vhostId);
             if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0 || record.getParentId() != null) return null;
+            if (nameTaken(mapper.findProfileNamesByUserNo(userNo), record.getVhostProfile(), newName)) throw new NameTakenException();
             mapper.updateProfile(vhostId, userNo, newName, LocalDateTime.now());
             session.commit();
             return mapper.findByVhostId(vhostId);
@@ -153,7 +159,7 @@ public class ProxyVhostService {
      */
     public void deleteAll(Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
-            removeAllRows(session.getMapper(ProxyVhostMapper.class), userNo);
+            removeAllRows(session, userNo);
             session.commit();
         }
     }
@@ -184,13 +190,16 @@ public class ProxyVhostService {
                 }
             }
 
-            removeAllRows(mapper, userNo);
+            removeAllRows(session, userNo);
             session.commit();
         }
     }
 
-    // Deletes every row the user owns, then any shared (collabo) parent left with no references.
-    private void removeAllRows(ProxyVhostMapper mapper, Long userNo) {
+    // Deletes every row the user owns, then any shared (collabo) parent left with no references,
+    // then the user's folders (rows reassigned elsewhere just before, e.g. to wss on account
+    // removal, drop back to the root through the folder FK's ON DELETE SET NULL).
+    private void removeAllRows(SqlSession session, Long userNo) {
+        var mapper = session.getMapper(ProxyVhostMapper.class);
         var refs = mapper.findReferencesByUserNo(userNo);
         mapper.deleteByUserNo(userNo);
         for (var ref : refs) {
@@ -199,6 +208,7 @@ public class ProxyVhostService {
             }
         }
         mapper.deleteOrphanedParentsByCreator(userNo);
+        session.getMapper(ListFolderMapper.class).deleteByUserNo(FolderKind.PROXY, userNo);
     }
 
     public ProxyVhost copyVhost(Long userNo, String sourceVhostId) {
@@ -303,8 +313,10 @@ public class ProxyVhostService {
     public List<ProxyVhost> importVhosts(Long userNo, List<ProxyVhost> entries, boolean merge) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ProxyVhostMapper.class);
-            if (!merge) removeAllRows(mapper, userNo);
+            if (!merge) removeAllRows(session, userNo);
             var existingNames = existingNames(mapper, userNo);
+            var folderMapper = session.getMapper(ListFolderMapper.class);
+            var folderIds = ListFolderService.folderIdsByLowerName(folderMapper, FolderKind.PROXY, userNo);
             for (var entry : entries) {
                 entry.setVhostId(newId());
                 entry.setUserNo(userNo);
@@ -317,6 +329,7 @@ public class ProxyVhostService {
                 entry.setCreateAt(now);
                 entry.setUpdatedAt(now);
                 if (entry.getShareScope() == null) entry.setShareScope("private");
+                entry.setFolderId(ListFolderService.folderIdForImport(folderMapper, FolderKind.PROXY, userNo, entry.getFolderName(), entry.getSortOrder(), folderIds));
                 mapper.insert(entry);
             }
             session.commit();
@@ -341,6 +354,9 @@ public class ProxyVhostService {
             // Import creates standalone entries, never collabo refs, and a file that doesn't say
             // "workspace" must not make the row workspace-scoped - see ShareScopeUtil.forImport.
             v.setShareScope(tricatch.oe.hub.util.ShareScopeUtil.forImport(m.get("shareScope")));
+            // Folders travel by name (ids are per database); importProfiles/importVhosts finds or
+            // creates the folder.
+            v.setFolderName(tricatch.oe.hub.util.ImportFields.text(m, "folderName", null));
             entries.add(v);
         }
         return entries;
@@ -353,6 +369,13 @@ public class ProxyVhostService {
             var user = session.getMapper(HubUserMapper.class).findByUserNo(vhost.getUserNo());
             return user != null ? user.getUserId() : null;
         }
+    }
+
+    // Another of the user's entries already has newName (case-insensitive, like existingNames).
+    // The entry's own current name doesn't count, so a case-only rename of itself is allowed.
+    private static boolean nameTaken(List<String> names, String currentName, String newName) {
+        var same = names.stream().filter(n -> n.equalsIgnoreCase(newName)).count();
+        return same > (currentName.equalsIgnoreCase(newName) ? 1 : 0);
     }
 
     // Case-insensitive, matching countByUserNoAndProfile's LOWER() comparison this replaces.

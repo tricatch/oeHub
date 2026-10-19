@@ -10,12 +10,22 @@ public interface HostsProfMapper {
 
     // Shared by findByUserNo/findByHostsId: resolves a collabo/workspace reference row's real owner
     // (CASE WHEN ... ELSE -p.user_no, since a reference row's own user_no is stored negative) and
-    // whichever of the row itself or its parent was updated more recently, for display.
+    // whichever of the row itself or its parent was updated more recently, for display. f is the
+    // row's own sidebar folder (never the parent's - folders are per user).
     String JOIN_FOR_DISPLAY = """
         FROM HOSTS_PFILE h
         LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
+        LEFT JOIN HOSTS_FOLDER f ON f.folder_id = h.folder_id
         LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
         LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
+        """;
+
+    // The sidebar's order, which is also the merge order of the selected profiles: folders and the
+    // items outside any folder share one sort_order sequence (interleaved), and a folder's items
+    // follow it in their own sort_order.
+    String LIST_ORDER = """
+        ORDER BY COALESCE(f.sort_order, h.sort_order) ASC, CASE WHEN f.folder_id IS NULL THEN 0 ELSE 1 END,
+                 f.create_at ASC, f.folder_id ASC, h.sort_order ASC, h.updated_at ASC
         """;
 
     @Select("""
@@ -24,13 +34,13 @@ public interface HostsProfMapper {
                h.selected, h.sort_order, h.share_scope,
                h.parent_id, COALESCE(p.wrapped_content_key, h.wrapped_content_key) AS wrapped_content_key,
                h.wrapped_link_key,
+               h.folder_id, f.folder_name,
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
         """ + JOIN_FOR_DISPLAY + """
         WHERE h.user_no = #{userNo}
-        ORDER BY h.sort_order ASC, h.updated_at ASC
-        """)
+        """ + LIST_ORDER)
     List<HostsProf> findByUserNo(Long userNo);
 
     @Select("""
@@ -40,6 +50,7 @@ public interface HostsProfMapper {
                h.parent_id, COALESCE(p.wrapped_content_key, h.wrapped_content_key) AS wrapped_content_key,
                h.link_content,
                h.wrapped_link_key,
+               h.folder_id, f.folder_name,
                h.created_by, COALESCE(p.updated_by, h.updated_by) AS updated_by,
                COALESCE(p.updated_at, h.updated_at) AS updated_at,
                u.user_id, e.user_id AS updated_by_user_id
@@ -80,18 +91,21 @@ public interface HostsProfMapper {
 
     @Insert("""
         INSERT INTO HOSTS_PFILE (hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order,
-                                 share_scope, parent_id, wrapped_content_key, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, wrapped_content_key, folder_id, created_by, updated_by, create_at, updated_at)
         VALUES (#{hostsId}, #{userNo}, #{hostsProfile}, #{hostsContent}, #{selected}, #{sortOrder},
-                #{shareScope}, #{parentId}, #{wrappedContentKey}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
+                #{shareScope}, #{parentId}, #{wrappedContentKey}, #{folderId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt})
         """)
     void insert(HostsProf hostsProf);
 
+    // A new row goes after everything the user has - the sort_order sequence is shared with the
+    // folders (HOSTS_FOLDER), which the sidebar interleaves with the rows outside them.
     @Insert("""
         INSERT INTO HOSTS_PFILE (hosts_id, user_no, hosts_profile, hosts_content, selected, sort_order,
-                                 share_scope, parent_id, wrapped_content_key, created_by, updated_by, create_at, updated_at)
+                                 share_scope, parent_id, wrapped_content_key, folder_id, created_by, updated_by, create_at, updated_at)
         SELECT #{hostsId}, #{userNo}, #{hostsProfile}, #{hostsContent}, #{selected},
-               COALESCE(MAX(sort_order), -1) + 1,
-               #{shareScope}, #{parentId}, #{wrappedContentKey}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
+               GREATEST(COALESCE(MAX(sort_order), -1),
+                        COALESCE((SELECT MAX(sort_order) FROM HOSTS_FOLDER WHERE user_no = #{userNo}), -1)) + 1,
+               #{shareScope}, #{parentId}, #{wrappedContentKey}, #{folderId}, #{createdBy}, #{updatedBy}, #{createAt}, #{updatedAt}
         FROM HOSTS_PFILE
         WHERE user_no = #{userNo}
         """)
