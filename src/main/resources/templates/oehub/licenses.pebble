@@ -33,7 +33,7 @@
           <tr><td><a class="lib-link" href="https://h2database.com" target="_blank">H2 Database</a></td><td>2.5.252</td><td><span class="license-badge badge-mpl">MPL 2.0 / EPL 1.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://github.com/brettwooldridge/HikariCP" target="_blank">HikariCP</a></td><td>5.1.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://github.com/FasterXML/jackson" target="_blank">Jackson</a></td><td>2.22.2</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
-          <tr><td><a class="lib-link" href="https://javalin.io" target="_blank">Javalin</a></td><td>7.2.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
+          <tr><td><a class="lib-link" href="https://javalin.io" target="_blank">Javalin</a></td><td>7.2.3</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://github.com/jwtk/jjwt" target="_blank">JJWT</a></td><td>0.12.6</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://github.com/LittleProxy/LittleProxy" target="_blank">LittleProxy</a></td><td>2.9.0</td><td><span class="license-badge badge-apache">Apache 2.0</span></td></tr>
           <tr><td><a class="lib-link" href="https://logback.qos.ch" target="_blank">Logback</a></td><td>1.5.18</td><td><span class="license-badge badge-mpl">EPL 1.0 / LGPL 2.1</span></td></tr>
