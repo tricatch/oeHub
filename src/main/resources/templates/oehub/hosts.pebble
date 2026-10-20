@@ -442,10 +442,11 @@ function proxyServerOn() {
 
   async function decryptAllProfiles(list) {
     if (!window.OE_WORKSPACE_MODE) return;
-    const results = await Promise.all(list.map(decryptProfileInPlace));
     // The idle-expired encryption key (session-keys.js) is a separate concept from the auth
     // cookie itself - the user is still logged in, just needs to re-enter their password once to
-    // re-derive it, exactly like after a password change (see change.password.error.no.cached.key).
+    // re-derive it (key-unlock.js). The toast only remains for a dismissed prompt.
+    await OE_KEY_UNLOCK.ensure();
+    const results = await Promise.all(list.map(decryptProfileInPlace));
     if (results.some(Boolean)) showToast(MSG['change.password.error.no.cached.key']);
   }
 
@@ -465,6 +466,7 @@ function proxyServerOn() {
   // in self-hosted / when session keys aren't available yet.
   async function encryptNewContent(plaintext) {
     if (!window.OE_WORKSPACE_MODE) return null;
+    await OE_KEY_UNLOCK.ensure();
     const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
     if (!wsKey) return null;
     const dek = await OE_CRYPTO.generateContentKey();
@@ -478,6 +480,7 @@ function proxyServerOn() {
   // list or the editor. Any new "server hands back a row" path must go through here, never a bare
   // profiles.push(). Returns false (after a toast) when the needed session key had expired.
   async function addProfileRow(p) {
+    if (p.wrappedContentKey) await OE_KEY_UNLOCK.ensure();
     const keyExpired = await decryptProfileInPlace(p);
     if (keyExpired) showToast(MSG['change.password.error.no.cached.key']);
     profiles.push(p);

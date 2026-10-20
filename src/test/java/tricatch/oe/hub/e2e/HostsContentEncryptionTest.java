@@ -160,4 +160,48 @@ class HostsContentEncryptionTest {
         var editorContent = (String) page.evaluate("() => ace.edit('cmHostsEditor').getValue()");
         assertThat(editorContent).contains(PROBE_LINE);
     }
+
+    // Backdates the given session-keys.js cache entries past their idle TTL, as if the browser had
+    // sat unused for longer than that while the login cookie stayed valid.
+    private void expireCachedKeys(String... ids) {
+        page.evaluate("async (ids) => {"
+                + " const db = await new Promise((ok, err) => { const r = indexedDB.open('oehub-session-keys', 1); r.onsuccess = () => ok(r.result); r.onerror = () => err(r.error); });"
+                + " for (const id of ids) {"
+                + "   const store = () => db.transaction('keys', 'readwrite').objectStore('keys');"
+                + "   const entry = await new Promise(ok => { const r = store().get(id); r.onsuccess = () => ok(r.result); });"
+                + "   if (entry) await new Promise(ok => { const r = store().put({ value: entry.value, savedAt: 0 }, id); r.onsuccess = () => ok(); });"
+                + " }"
+                + " db.close(); }", java.util.List.of(ids));
+    }
+
+    @Test
+    @Order(5)
+    void onlyTheWorkspaceKeyExpired_isRestoredFromThePrivateKeyWithoutAPrompt() {
+        expireCachedKeys("workspaceKey");
+        page.reload();
+        page.waitForTimeout(800);
+        assertThat(page.locator("#keyUnlockModal.show")).hasCount(0);
+        var editorContent = (String) page.evaluate("() => ace.edit('cmHostsEditor').getValue()");
+        assertThat(editorContent).contains(PROBE_LINE);
+    }
+
+    @Test
+    @Order(6)
+    void idleExpiredKeys_areRestoredByReenteringThePassword() {
+        expireCachedKeys("privateKey", "workspaceKey");
+        page.reload();
+        assertThat(page.locator("#keyUnlockModal.show")).isVisible();
+
+        page.locator("#kuPassword").fill("WrongPass123!");
+        page.locator("#btnKeyUnlockConfirm").click();
+        assertThat(page.locator("#kuError")).isVisible();
+        assertThat(page.locator("#keyUnlockModal.show")).isVisible();
+
+        page.locator("#kuPassword").fill(USER_PW);
+        page.locator("#btnKeyUnlockConfirm").click();
+        assertThat(page.locator("#keyUnlockModal.show")).hasCount(0);
+        page.waitForTimeout(500);
+        var editorContent = (String) page.evaluate("() => ace.edit('cmHostsEditor').getValue()");
+        assertThat(editorContent).contains(PROBE_LINE);
+    }
 }

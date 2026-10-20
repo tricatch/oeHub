@@ -122,6 +122,7 @@
 <script src="{{ asset('/js/auth-keys.js') }}"></script>
 <script src="{{ asset('/js/session-keys.js') }}"></script>
 <script src="{{ asset('/js/content-crypto.js') }}"></script>
+<script src="{{ asset('/js/key-unlock.js') }}"></script>
 <script src="{{ asset('/js/recovery-code-modal.js') }}"></script>
 <script nonce="{{ cspNonce }}">
   // Cached private/workspace keys (e2eEncryption design doc §3) are only meaningful for the
@@ -146,6 +147,34 @@
   <span class="oe-icon oe-icon-success" style="width:21px;height:21px"></span>
   <span class="oe-toast-msg"></span>
 </div>
+
+{% if workspaceMode and user is not null %}
+<!-- Re-enter password to restore idle-expired session keys (key-unlock.js) -->
+<div class="modal fade" id="keyUnlockModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header"><h5 class="modal-title">{{ msg['key.unlock.title'] }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ msg['key.unlock.desc'] }}</p>
+        <div class="mb-1">
+          <label class="form-label small mb-1" for="kuPassword">{{ msg['auth.password'] }}</label>
+          <input type="password" class="form-control form-control-sm" id="kuPassword" autocomplete="current-password">
+        </div>
+        <div class="small text-danger d-none" id="kuError"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+        <button type="button" class="oe-modal-btn" id="btnKeyUnlockConfirm">{{ msg['btn.confirm'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ cspNonce }}">
+  // Every page checks once on load, so an idle-expired key is restored before anything needs it;
+  // pages that decrypt on load (hosts.pebble) await the same prompt through OE_KEY_UNLOCK.ensure().
+  OE_KEY_UNLOCK.ensure().catch(function (err) { console.error('Key unlock check failed:', err); });
+</script>
+{% endif %}
 
 <!-- Restore modal -->
 <div class="modal fade" id="restoreModal" tabindex="-1">
