@@ -15,6 +15,8 @@
 // encryption keys sit ready-to-use with no further secret needed. Bounding how long an unwrapped
 // key survives without any actual use of the app narrows that window - it's defense in depth,
 // not a substitute for not getting compromised in the first place (see docs/06-security-model.md).
+// The idle window is the user's choice per browser, made in the password re-entry modal
+// (key-unlock.js), and is stored next to the keys so logout clears it along with them.
 
 const OE_SESSION_KEYS = (function () {
   'use strict';
@@ -24,9 +26,13 @@ const OE_SESSION_KEYS = (function () {
   const STORE_NAME = 'keys';
   const PRIVATE_KEY_ID = 'privateKey';
   const WORKSPACE_KEY_ID = 'workspaceKey';
+  const IDLE_TTL_ID = 'idleTtl';
   // Each successful load() pushes this back out (expire-after-access, not expire-after-write) -
   // an actively-used session never hits this, only one left sitting idle does.
-  const IDLE_TTL_MS = 4 * 60 * 60 * 1000;
+  const HOUR_MS = 60 * 60 * 1000;
+  const DEFAULT_IDLE_TTL_MS = 4 * HOUR_MS;
+  // 0 = never expire on idleness; the keys then live until logout (or the next login).
+  const IDLE_TTL_CHOICES = [4 * HOUR_MS, 24 * HOUR_MS, 7 * 24 * HOUR_MS, 0];
 
   function openDb() {
     return new Promise((resolve, reject) => {
@@ -49,16 +55,31 @@ const OE_SESSION_KEYS = (function () {
     });
   }
 
-  async function get(id) {
+  async function read(id) {
     const db = await openDb();
-    const entry = await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const req = tx.objectStore(STORE_NAME).get(id);
       req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
       req.onerror = () => { db.close(); reject(req.error); };
     });
+  }
+
+  async function loadIdleTtl() {
+    const entry = await read(IDLE_TTL_ID);
+    return entry && IDLE_TTL_CHOICES.includes(entry.value) ? entry.value : DEFAULT_IDLE_TTL_MS;
+  }
+
+  async function saveIdleTtl(ms) {
+    if (!IDLE_TTL_CHOICES.includes(ms)) throw new Error('Unsupported idle TTL: ' + ms);
+    await put(IDLE_TTL_ID, ms);
+  }
+
+  async function get(id) {
+    const entry = await read(id);
     if (!entry) return null;
-    if (Date.now() - entry.savedAt > IDLE_TTL_MS) {
+    const ttl = await loadIdleTtl();
+    if (ttl > 0 && Date.now() - entry.savedAt > ttl) {
       await remove(id);
       return null;
     }
@@ -94,6 +115,9 @@ const OE_SESSION_KEYS = (function () {
     loadPrivateKey: () => get(PRIVATE_KEY_ID),
     saveWorkspaceKey: (key) => put(WORKSPACE_KEY_ID, key),
     loadWorkspaceKey: () => get(WORKSPACE_KEY_ID),
+    IDLE_TTL_CHOICES,
+    loadIdleTtl,
+    saveIdleTtl,
     clearAll,
   };
 })();

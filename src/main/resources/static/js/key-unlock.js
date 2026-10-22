@@ -6,6 +6,9 @@
 // login. Nothing is sent to the server: the wrapped key is already readable by this session
 // (/api/user/crypto-keys), so checking the password against it locally exposes nothing new.
 //
+// The modal also lets the user pick how long the keys may sit idle in this browser before the next
+// prompt (OE_SESSION_KEYS.saveIdleTtl); the choice is saved only together with a successful unlock.
+//
 // ensure() resolves true once the keys are cached (or there is nothing to unlock: self-hosted, or
 // an account without a keypair) and false when the user cancels. Concurrent callers (the layout's
 // page-load check and a page's own decrypt path) share one pending prompt.
@@ -50,6 +53,22 @@ const OE_KEY_UNLOCK = (function () {
     await new Promise(function (resolve) { document.addEventListener('DOMContentLoaded', resolve, { once: true }); });
   }
 
+  // Option label per OE_SESSION_KEYS.IDLE_TTL_CHOICES entry (0 = until logout).
+  function ttlLabel(ms) {
+    return MSG[ms ? 'key.unlock.ttl.' + (ms / 3600000) + 'h' : 'key.unlock.ttl.never'];
+  }
+
+  function fillTtlSelect(select, current) {
+    select.innerHTML = '';
+    OE_SESSION_KEYS.IDLE_TTL_CHOICES.forEach(function (ms) {
+      const opt = document.createElement('option');
+      opt.value = String(ms);
+      opt.textContent = ttlLabel(ms);
+      select.appendChild(opt);
+    });
+    select.value = String(current);
+  }
+
   // Shows the modal and resolves with the unwrapped (non-extractable, as at login) private key,
   // already saved to the session cache, or null when the modal is dismissed.
   async function promptForPassword(record) {
@@ -59,6 +78,8 @@ const OE_KEY_UNLOCK = (function () {
     const input = document.getElementById('kuPassword');
     const errEl = document.getElementById('kuError');
     const btn = document.getElementById('btnKeyUnlockConfirm');
+    const ttlSelect = document.getElementById('kuIdleTtl');
+    fillTtlSelect(ttlSelect, await OE_SESSION_KEYS.loadIdleTtl());
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
 
     input.value = '';
@@ -90,6 +111,7 @@ const OE_KEY_UNLOCK = (function () {
             input.focus();
             return; // GCM authentication failed: wrong password
           }
+          await OE_SESSION_KEYS.saveIdleTtl(Number(ttlSelect.value));
           await OE_SESSION_KEYS.savePrivateKey(privateKey);
           unlocked = privateKey;
           modal.hide();

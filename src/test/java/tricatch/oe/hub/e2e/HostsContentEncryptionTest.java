@@ -204,4 +204,26 @@ class HostsContentEncryptionTest {
         var editorContent = (String) page.evaluate("() => ace.edit('cmHostsEditor').getValue()");
         assertThat(editorContent).contains(PROBE_LINE);
     }
+
+    @Test
+    @Order(7)
+    void choosingUntilLogout_keepsIdleKeysCachedWithoutAnotherPrompt() {
+        expireCachedKeys("privateKey", "workspaceKey");
+        page.reload();
+        assertThat(page.locator("#keyUnlockModal.show")).isVisible();
+        assertThat(page.locator("#kuIdleTtl")).hasValue(String.valueOf(4 * 60 * 60 * 1000));
+
+        page.locator("#kuIdleTtl").selectOption("0");
+        page.locator("#kuPassword").fill(USER_PW);
+        page.locator("#btnKeyUnlockConfirm").click();
+        assertThat(page.locator("#keyUnlockModal.show")).hasCount(0);
+
+        // Backdated keys would be dropped under the default window; with "until logout" they stay.
+        expireCachedKeys("privateKey", "workspaceKey");
+        page.reload();
+        page.waitForTimeout(800);
+        assertThat(page.locator("#keyUnlockModal.show")).hasCount(0);
+        var editorContent = (String) page.evaluate("() => ace.edit('cmHostsEditor').getValue()");
+        assertThat(editorContent).contains(PROBE_LINE);
+    }
 }

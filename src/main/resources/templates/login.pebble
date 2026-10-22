@@ -173,6 +173,9 @@
     // Not extractable: this copy stays in the browser for the session and is only ever used to unwrap
     // other keys (re-wrapping the private key unwraps a fresh, extractable one - see OE_AUTH.currentSecrets).
     var privateKey = await OE_CRYPTO.unwrapPrivateKey(record, passwordKek, false);
+    // Start from a clean cache: a session that ended without logout (expired cookie) may have left
+    // another account's keys or idle-time choice behind in this browser.
+    await OE_SESSION_KEYS.clearAll();
     await OE_SESSION_KEYS.savePrivateKey(privateKey);
 
     if (data.wrappedWsKey) {
