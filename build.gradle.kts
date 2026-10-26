@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.gradleup.shadow") version "8.3.5"
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 group = "tricatch.oe.hub"
@@ -34,7 +34,7 @@ dependencies {
     implementation("io.pebbletemplates:pebble:4.1.2")
     implementation("org.mybatis:mybatis:3.6.0")
     implementation("com.h2database:h2:2.5.252")
-    implementation("com.zaxxer:HikariCP:5.1.0")
+    implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("io.jsonwebtoken:jjwt-api:0.13.0")
     implementation("io.github.tricatch:gotpache-keytool:0.1.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.86")
@@ -48,7 +48,7 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.13.0")
 
     testImplementation("io.javalin:javalin-testtools:7.2.4")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.14.4")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
     testImplementation("org.assertj:assertj-core:3.27.7")
     testImplementation("com.microsoft.playwright:playwright:1.64.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -95,6 +95,11 @@ tasks.shadowJar {
     manifest {
         attributes["Main-Class"] = "tricatch.oe.hub.OeHubApplication"
         attributes["Implementation-Version"] = project.version
+    }
+    // Shadow 9 defaults to EXCLUDE, which drops duplicate service files before mergeServiceFiles()
+    // sees them (e.g. Jetty's webapp Configurations, Jackson's JsonFactory). Let only those through.
+    filesMatching("META-INF/services/**") {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
     }
     mergeServiceFiles()
 }
