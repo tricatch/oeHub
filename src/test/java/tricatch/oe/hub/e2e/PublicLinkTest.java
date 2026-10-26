@@ -206,9 +206,10 @@ class PublicLinkTest {
         // changes but always shows the latest content - no more stale snapshot.
         page.locator("#cmHostsEditor").click();
         page.keyboard().press("Control+A");
-        page.keyboard().type(SECOND_PROBE_LINE);
-        assertThat(page.locator("#saveStatus")).containsText("Saved",
-                new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+        // Wait for the debounced save itself, not "Saved" - that text can still be showing from an earlier save.
+        var saved = page.waitForResponse(r -> r.url().endsWith("/content") && r.request().method().equals("PATCH"),
+                () -> page.keyboard().type(SECOND_PROBE_LINE));
+        assertThat(saved.status()).isEqualTo(200);
 
         var anonContext = browser.newContext();
         var anonPage = anonContext.newPage();
@@ -248,9 +249,10 @@ class PublicLinkTest {
 
         page.locator("#cmHostsEditor").click();
         page.keyboard().press("Control+A");
-        page.keyboard().type(THIRD_PROBE_LINE);
-        assertThat(page.locator("#saveStatus")).containsText("Saved",
-                new com.microsoft.playwright.assertions.LocatorAssertions.ContainsTextOptions().setTimeout(5000));
+        // Wait for the debounced save itself, not "Saved" - that text can still be showing from an earlier save.
+        var saved = page.waitForResponse(r -> r.url().endsWith("/content") && r.request().method().equals("PATCH"),
+                () -> page.keyboard().type(THIRD_PROBE_LINE));
+        assertThat(saved.status()).isEqualTo(200);
 
         var anonContext = browser.newContext();
         var anonPage = anonContext.newPage();

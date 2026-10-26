@@ -200,7 +200,7 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js" integrity="sha384-e7M5uM+69Pk0fBAnkRuFwRvZG2nFlXu572zM5jIUo36Pumtw+No4zRokAbDcqSuA" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.44.0/ace.min.js" integrity="sha384-awj15LyQFNOkL94NhJ0EEH9En00b0Toh1WOLAwpTnYY45w1aVce0uz8hhK4eIfTR" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous"></script>
 <script src="{{ asset('/js/ace-init.js') }}"></script>
 <script src="{{ asset('/js/list-folders.js') }}"></script>

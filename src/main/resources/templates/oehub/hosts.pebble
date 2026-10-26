@@ -5,7 +5,7 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
 <link rel="stylesheet" href="{{ asset('/css/hosts.css') }}">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js" integrity="sha384-e7M5uM+69Pk0fBAnkRuFwRvZG2nFlXu572zM5jIUo36Pumtw+No4zRokAbDcqSuA" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.44.0/ace.min.js" integrity="sha384-awj15LyQFNOkL94NhJ0EEH9En00b0Toh1WOLAwpTnYY45w1aVce0uz8hhK4eIfTR" crossorigin="anonymous"></script>
 <script src="{{ asset('/js/ace-init.js') }}"></script>
 <script src="{{ asset('/js/chrome-launch-args.js') }}"></script>
 <script src="{{ asset('/js/chrome-cmd-modal.js') }}"></script>
