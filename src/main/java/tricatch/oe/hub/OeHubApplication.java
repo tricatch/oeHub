@@ -129,6 +129,14 @@ public class OeHubApplication {
             b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    private static <T extends Throwable> T findCause(Throwable e, Class<T> type) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (type.isInstance(t)) return type.cast(t);
+            if (t.getCause() == t) break;
+        }
+        return null;
+    }
+
     private static int resolvePort() {
         String prop = System.getProperty("oe.port");
         if (prop != null && !prop.isBlank()) {
@@ -645,6 +653,16 @@ public class OeHubApplication {
             }
 
             config.routes.exception(Exception.class, (e, ctx) -> {
+                // A request Jetty itself refuses to parse (e.g. an anonymous scanner's oversized
+                // multipart POST, which the CSRF filter's formParam() makes Jetty read) is the
+                // client's fault: answer with Jetty's own 4xx and keep it to one log line.
+                var badMessage = findCause(e, org.eclipse.jetty.http.BadMessageException.class);
+                if (badMessage != null) {
+                    var root = badMessage.getCause() != null ? badMessage.getCause() : badMessage;
+                    logger.warn("Rejected malformed request on {} ({}): {}", ctx.path(), badMessage.getCode(), root.getMessage());
+                    ctx.status(badMessage.getCode()).result("Bad Request");
+                    return;
+                }
                 // Full detail (including e.getMessage(), which can contain internal paths or
                 // driver/library text) goes to the server log only - returning it to the client
                 // would leak implementation details to anonymous callers on any unauthenticated
