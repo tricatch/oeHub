@@ -10,6 +10,7 @@
 <script src="{{ asset('/js/chrome-launch-args.js') }}"></script>
 <script src="{{ asset('/js/chrome-cmd-modal.js') }}"></script>
 <script src="{{ asset('/js/oelink-cmd-modal.js') }}"></script>
+<script src="{{ asset('/js/oelink-install-modal.js') }}"></script>
 <script src="{{ asset('/js/list-folders.js') }}"></script>
 <script src="{{ asset('/js/share-scope-menu.js') }}"></script>
 {% endblock %}
@@ -224,59 +225,7 @@
   </div>
 </div>
 
-<!-- oelink install modal -->
-<div class="modal fade" id="oelinkInstallModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content oe-modal">
-      <div class="modal-header oe-modal-header">
-        <h5 class="modal-title">{{ msg['modal.install.oelink'] }}</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-muted small mb-3">{{ msg['hosts.install.desc'] }}</p>
-        <div class="mb-3">
-          <div class="hosts-right-label mb-2">{{ msg['hosts.install.steps.title'] }}</div>
-          <ol class="small text-muted ps-3" style="line-height:1.9">
-            <li>{{ msg['hosts.install.step1'] }}</li>
-            <li>{{ msg['hosts.install.step2'] }}</li>
-            <li>{{ msg['hosts.install.step3'] | raw }}</li>
-            <li>{{ msg['hosts.install.step4'] }}</li>
-          </ol>
-        </div>
-        {# One-line installers from the oeLink repo. Fetched by PowerShell/curl rather than a browser,
-           so no Mark-of-the-Web / quarantine flag and no SmartScreen or Gatekeeper prompt. The block
-           for the other OS is hidden by the script below once the visitor's OS is known. #}
-        <div class="chrome-cmd-block" data-oelink-os="win">
-          <div class="chrome-cmd-head">
-            <span class="chrome-cmd-label">{{ msg['hosts.install.os.win'] }}</span>
-          </div>
-          <div class="oelink-install-cmd">
-            <pre class="chrome-cmd-script">irm https://raw.githubusercontent.com/tricatch/oeLink/main/win/install.ps1 | iex</pre>
-            <button type="button" class="oelink-install-copy" title="{{ msg['hosts.install.copy'] }}" aria-label="{{ msg['hosts.install.copy'] }}"><span class="oe-icon oe-icon-copy"></span></button>
-          </div>
-          <div class="small text-muted mt-1">{{ msg['hosts.install.uninstall.win'] }}</div>
-        </div>
-        <div class="chrome-cmd-block" data-oelink-os="mac">
-          <div class="chrome-cmd-head">
-            <span class="chrome-cmd-label">{{ msg['hosts.install.os.mac'] }}</span>
-          </div>
-          <div class="oelink-install-cmd">
-            <pre class="chrome-cmd-script">curl -fsSL https://raw.githubusercontent.com/tricatch/oeLink/main/mac/install.sh | bash</pre>
-            <button type="button" class="oelink-install-copy" title="{{ msg['hosts.install.copy'] }}" aria-label="{{ msg['hosts.install.copy'] }}"><span class="oe-icon oe-icon-copy"></span></button>
-          </div>
-          <div class="small text-muted mt-1">{{ msg['hosts.install.uninstall.mac'] }} <code>bash /Applications/oelink.app/Contents/Resources/uninstall.sh</code></div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <div class="form-check me-auto">
-          <input class="form-check-input" type="checkbox" id="oelinkGuideNoShow">
-          <label class="form-check-label small text-muted" for="oelinkGuideNoShow">{{ msg['hosts.install.no.show'] }}</label>
-        </div>
-        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
-      </div>
-    </div>
-  </div>
-</div>
+{% include "templates/oehub/_oelink-install-modal.pebble" %}
 
 {% set importLinkPlaceholder = msg['import.placeholder.hosts'] %}
 {% set importLinkTitle = "oeHosts" %}
@@ -1303,18 +1252,7 @@ function proxyServerOn() {
   {% endif %}
 
   // ── oelink install commands by OS ───────────────────────────
-  // Shows only the visitor's OS; an unrecognized OS keeps both blocks visible.
-  {
-    const ua = navigator.userAgent;
-    const os = ua.includes('Win') ? 'win' : ua.includes('Mac') ? 'mac' : null;
-    document.querySelectorAll('#oelinkInstallModal [data-oelink-os]').forEach(block => {
-      if (os && block.dataset.oelinkOs !== os) block.classList.add('d-none');
-      block.querySelector('.oelink-install-copy').addEventListener('click', () => {
-        copyToClipboard(block.querySelector('pre').textContent)
-          .then(() => showToast(MSG['toast.oelink.install.copied']));
-      });
-    });
-  }
+  wireOelinkInstallModal();
 
 
 
