@@ -83,6 +83,7 @@
             {% endif %}
             {% endif %}
             <a href="/oehub/licenses" class="dropdown-item">{{ msg['nav.licenses'] }}</a>
+            <a href="https://github.com/tricatch/oeHub/issues" target="_blank" rel="noopener" class="dropdown-item">{{ msg['nav.report.issue'] }}</a>
             <hr class="dropdown-divider">
             <a href="#" class="dropdown-item" id="navBtnBackup">{{ msg['nav.backup'] }}</a>
             <a href="#" class="dropdown-item" id="navBtnRestore">{{ msg['nav.restore'] }}</a>

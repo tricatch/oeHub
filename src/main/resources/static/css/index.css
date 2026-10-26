@@ -3,6 +3,11 @@
   margin: 0 auto;
 }
 
+/* Two tool cards side by side (self-hosted mode) need more room than the single-card layout */
+.oe-content.oe-content-wide {
+  max-width: 56rem;
+}
+
 .oe-hero {
   text-align: center;
   padding: 2.5rem 0 1.75rem;
