@@ -129,6 +129,13 @@ public class OeHubApplication {
             b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    // The only routes that accept a multipart (file upload) body: importing an existing root CA
+    // certificate + key, from the setup wizard and from admin settings. A new upload route must be
+    // added here, or every request to it is refused with 415.
+    private static final java.util.Set<String> MULTIPART_ROUTES = java.util.Set.of(
+        "/setup/ca/import",
+        "/adm/settings/ca/import");
+
     private static <T extends Throwable> T findCause(Throwable e, Class<T> type) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             if (type.isInstance(t)) return type.cast(t);
@@ -200,6 +207,19 @@ public class OeHubApplication {
             } else {
                 config.staticFiles.add("/static", Location.CLASSPATH);
             }
+
+            // File uploads (multipart bodies) are accepted only on the routes that take one -
+            // see MULTIPART_ROUTES. Everywhere else they are refused before anything reads the
+            // body: without this, the CSRF filter below would make Jetty parse a scanner's
+            // multipart POST just to look for a _csrf field in it.
+            config.routes.before(ctx -> {
+                var contentType = ctx.contentType();
+                if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")
+                        && !MULTIPART_ROUTES.contains(ctx.path())) {
+                    ctx.status(415).result("Unsupported Media Type");
+                    ctx.skipRemainingHandlers();
+                }
+            });
 
             // CSRF protection (double-submit cookie): a per-browser random token is set as a
             // non-HttpOnly cookie so client JS can read and echo it back; every state-changing

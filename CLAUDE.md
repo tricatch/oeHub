@@ -58,6 +58,7 @@ Every URL (page, API, form POST) belongs to exactly one access class, and the cl
 3. Add or extend an e2e assertion for the denied cases (wrong role → 403, no session → 401 for `/api/**` or a login redirect for pages).
 4. Update the Korean API reference (`docs/08-api-reference.md`) under the section for that prefix.
 5. If a nav link is added, gate it in `app-layout.pebble` by role and mode.
+6. If it accepts a file upload (a multipart body), add the path to `MULTIPART_ROUTES` in `OeHubApplication`; every other route refuses multipart with 415.
 
 ### Adding or renaming a role
 Update `Role`, the `HUB_USR.role` column width, the affected mapper SQL, the per-prefix filters, and the Korean docs (`docs/04`, `docs/07`, `docs/08`) together, in one change.

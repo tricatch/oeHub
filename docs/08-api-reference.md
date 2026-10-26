@@ -11,6 +11,9 @@
 필드, `oe_csrf` 쿠키와 대조)이 추가로 필요하다. `static/js/util.js`의 전역 `fetch` 래퍼가 같은
 오리진 요청에는 이 헤더를 자동으로 붙여준다.
 
+파일 업로드(`multipart/*` 본문)는 루트 CA 가져오기(`/setup/ca/import`, `/adm/settings/ca/import`)에서만
+받는다. 그 밖의 경로로 보낸 multipart 요청은 본문을 읽지 않고 `415`로 거절한다.
+
 `workspace` 모드에서는 비밀번호를 받는 모든 필드(`/login`, `/register`, `/setup`의 `password`,
 `/api/user/change-password`의 `currentPassword`·`newPassword`, `/api/user/recovery-key`·`/api/user/delete-account`의
 `currentPassword`, `/api/recover/reset`의 `newPassword`)가 타이핑한 비밀번호가 아니라 브라우저가
