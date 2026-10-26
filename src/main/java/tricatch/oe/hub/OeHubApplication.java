@@ -5,6 +5,8 @@ import io.javalin.http.staticfiles.Location;
 import io.javalin.rendering.FileRenderer;
 import io.pebbletemplates.pebble.PebbleEngine;
 import io.pebbletemplates.pebble.loader.FileLoader;
+import tricatch.oe.hub.config.ClientIp;
+import tricatch.oe.hub.config.ScanBlocker;
 import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.i18n.Messages;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -136,7 +138,7 @@ public class OeHubApplication {
         "/setup/ca/import",
         "/adm/settings/ca/import");
 
-    private static <T extends Throwable> T findCause(Throwable e, Class<T> type) {
+    private static <T> T findCause(Throwable e, Class<T> type) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             if (type.isInstance(t)) return type.cast(t);
             if (t.getCause() == t) break;
@@ -207,6 +209,16 @@ public class OeHubApplication {
             } else {
                 config.staticFiles.add("/static", Location.CLASSPATH);
             }
+
+            // Scan blocking (ScanBlocker): an address that racked up too many anonymous 404s is
+            // refused outright, first, before any other filter does work for it. The counting side
+            // is the after-handler below.
+            config.routes.before(ctx -> {
+                if (ScanBlocker.isBlocked(ClientIp.of(ctx))) {
+                    ctx.status(403).result("Forbidden");
+                    ctx.skipRemainingHandlers();
+                }
+            });
 
             // File uploads (multipart bodies) are accepted only on the routes that take one -
             // see MULTIPART_ROUTES. Everywhere else they are refused before anything reads the
@@ -346,6 +358,16 @@ public class OeHubApplication {
                 }
             });
 
+            // Counting side of scan blocking (see the first before-filter): only anonymous 404s -
+            // a logged-in user's 404 (a deleted shared profile, a retried save) is not probing.
+            config.routes.after(ctx -> {
+                if (ctx.statusCode() != 404 || AuthController.currentUser(ctx) != null) return;
+                var ip = ClientIp.of(ctx);
+                if (ScanBlocker.recordNotFound(ip)) {
+                    logger.warn("Blocking {} for 10 min after repeated 404s (last: {})", ip, ctx.path());
+                }
+            });
+
             config.routes.after(ctx -> {
                 LocaleContext.clear();
                 // Prevents the app from being embedded in a foreign <iframe>/<frame>, which
@@ -364,6 +386,10 @@ public class OeHubApplication {
                     ctx.header("Expires", "0");
                 }
             });
+
+            // Anonymous: browsers ask for /favicon.ico on their own (raw text/JSON responses have no
+            // <link rel=icon>), and answering 404 would count toward ScanBlocker for every visitor.
+            config.routes.get("/favicon.ico", ctx -> ctx.redirect("/icon/oe_logo_favicon.svg", io.javalin.http.HttpStatus.MOVED_PERMANENTLY));
 
             config.routes.get("/setup", setup::showSetup);
             config.routes.post("/setup", setup::processSetup);
@@ -676,11 +702,12 @@ public class OeHubApplication {
                 // A request Jetty itself refuses to parse (e.g. an anonymous scanner's oversized
                 // multipart POST, which the CSRF filter's formParam() makes Jetty read) is the
                 // client's fault: answer with Jetty's own 4xx and keep it to one log line.
-                var badMessage = findCause(e, org.eclipse.jetty.http.BadMessageException.class);
-                if (badMessage != null) {
-                    var root = badMessage.getCause() != null ? badMessage.getCause() : badMessage;
-                    logger.warn("Rejected malformed request on {} ({}): {}", ctx.path(), badMessage.getCode(), root.getMessage());
-                    ctx.status(badMessage.getCode()).result("Bad Request");
+                var badRequest = findCause(e, org.eclipse.jetty.http.HttpException.class);
+                if (badRequest != null && badRequest.getCode() >= 400 && badRequest.getCode() < 500) {
+                    var cause = ((Throwable) badRequest).getCause();
+                    var reason = cause != null ? cause.getMessage() : badRequest.getReason();
+                    logger.warn("Rejected malformed request on {} ({}): {}", ctx.path(), badRequest.getCode(), reason);
+                    ctx.status(badRequest.getCode()).result("Bad Request");
                     return;
                 }
                 // Full detail (including e.getMessage(), which can contain internal paths or

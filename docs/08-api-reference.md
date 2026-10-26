@@ -14,6 +14,9 @@
 파일 업로드(`multipart/*` 본문)는 루트 CA 가져오기(`/setup/ca/import`, `/adm/settings/ca/import`)에서만
 받는다. 그 밖의 경로로 보낸 multipart 요청은 본문을 읽지 않고 `415`로 거절한다.
 
+로그인하지 않은 같은 IP에서 1분 안에 404가 10번 나면 그 IP의 모든 요청은 10분간 `403`을 받는다
+(README의 "스캔 차단" 참고). `GET /favicon.ico`는 익명 경로로, `/icon/oe_logo_favicon.svg`로 `301` 리다이렉트한다.
+
 `workspace` 모드에서는 비밀번호를 받는 모든 필드(`/login`, `/register`, `/setup`의 `password`,
 `/api/user/change-password`의 `currentPassword`·`newPassword`, `/api/user/recovery-key`·`/api/user/delete-account`의
 `currentPassword`, `/api/recover/reset`의 `newPassword`)가 타이핑한 비밀번호가 아니라 브라우저가

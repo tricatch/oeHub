@@ -138,6 +138,14 @@ java -Dlogback.configurationFile=/path/to/logback.xml -jar oeHub-<version>.jar
 
 Logback은 jar에 포함된 설정으로 넘어가기 전에 이 시스템 프로퍼티를 먼저 확인합니다.
 
+### 스캔 차단
+
+로그인하지 않은 같은 IP에서 1분 안에 404가 10번 나면, 그 IP의 모든 요청을 10분간 `403`으로 거절합니다. 경로를 훑는 자동 스캐너를 막기 위한 것으로, 차단을 시작할 때 WARN 로그 한 줄을 남깁니다.
+
+- 로그인한 사용자의 404는 세지 않습니다(지워진 공유 프로필 열기, 저장 재시도 등 정상적인 404가 있을 수 있음).
+- loopback 주소는 차단하지 않습니다. 같은 머신의 프록시 뒤에서 실행한다면 `-Doe.client.ip.header`를 지정해야 클라이언트별로 동작합니다.
+- 차단 상태는 메모리에만 있어서 재시작하면 풀립니다.
+
 ## 기술 스택
 
 - [Javalin](https://javalin.io/) + [Pebble](https://pebbletemplates.io/) 템플릿
