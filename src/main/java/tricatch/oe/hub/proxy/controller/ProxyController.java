@@ -5,6 +5,7 @@ import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tricatch.oe.hub.config.ClientIp;
 import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.proxy.ReverseProxySettings;
@@ -44,7 +45,7 @@ public class ProxyController {
 
     public void showProxy(Context ctx) {
         var hubUser = AuthController.currentUser(ctx);
-        var clientIp = ctx.ip();
+        var clientIp = ClientIp.of(ctx);
         var localSvrOverride = confService.get("local_svr", hubUser.getUserNo());
         var ipIdentifierEnabled = ReverseProxyServer.isIpIdentifierEnabled();
         var claimedOid = ReverseProxyServer.getClaimedIdentifier(clientIp);
@@ -65,8 +66,9 @@ public class ProxyController {
     // "Use This IP" on the oeProxy page - lets an owner explicitly claim their current browsing
     // IP for the reverse proxy's IP-based fallback (see ReverseProxyServer.resolveIdentifier()),
     // instead of relying only on the X-OeHub-Oid header. The IP is read server-side from the
-    // request itself (ctx.ip()), never from client input, so a caller cannot claim an IP other
-    // than the one they're actually connecting from.
+    // request itself (ClientIp.of(ctx): the connection's address, or a local proxy's header for
+    // it), never from client input, so a caller cannot claim an IP other than the one they're
+    // actually connecting from.
     public void apiTakeIp(Context ctx) {
         // An admin can turn the IP-based fallback off entirely (Settings > oeProxy - Identifier)
         // when it's unreliable; resolveIdentifier() then never consults ClaimedIpRegistry at all, so a
@@ -78,8 +80,8 @@ public class ProxyController {
             return;
         }
         var hubUser = AuthController.currentUser(ctx);
-        ReverseProxyServer.claimIp(ctx.ip(), hubUser.getUserNo());
-        ctx.json(Map.of("ip", ctx.ip(), "ttlHours", ReverseProxyServer.claimedIpTtlHours()));
+        ReverseProxyServer.claimIp(ClientIp.of(ctx), hubUser.getUserNo());
+        ctx.json(Map.of("ip", ClientIp.of(ctx), "ttlHours", ReverseProxyServer.claimedIpTtlHours()));
     }
 
     public void showMonitor(Context ctx) {
@@ -199,7 +201,7 @@ public class ProxyController {
             }
         }
 
-        if (updated.isSelected() && !applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+        if (updated.isSelected() && !applyMergedConfig(hubUser.getUserNo(), ClientIp.of(ctx))) {
             // The draft content above was still saved successfully; only pushing it live as part
             // of the merged config failed. Return it anyway (with a 400) so the client can tell
             // the two apart instead of reporting this as a plain save failure.
@@ -228,7 +230,7 @@ public class ProxyController {
         var hubUser = AuthController.currentUser(ctx);
         var updated = vhostService.toggleSelected(ctx.pathParam("vhostId"), hubUser.getUserNo());
         if (updated == null) { ctx.status(404); return; }
-        if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip())) {
+        if (!applyMergedConfig(hubUser.getUserNo(), ClientIp.of(ctx))) {
             // The selection toggle itself was still saved; only the resulting merge was rejected.
             flagUpstreamRejection(ctx);
             ctx.status(400).json(updated);
@@ -269,14 +271,14 @@ public class ProxyController {
         vhostService.delete(ctx.pathParam("vhostId"), userNo);
         // The live routing table is a copy of the selected vhosts as of the last apply; a deleted
         // vhost's routes would otherwise keep serving until the next apply or a restart.
-        refreshLiveRouting(vhostService, confService, userNo, ctx.ip(), true);
+        refreshLiveRouting(vhostService, confService, userNo, ClientIp.of(ctx), true);
         ctx.status(204);
     }
 
     public void apiDeleteAll(Context ctx) {
         var userNo = AuthController.currentUser(ctx).getUserNo();
         vhostService.deleteAll(userNo);
-        refreshLiveRouting(vhostService, confService, userNo, ctx.ip(), true);
+        refreshLiveRouting(vhostService, confService, userNo, ClientIp.of(ctx), true);
         ctx.status(204);
     }
 
@@ -322,7 +324,7 @@ public class ProxyController {
         var imported = vhostService.importVhosts(hubUser.getUserNo(), entries, merge);
         // A replace-import deletes the previous vhosts, so their routes must go too; a merge only
         // adds, so a failed apply there just leaves the current routing untouched.
-        refreshLiveRouting(vhostService, confService, hubUser.getUserNo(), ctx.ip(), !merge);
+        refreshLiveRouting(vhostService, confService, hubUser.getUserNo(), ClientIp.of(ctx), !merge);
         ctx.json(imported);
     }
 
@@ -364,7 +366,7 @@ public class ProxyController {
 
         if ("vhost".equals(name)) {
             try {
-                applyAndPersistVhostConfig(confService, hubUser.getUserNo(), ctx.ip(), value);
+                applyAndPersistVhostConfig(confService, hubUser.getUserNo(), ClientIp.of(ctx), value);
             } catch (VhostApplyException e) {
                 flagUpstreamRejection(ctx);
                 ctx.status(400).result("Invalid vhost configuration: " + e.getCause().getMessage());
@@ -374,7 +376,7 @@ public class ProxyController {
             // Validate the new value by re-pushing the currently selected vhosts under it
             // *before* persisting, so a value that fails to apply never ends up saved (same
             // validate-before-persist rule as the "vhost" branch above).
-            if (!applyMergedConfig(hubUser.getUserNo(), ctx.ip(), value)) {
+            if (!applyMergedConfig(hubUser.getUserNo(), ClientIp.of(ctx), value)) {
                 flagUpstreamRejection(ctx);
                 ctx.status(400).result("Invalid vhost configuration");
                 return;

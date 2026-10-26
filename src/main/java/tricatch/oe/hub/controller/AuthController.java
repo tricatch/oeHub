@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AuthKey;
+import tricatch.oe.hub.config.ClientIp;
 import tricatch.oe.hub.config.CookieSecurity;
 import tricatch.oe.hub.config.UserIdRules;
 import tricatch.oe.hub.config.AppHome;
@@ -351,7 +352,7 @@ public class AuthController {
             session.commit();
         }
 
-        ProxyController.applyMergedConfig(sqlSessionFactory, hubUser.getUserNo(), ctx.ip());
+        ProxyController.applyMergedConfig(sqlSessionFactory, hubUser.getUserNo(), ClientIp.of(ctx));
 
         loginAs(ctx, hubUser, rememberMe);
 
@@ -410,7 +411,7 @@ public class AuthController {
     }
 
     public void processRegister(Context ctx) {
-        String ip = ctx.ip();
+        String ip = ClientIp.of(ctx);
         if (isRegisterLocked(ip)) {
             ctx.status(429).render("templates/register.pebble", Map.of("error", "auth.error.register.too.many.attempts", "userId", ""));
             return;

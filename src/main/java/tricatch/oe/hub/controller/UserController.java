@@ -11,6 +11,7 @@ import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.ApiTokenUtil;
 import tricatch.oe.hub.config.AuditLogger;
 import tricatch.oe.hub.config.AuthKey;
+import tricatch.oe.hub.config.ClientIp;
 import tricatch.oe.hub.config.PasswordUtil;
 import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubApiTokenMapper;
@@ -187,7 +188,7 @@ public class UserController {
             // Same reasoning as ProxyController.apiImport: keep the live routing in step with
             // what was just written. oeProxy doesn't run in workspace mode, so nothing to do there.
             if (!tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
-                tricatch.oe.hub.proxy.controller.ProxyController.refreshLiveRouting(sqlSessionFactory, userNo, ctx.ip(), !merge);
+                tricatch.oe.hub.proxy.controller.ProxyController.refreshLiveRouting(sqlSessionFactory, userNo, ClientIp.of(ctx), !merge);
             }
         }
 
