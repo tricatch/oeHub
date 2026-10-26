@@ -192,7 +192,7 @@
         <button type="button" class="hosts-info-btn" id="btnProxyServerInfo" aria-label="{{ msg['tooltip.proxy.server'] }}">
           <span class="oe-icon oe-icon-info" style="width:12px;height:12px"></span>
         </button>
-        <div class="hosts-info-pop d-none" id="proxyServerInfoPop">{{ msg['hosts.proxy.server.info'] }}</div>
+        <div class="hosts-info-pop d-none" id="proxyServerInfoPop">{{ msg['hosts.proxy.server.info'] | replace({'{0}': fwdproxyPort}) }}</div>
       </div>
       {% endif %}
       <div class="hosts-chrome-btn-row">
@@ -327,7 +327,7 @@
 
 <script nonce="{{ cspNonce }}">
 const PROXY_SVR = '{{ proxyIp }}';
-const FWDPROXY_PORT = 36980;
+const FWDPROXY_PORT = {{ fwdproxyPort }};
 // Workspace mode has no forward proxy, so the --proxy-server option does not exist there and can
 // never end up in a launch command - even if an earlier self-hosted setting was stored as enabled.
 const PROXY_SERVER_OPTION = {{ workspaceMode ? 'false' : 'true' }};

@@ -48,7 +48,7 @@
             <td>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="fwdproxyEnabled" checked disabled>
-                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
+                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] | replace({'{0}': fwdproxyPort}) }}</label>
               </div>
               <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
               <div class="form-check mt-2 mb-0">

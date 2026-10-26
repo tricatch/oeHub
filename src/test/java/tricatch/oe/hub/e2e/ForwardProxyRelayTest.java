@@ -29,8 +29,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies oeHub's forward (upstream) proxy - {@code ForwardProxyServer}, a fixed-port (36980)
- * plain HTTP proxy authenticated against oeHub accounts - actually relays traffic and applies
+ * Verifies oeHub's forward (upstream) proxy - {@code ForwardProxyServer}, a plain HTTP proxy authenticated against oeHub accounts - actually relays traffic and applies
  * its most distinctive feature: overriding a hostname's resolved IP with whatever the
  * authenticated user's currently-selected oeHosts profile maps it to (see
  * ForwardProxyServer.overrideFor()). Drives setup and the oeHosts profile over plain HTTP
@@ -38,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * behavior, not the UI.
  *
  * <p>Unlike {@link ProxyRelayTest} this never touches TLS/port 443 - the forward proxy itself is
- * plain HTTP on port 36980 (also fixed, not isolated per test the way the app port is). Every
+ * plain HTTP on {@link E2eServer#fwdproxyPort()}, isolated per test like the app port so a dev
+ * server holding the default 36980 can't answer in its place. Every
  * request here goes through 127.0.0.1 explicitly (not "localhost") for the same reason as
  * ProxyRelayTest: the app and the forward proxy must see the same client IP / auth identity.
  */
@@ -48,7 +48,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ForwardProxyRelayTest {
 
     private static final int APP_PORT = 39915;
-    private static final int FWDPROXY_PORT = 36980;
     private static final String BASE_URL = "http://127.0.0.1:" + APP_PORT;
     private static final String ADMIN_ID = "e2efwdproxy";
     private static final String ADMIN_PW = "FwdProxyPass123!";
@@ -154,7 +153,7 @@ class ForwardProxyRelayTest {
     @Test
     @Order(3)
     void wrongCredentialsAreRejectedWithProxyAuthRequired() throws Exception {
-        try (var socket = new Socket("127.0.0.1", FWDPROXY_PORT)) {
+        try (var socket = new Socket("127.0.0.1", server.fwdproxyPort())) {
             var response = HttpRelay.send(socket,
                 "GET http://" + OVERRIDE_DOMAIN + ":" + stubBackend.getAddress().getPort() + "/ HTTP/1.1",
                 Map.of(
@@ -168,7 +167,7 @@ class ForwardProxyRelayTest {
     @Test
     @Order(4)
     void forwardProxyRelaysToHostsOverrideTarget() throws Exception {
-        try (var socket = new Socket("127.0.0.1", FWDPROXY_PORT)) {
+        try (var socket = new Socket("127.0.0.1", server.fwdproxyPort())) {
             var response = HttpRelay.send(socket,
                 "GET http://" + OVERRIDE_DOMAIN + ":" + stubBackend.getAddress().getPort() + "/ HTTP/1.1",
                 Map.of(
@@ -189,7 +188,7 @@ class ForwardProxyRelayTest {
         // itself doesn't care what protocol flows through the tunnel, so a plain HTTP request
         // over it is enough to prove the tunnel actually relays bytes end to end without needing
         // a second TLS layer just for this test.
-        try (var socket = new Socket("127.0.0.1", FWDPROXY_PORT)) {
+        try (var socket = new Socket("127.0.0.1", server.fwdproxyPort())) {
             var targetAuthority = OVERRIDE_DOMAIN + ":" + stubBackend.getAddress().getPort();
             var connectResponse = HttpRelay.send(socket, "CONNECT " + targetAuthority + " HTTP/1.1", Map.of(
                 "Host", targetAuthority,

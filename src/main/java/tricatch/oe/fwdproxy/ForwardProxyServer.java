@@ -63,7 +63,10 @@ public class ForwardProxyServer {
 
     private static final Logger logger = LoggerFactory.getLogger(ForwardProxyServer.class);
 
-    private static final int PORT = 36980;
+    private static final int DEFAULT_PORT = 36980;
+    // -Doe.fwdproxy.port lets a second instance on the same machine (e.g. an e2e server next to a
+    // running dev server) bind elsewhere instead of silently losing the port to the first one.
+    private static final int PORT = resolvePort();
     private static final String REALM = "oeHub";
     // Matches the ${PROXY_SVR} placeholder oeHosts profiles use (see static/js/util.js /
     // hosts.pebble) to mean "oeHub's own IP as seen by this client" — resolved here per
@@ -200,6 +203,15 @@ public class ForwardProxyServer {
 
     public static int getPort() {
         return PORT;
+    }
+
+    private static int resolvePort() {
+        String prop = System.getProperty("oe.fwdproxy.port");
+        if (prop != null && !prop.isBlank()) {
+            try { return Integer.parseInt(prop.trim()); }
+            catch (NumberFormatException ignored) {}
+        }
+        return DEFAULT_PORT;
     }
 
     public static void init(SqlSessionFactory factory) {

@@ -40,6 +40,14 @@ public class E2eServer implements AutoCloseable {
         return port;
     }
 
+    /**
+     * The forward proxy port this instance binds, offset from the app port so it never collides
+     * with a dev server on the default 36980 (or with another E2eServer running alongside).
+     */
+    public int fwdproxyPort() {
+        return port - 10000;
+    }
+
     public String baseUrl() {
         return "http://localhost:" + port;
     }
@@ -64,6 +72,7 @@ public class E2eServer implements AutoCloseable {
         command.add("-Doe.dev=true");
         command.add("-Doe.port=" + port);
         command.add("-Doe.home=" + homeDir);
+        command.add("-Doe.fwdproxy.port=" + fwdproxyPort());
         command.add("-Djava.net.preferIPv4Stack=true");
         command.addAll(extraJvmArgs);
         command.add("-cp");

@@ -47,6 +47,7 @@ public class HostsController {
         var model = new HashMap<String, Object>();
         model.put("user", AuthController.currentUser(ctx));
         model.put("proxyIp", proxyIpFor(ctx));
+        model.put("fwdproxyPort", ForwardProxyServer.getPort());
         ctx.render("templates/oehub/hosts.pebble", model);
     }
 
