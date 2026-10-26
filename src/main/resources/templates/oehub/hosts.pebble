@@ -12,6 +12,7 @@
 <script src="{{ asset('/js/oelink-cmd-modal.js') }}"></script>
 <script src="{{ asset('/js/oelink-install-modal.js') }}"></script>
 <script src="{{ asset('/js/list-folders.js') }}"></script>
+<script src="{{ asset('/js/autosave.js') }}"></script>
 <script src="{{ asset('/js/share-scope-menu.js') }}"></script>
 {% endblock %}
 
@@ -339,8 +340,6 @@ function proxyServerOn() {
   let profiles = [];
   let activeHostId = null;
   let isReadonly = false;
-  let saveTimer = null;
-  let savedCrc = 0;
   let defaultUserDataDir = '';
   const isWin = navigator.userAgent.includes('Win');
   const isMac = navigator.userAgent.includes('Mac');
@@ -355,7 +354,7 @@ function proxyServerOn() {
   // Public-link DEK cache (e2eEncryption design doc §6 "living link" redesign) - separate from
   // dekByHostId since a link uses its own DEK, independent of the row's normal content key.
   // Populated on "Generate" and on reopening the modal for a row that already has a
-  // wrappedLinkKey (unwrapped with the workspace key), so flushSaveFor can refresh link_content
+  // wrappedLinkKey (unwrapped with the workspace key), so saveHostsContent can refresh link_content
   // on every save without re-unwrapping each time.
   const linkDekByHostId = {};
 
@@ -467,7 +466,7 @@ function proxyServerOn() {
   const editor = initAceEditor('cmHostsEditor', 'ace/mode/text');
   editor.session.on('change', () => {
     if (!isReadonly && activeHostId) {
-      scheduleSave();
+      autosave.changed(editor.getValue());
       updateShareButtons();
     }
   });
@@ -477,6 +476,9 @@ function proxyServerOn() {
   const editorTitle   = document.getElementById('editorTitle');
   const hostsEditorBody = document.getElementById('hostsEditorBody');
   const saveStatus    = document.getElementById('saveStatus');
+  const autosave = OE_AUTOSAVE.create({
+    editorEl: document.getElementById('cmHostsEditor'), statusEl: saveStatus, save: saveHostsContent
+  });
   const schemePreview  = document.getElementById('schemePreview');
   const oelinkArgsPreview = document.getElementById('oelinkArgsPreview');
   const btnDelete        = document.getElementById('btnDelete');
@@ -533,13 +535,13 @@ function proxyServerOn() {
 
   // ── Activate profile ───────────────────────────────────────
   function activateProfile(hostsId, readonly) {
-    flushPendingSave();
+    const p = profiles.find(x => x.hostsId === hostsId);
+    const shown = autosave.activate(p && !readonly ? hostsId : null, p ? p.hostsContent : '');
     activeHostId = hostsId;
     isReadonly = readonly;
-    const p = profiles.find(x => x.hostsId === hostsId);
     if (!p) return;
     editorTitle.textContent = p.hostsProfile;
-    editor.setValue(p.hostsContent, -1);
+    editor.setValue(shown, -1);
     editor.setReadOnly(readonly);
     document.getElementById('cmHostsEditor').classList.toggle('readonly', readonly);
     btnDelete.disabled = readonly;
@@ -549,16 +551,14 @@ function proxyServerOn() {
     syncShareScopeMenu();
     updateShareButtons();
     btnDownload.disabled = false;
-    saveStatus.textContent = '';
     document.querySelectorAll('.oe-list-item').forEach(el => {
       el.classList.toggle('active', el.dataset.hostsId === String(hostsId));
     });
-    savedCrc = crc32(p.hostsContent);
     updateEditorMeta(p);
   }
 
   function activateSearchResult(result) {
-    flushPendingSave();
+    autosave.activate(null, '');
     activeHostId = result.hostsId;
     isReadonly = true;
     emptyState.classList.add('d-none');
@@ -574,7 +574,6 @@ function proxyServerOn() {
     btnShare.disabled = false;
     btnDownload.disabled = false;
     shareScopeWrap.classList.add('d-none');
-    saveStatus.textContent = '';
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
     // /share/.../text (used before e2eEncryption) returns a synchronous plaintext body the
@@ -587,26 +586,6 @@ function proxyServerOn() {
       editor.setValue(plain, -1);
       editor.resize(true);
     }).catch(() => { if (activeHostId === result.hostsId) showToast(MSG['toast.load.failed']); });
-  }
-
-  // ── Auto-save ──────────────────────────────────────────────
-  function scheduleSave() {
-    if (!activeHostId || isReadonly) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveContent, 2000);
-  }
-
-  // Cancel the pending debounce and, if there's an unsaved edit, save it immediately.
-  // Call this before switching away from the currently active profile so a quick
-  // switch within the 3s debounce window doesn't silently discard the edit.
-  function flushPendingSave() {
-    clearTimeout(saveTimer);
-    if (activeHostId && !isReadonly) flushSaveFor(activeHostId, editor.getValue());
-  }
-
-  async function saveContent() {
-    if (!activeHostId || isReadonly) return;
-    await flushSaveFor(activeHostId, editor.getValue());
   }
 
   // Re-encrypts and attaches linkContent to the save body when this row has a live public link
@@ -629,39 +608,23 @@ function proxyServerOn() {
     }
   }
 
-  async function flushSaveFor(hostId, content) {
-    if (crc32(content) === savedCrc) return;
-    try {
-      const payload = await encryptForSave(hostId, content);
-      const body = {content: payload};
-      await attachLinkContentForSave(body, hostId, content);
-      const res = await fetch('/api/hosts/' + hostId + '/content', {
-        method: 'PATCH', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body)
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        const p = profiles.find(x => x.hostsId === hostId);
-        if (p) { p.hostsContent = content; p.updatedAt = updated.updatedAt; }
-        updateSchemePreview();
-        if (hostId === activeHostId) {
-          savedCrc = crc32(content);
-          updateEditorMeta(p);
-          saveStatus.textContent = MSG['status.saved'];
-          setTimeout(() => { saveStatus.textContent = ''; }, 2000);
-        }
-      } else if (hostId === activeHostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
-    } catch (e) {
-      if (hostId === activeHostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
-    }
+  // ── Auto-save (OE_AUTOSAVE decides when; this does the request) ──
+  async function saveHostsContent(hostId, content) {
+    const payload = await encryptForSave(hostId, content);
+    const body = {content: payload};
+    await attachLinkContentForSave(body, hostId, content);
+    const res = await fetch('/api/hosts/' + hostId + '/content', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (res.status >= 500) throw new Error('save failed: ' + res.status);
+    if (!res.ok) return {saved: false, message: MSG['status.save.failed']};
+    const updated = await res.json();
+    const p = profiles.find(x => x.hostsId === hostId);
+    if (p) { p.hostsContent = content; p.updatedAt = updated.updatedAt; }
+    updateSchemePreview();
+    if (hostId === activeHostId) updateEditorMeta(p);
+    return {saved: true};
   }
 
   // ── Add profile ────────────────────────────────────────────
@@ -689,7 +652,7 @@ function proxyServerOn() {
   // ── Delete profile ─────────────────────────────────────────
   document.getElementById('btnDelete').addEventListener('click', async () => {
     if (!activeHostId || !confirm(MSG['confirm.delete.profile'])) return;
-    clearTimeout(saveTimer);
+    autosave.discard(activeHostId);
     await fetch('/api/hosts/' + activeHostId, {method: 'DELETE'});
     profiles = profiles.filter(p => p.hostsId !== activeHostId);
     activeHostId = null;
@@ -785,7 +748,7 @@ function proxyServerOn() {
   // The raw DEK still travels only in the URL fragment, never sent to the server - but the DEK
   // itself is also wrapped with the workspace key and stored as wrappedLinkKey (e2eEncryption
   // design doc §6 "living link" redesign), so any member's browser can recover the current URL by
-  // unwrapping it, and flushSaveFor (above) keeps link_content in sync with every edit.
+  // unwrapping it, and saveHostsContent (above) keeps link_content in sync with every edit.
   // Text (non-browser) URL is a pure string substitution of the same key - the browser link puts
   // the key in the URL fragment (never sent to the server), the text link puts the same key in
   // the query string instead so non-JS clients like SwitchHosts can supply it in a plain GET

@@ -304,6 +304,21 @@
 }
 
 .oe-save-status { font-size: 0.75rem; color: #6c757d; }
+.oe-save-status.is-error { color: #dc3545; }
+
+/* Auto-save state outline on the editor container (autosave.js): amber while an edit is waiting
+   to be saved, red while a failed save is being retried. Drawn as an overlay because Ace fills
+   the container and would paint over a border or inset shadow. */
+.oe-autosave-dirty::after,
+.oe-autosave-failed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid #f0c36d;
+  pointer-events: none;
+  z-index: 10;
+}
+.oe-autosave-failed::after { border-color: #dc3545; }
 
 /* Save status overlay, positioned over the editor pane */
 .hosts-editor > .oe-save-status,

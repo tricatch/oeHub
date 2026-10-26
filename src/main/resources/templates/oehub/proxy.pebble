@@ -204,6 +204,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.1/js-yaml.min.js" integrity="sha384-ZeqCzuWczURac3RacSufGD7oSbzeaX7xxnnOr3PTcYTLx4Av0qBj0kBq7AeCtHLA" crossorigin="anonymous"></script>
 <script src="{{ asset('/js/ace-init.js') }}"></script>
 <script src="{{ asset('/js/list-folders.js') }}"></script>
+<script src="{{ asset('/js/autosave.js') }}"></script>
 <script src="{{ asset('/js/share-scope-menu.js') }}"></script>
 <script nonce="{{ cspNonce }}">
 
@@ -218,12 +219,13 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
   let vhosts = [];
   let activeVhostId = null;
   let isReadonly = false;
-  let saveTimer = null;
-  let savedCrc = 0;
 
   const vhostList        = document.getElementById('vhostList');
   const editorTitle      = document.getElementById('editorTitle');
   const saveStatus       = document.getElementById('saveStatus');
+  const autosave = OE_AUTOSAVE.create({
+    editorEl: document.getElementById('cmEditor'), statusEl: saveStatus, save: saveVhostContent
+  });
   const btnDelete        = document.getElementById('btnDelete');
   const btnShare         = document.getElementById('btnShare');
   const btnCopyShareLink = document.getElementById('btnCopyShareLink');
@@ -236,7 +238,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
   // ── Ace Editor ─────────────────────────────────────────────
   const editor = initAceEditor('cmEditor', 'ace/mode/yaml');
   editor.session.on('change', () => {
-    if (!isReadonly && activeVhostId) scheduleSave();
+    if (!isReadonly && activeVhostId) autosave.changed(editor.getValue());
     updateAceAnnotations(editor.getValue());
   });
 
@@ -356,12 +358,12 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
 
   // ── Activate ───────────────────────────────────────────────
   function activateVhost(vhostId, readonly) {
-    flushPendingSave();
-    activeVhostId = vhostId;
     const v = vhosts.find(x => x.vhostId === vhostId);
+    const shown = autosave.activate(v && !readonly ? vhostId : null, v ? v.vhostContent : '');
+    activeVhostId = vhostId;
     if (!v) return;
     editorTitle.textContent = v.vhostProfile;
-    setContent(v.vhostContent);
+    setContent(shown);
     setReadOnly(readonly);
     btnDelete.disabled = readonly;
     shareScopeWrap.classList.toggle('d-none', readonly);
@@ -371,15 +373,13 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     btnShare.disabled = v.shareScope === 'private';
     btnCopyShareLink.disabled = v.shareScope === 'private';
     btnDownload.disabled = false;
-    saveStatus.textContent = '';
     document.querySelectorAll('.oe-list-item').forEach(el =>
       el.classList.toggle('active', el.dataset.vhostId === String(vhostId)));
-    savedCrc = crc32(v.vhostContent);
     updateEditorMeta(v);
   }
 
   function activateSearchResult(result) {
-    flushPendingSave();
+    autosave.activate(null, '');
     activeVhostId = result.vhostId;
     emptyState.classList.add('d-none');
     editorBody.style.display = '';
@@ -391,7 +391,6 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     btnCopyShareLink.disabled = false;
     btnDownload.disabled = false;
     shareScopeWrap.classList.add('d-none');
-    saveStatus.textContent = '';
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
     fetch('/share/proxy/' + result.vhostId + '/text').then(r => {
@@ -405,80 +404,29 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
     }).catch(() => { if (activeVhostId === result.vhostId) showToast(MSG['toast.load.failed']); });
   }
 
-  // ── Auto-save ──────────────────────────────────────────────
-  function scheduleSave() {
-    if (!activeVhostId || isReadonly) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveContent, 2000);
-  }
-
-  // Cancel the pending debounce and, if there's an unsaved edit, save it immediately.
-  // Call this before switching away from the currently active vhost so a quick
-  // switch within the 3s debounce window doesn't silently discard the edit.
-  function flushPendingSave() {
-    clearTimeout(saveTimer);
-    if (activeVhostId && !isReadonly) flushSaveFor(activeVhostId, editor.getValue());
-  }
-
-  async function saveContent() {
-    if (!activeVhostId || isReadonly) return;
-    await flushSaveFor(activeVhostId, editor.getValue());
-  }
-
-  async function flushSaveFor(vhostId, content) {
-    if (crc32(content) === savedCrc) return;
+  // ── Auto-save (OE_AUTOSAVE decides when; this does the request) ──
+  async function saveVhostContent(vhostId, content) {
     const lintErrors = lintDoc(content);
-    if (lintErrors.length > 0) {
-      if (vhostId === activeVhostId) {
-        saveStatus.textContent = lintErrors[0].message;
-        saveStatus.style.color = '#dc3545';
-      }
-      return;
+    if (lintErrors.length > 0) return {saved: false, message: lintErrors[0].message};
+    const res = await fetch('/api/proxy/vhosts/' + vhostId + '/content', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content})
+    });
+    if (res.status >= 500) throw new Error('save failed: ' + res.status);
+    // 400 still saved the draft server-side; only pushing it live (as part of the merged config)
+    // was rejected - e.g. a structurally invalid domain/location. Reflect the save so the editor
+    // doesn't re-send stale content, but call out that it isn't live yet.
+    if (!res.ok && res.status !== 400) return {saved: false, message: MSG['status.save.failed']};
+    const updated = await res.json();
+    const v = vhosts.find(x => x.vhostId === vhostId);
+    if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
+    if (vhostId === activeVhostId) updateEditorMeta(v);
+    if (res.status === 400) {
+      showToast(applyFailedMessage(res));
+      return {saved: true, notice: MSG['status.save.notApplied']};
     }
-    if (vhostId === activeVhostId) saveStatus.style.color = '';
-    try {
-      const res = await fetch('/api/proxy/vhosts/' + vhostId + '/content', {
-        method: 'PATCH', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content})
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        const v = vhosts.find(x => x.vhostId === vhostId);
-        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
-        mergeAndSave();
-        if (vhostId === activeVhostId) {
-          savedCrc = crc32(content);
-          updateEditorMeta(v);
-          saveStatus.textContent = MSG['status.saved'];
-          setTimeout(() => { saveStatus.textContent = ''; }, 2000);
-        }
-      } else if (res.status === 400) {
-        // The draft content was still saved server-side; only pushing it live (as part of the
-        // merged config) was rejected — e.g. a structurally invalid domain/location. Reflect the
-        // save so the editor doesn't re-send stale content, but call out that it isn't live yet.
-        const updated = await res.json();
-        const v = vhosts.find(x => x.vhostId === vhostId);
-        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
-        savedCrc = crc32(content);
-        if (vhostId === activeVhostId) {
-          updateEditorMeta(v);
-          saveStatus.textContent = MSG['status.save.notApplied'];
-          saveStatus.style.color = '#dc3545';
-          setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 4000);
-        }
-        showToast(applyFailedMessage(res));
-      } else if (vhostId === activeVhostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
-    } catch (e) {
-      if (vhostId === activeVhostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
-    }
+    mergeAndSave();
+    return {saved: true};
   }
 
   // ── Add ────────────────────────────────────────────────────
@@ -525,7 +473,7 @@ const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
   // ── Delete ─────────────────────────────────────────────────
   document.getElementById('btnDelete').addEventListener('click', async () => {
     if (!activeVhostId || !confirm(MSG['confirm.delete.vhost'])) return;
-    clearTimeout(saveTimer);
+    autosave.discard(activeVhostId);
     await fetch('/api/proxy/vhosts/' + activeVhostId, {method: 'DELETE'});
     vhosts = vhosts.filter(v => v.vhostId !== activeVhostId);
     activeVhostId = null;
