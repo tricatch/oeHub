@@ -2,6 +2,18 @@
 
     <!-- -Doe.log.dir, or <oe.home>/log by default (see LogDirDefiner) -->
     <define name="LOG_DIR" class="tricatch.oe.hub.config.LogDirDefiner"/>
+    <!-- TRACE with -Doe.dev=true, OFF otherwise (see ConsoleLevelDefiner) -->
+    <define name="CONSOLE_LEVEL" class="tricatch.oe.hub.config.ConsoleLevelDefiner"/>
+
+    <!-- Development only: the threshold drops every event unless -Doe.dev=true -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${CONSOLE_LEVEL}</level>
+        </filter>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
 
     <!-- Today's log is oehub.log; at midnight it rolls to oehub.<date>.log, and rolled files
          older than 30 days are deleted (also checked at startup, so a long-stopped instance
@@ -19,6 +31,7 @@
     </appender>
 
     <root level="DEBUG">
+        <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </root>
 

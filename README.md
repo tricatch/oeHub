@@ -131,7 +131,7 @@ java -Doe.home=/path/to/oeHub -Doe.migrate=<이름> -jar oeHub-<version>.jar
 
 ### 로깅
 
-로그는 콘솔에 출력하지 않고 `<oe.home>/log/oehub.log`(`-Doe.log.dir`로 변경 가능)에만 기록됩니다. 자정마다 전날 로그가 `oehub.<yyyy-MM-dd>.log`로 넘어가고, 30일이 지난 파일은 자동으로 삭제됩니다(시작할 때도 한 번 정리). 콘솔(stdout/stderr)에는 로깅 설정을 거치지 않는 JVM 자체 오류만 나옵니다.
+로그는 `<oe.home>/log/oehub.log`(`-Doe.log.dir`로 변경 가능)에 기록되며, 콘솔에는 개발 모드(`-Doe.dev=true`, `./gradlew run`)에서만 함께 출력됩니다. 자정마다 전날 로그가 `oehub.<yyyy-MM-dd>.log`로 넘어가고, 30일이 지난 파일은 자동으로 삭제됩니다(시작할 때도 한 번 정리). 콘솔(stdout/stderr)에는 로깅 설정을 거치지 않는 JVM 자체 오류만 나옵니다.
 
 로깅은 [Logback](https://logback.qos.ch/)으로 구성되며, 기본 `logback.xml`이 jar 안에 번들되어 있습니다. 재빌드 없이 이를 재정의하려면, 시작 시 클래스패스에 있는 외부 파일을 Logback이 가리키도록 지정하세요.
 
