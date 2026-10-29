@@ -1,0 +1,35 @@
+{# Invite-code card, shared by /wsa/users and /oehub/members; wired up by member-cards.js #}
+  <div class="oe-info-section">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col style="width:130px;">
+        <col>
+        <col style="width:175px;">
+        <col style="width:90px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="4">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>{{ msg['users.invite.title'] }}</span>
+              <div class="d-flex align-items-center gap-2">
+                <select id="inviteTeamSelect" class="form-select form-select-sm" style="width:150px;" hidden></select>
+                <button type="button" class="oe-tbl-btn oe-tbl-btn-action" id="btnCreateInvite" title="{{ msg['users.invite.btn.create'] }}">
+                  <span class="oe-icon oe-icon-new" style="width:15px;height:15px"></span>
+                </button>
+              </div>
+            </div>
+          </th>
+        </tr>
+        <tr class="oe-subhead">
+          <th>{{ msg['users.invite.col.team'] }}</th>
+          <th>{{ msg['users.invite.col.code'] }}</th>
+          <th>{{ msg['users.invite.col.expires'] }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="invitesTbody">
+        <tr><td colspan="4" class="text-muted text-center py-3">{{ msg['users.invite.empty'] }}</td></tr>
+      </tbody>
+    </table>
+  </div>

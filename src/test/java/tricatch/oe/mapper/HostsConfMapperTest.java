@@ -15,6 +15,9 @@ class HostsConfMapperTest extends MapperTestBase {
         c.setUserNo(userNo);
         c.setConfKey(key);
         c.setConfVal(val);
+        c.setCreatedBy(userNo);
+        c.setUpdatedBy(userNo);
+        c.setCreateAt(LocalDateTime.now());
         c.setUpdatedAt(LocalDateTime.now());
         return c;
     }

@@ -14,6 +14,11 @@
 .oe-icon-delete       { -webkit-mask-image: url('/icon/lucide/trash.svg');       mask-image: url('/icon/lucide/trash.svg'); }
 .oe-icon-clear        { -webkit-mask-image: url('/icon/lucide/brush-cleaning.svg'); mask-image: url('/icon/lucide/brush-cleaning.svg'); }
 .oe-icon-share        { -webkit-mask-image: url('/icon/lucide/share-2.svg');     mask-image: url('/icon/lucide/share-2.svg'); }
+.oe-icon-public-link  { -webkit-mask-image: url('/icon/lucide/globe.svg');       mask-image: url('/icon/lucide/globe.svg'); }
+.oe-icon-public-link-issued { -webkit-mask-image: url('/icon/lucide/globe.svg'); mask-image: url('/icon/lucide/globe.svg'); }
+.oe-icon-scope-default { -webkit-mask-image: url('/icon/lucide/file.svg');     mask-image: url('/icon/lucide/file.svg'); }
+.oe-icon-scope-private { -webkit-mask-image: url('/icon/lucide/lock.svg');     mask-image: url('/icon/lucide/lock.svg'); }
+.oe-icon-scope-collabo { -webkit-mask-image: url('/icon/lucide/puzzle.svg');   mask-image: url('/icon/lucide/puzzle.svg'); }
 .oe-icon-import       { -webkit-mask-image: url('/icon/lucide/circle-fading-plus.svg'); mask-image: url('/icon/lucide/circle-fading-plus.svg'); }
 .oe-icon-download     { -webkit-mask-image: url('/icon/lucide/file-down.svg');   mask-image: url('/icon/lucide/file-down.svg'); }
 .oe-icon-copy         { -webkit-mask-image: url('/icon/lucide/copy.svg');          mask-image: url('/icon/lucide/copy.svg'); }
@@ -24,6 +29,9 @@
 .oe-icon-expand       { -webkit-mask-image: url('/icon/lucide/maximize-2.svg');  mask-image: url('/icon/lucide/maximize-2.svg'); }
 .oe-icon-collapse     { -webkit-mask-image: url('/icon/lucide/minimize-2.svg');  mask-image: url('/icon/lucide/minimize-2.svg'); }
 .oe-icon-chevron-down { -webkit-mask-image: url('/icon/lucide/chevron-down.svg'); mask-image: url('/icon/lucide/chevron-down.svg'); }
+.oe-icon-new-folder   { -webkit-mask-image: url('/icon/lucide/folder-plus.svg'); mask-image: url('/icon/lucide/folder-plus.svg'); }
+.oe-icon-folder       { -webkit-mask-image: url('/icon/lucide/folder.svg');      mask-image: url('/icon/lucide/folder.svg'); }
+.oe-icon-folder-open  { -webkit-mask-image: url('/icon/lucide/folder-open.svg'); mask-image: url('/icon/lucide/folder-open.svg'); }
 .oe-icon-logout       { -webkit-mask-image: url('/icon/lucide/log-out.svg');     mask-image: url('/icon/lucide/log-out.svg'); }
 .oe-icon-lang         { -webkit-mask-image: url('/icon/lucide/globe.svg');        mask-image: url('/icon/lucide/globe.svg'); }
 .oe-icon-sse          { -webkit-mask-image: url('/icon/lucide/logs.svg');        mask-image: url('/icon/lucide/logs.svg'); }
@@ -33,10 +41,12 @@
 .oe-icon-grant-admin  { -webkit-mask-image: url('/icon/lucide/shield-plus.svg');        mask-image: url('/icon/lucide/shield-plus.svg'); }
 .oe-icon-revoke-admin { -webkit-mask-image: url('/icon/lucide/shield-x.svg');           mask-image: url('/icon/lucide/shield-x.svg'); }
 .oe-icon-reset-password { -webkit-mask-image: url('/icon/lucide/key-round.svg');        mask-image: url('/icon/lucide/key-round.svg'); }
+.oe-icon-approve      { -webkit-mask-image: url('/icon/lucide/circle-dashed-check.svg'); mask-image: url('/icon/lucide/circle-dashed-check.svg'); }
 .oe-icon-stop         { -webkit-mask-image: url('/icon/lucide/circle-stop.svg'); mask-image: url('/icon/lucide/circle-stop.svg'); }
 .oe-icon-record       { -webkit-mask-image: url('/icon/lucide/circle-play.svg'); mask-image: url('/icon/lucide/circle-play.svg'); }
 .oe-icon-content      { -webkit-mask-image: url('/icon/lucide/file-text.svg');   mask-image: url('/icon/lucide/file-text.svg'); }
 .oe-icon-edit         { -webkit-mask-image: url('/icon/lucide/pencil-line.svg');  mask-image: url('/icon/lucide/pencil-line.svg'); }
+.oe-icon-drag-handle  { -webkit-mask-image: url('/icon/lucide/grip-vertical.svg'); mask-image: url('/icon/lucide/grip-vertical.svg'); }
 .oe-icon-reconfigure  { -webkit-mask-image: url('/icon/lucide/settings.svg');      mask-image: url('/icon/lucide/settings.svg'); }
 .oe-icon-cert         { -webkit-mask-image: url('/icon/lucide/shield-check.svg');  mask-image: url('/icon/lucide/shield-check.svg'); }
 .oe-icon-list         { -webkit-mask-image: url('/icon/lucide/list.svg');         mask-image: url('/icon/lucide/list.svg'); }
@@ -45,3 +55,7 @@
 .oe-icon-merge        { -webkit-mask-image: url('/icon/lucide/layers-plus.svg');  mask-image: url('/icon/lucide/layers-plus.svg'); }
 .oe-icon-save-merge   { -webkit-mask-image: url('/icon/lucide/copy-plus.svg');     mask-image: url('/icon/lucide/copy-plus.svg'); }
 .oe-icon-success      { -webkit-mask-image: url('/icon/lucide/check.svg');        mask-image: url('/icon/lucide/check.svg'); }
+.oe-icon-suspend      { -webkit-mask-image: url('/icon/lucide/circle-stop.svg');  mask-image: url('/icon/lucide/circle-stop.svg'); }
+.oe-icon-reactivate   { -webkit-mask-image: url('/icon/lucide/circle-play.svg');  mask-image: url('/icon/lucide/circle-play.svg'); }
+.oe-icon-refresh      { -webkit-mask-image: url('/icon/lucide/refresh-cw.svg');   mask-image: url('/icon/lucide/refresh-cw.svg'); }
+.oe-icon-sort         { -webkit-mask-image: url('/icon/lucide/arrow-up-down.svg'); mask-image: url('/icon/lucide/arrow-up-down.svg'); }

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
 import tricatch.oe.mapper.MapperTestBase;
@@ -30,15 +31,21 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @BeforeEach
     void resetWhitelist() {
-        ForwardProxyServer.setWhitelist("");
+        ForwardProxyServer.setWhitelist("", 0L);
+        ForwardProxyServer.setAllowAllDestinations(false, 0L);
     }
 
     private HubUser insertUserWithPassword(String userId, String rawPassword) {
+        return insertUserWithPassword(userId, rawPassword, "usr");
+    }
+
+    private HubUser insertUserWithPassword(String userId, String rawPassword, String role) {
         var now = LocalDateTime.now();
         var user = new HubUser();
         user.setUserId(userId);
         user.setPassword(PasswordUtil.hash(rawPassword));
-        user.setRole("usr");
+        user.setRole(role);
+        user.setWsNo(TEST_WS_NO);
         user.setCreateAt(now);
         user.setUpdatedAt(now);
         try (var session = FACTORY.openSession(true)) {
@@ -54,6 +61,25 @@ class ForwardProxyServerTest extends MapperTestBase {
         var userId = "fwdauth-" + newId();
         insertUserWithPassword(userId, "correct-horse-battery");
         assertThat(ForwardProxyServer.authenticate(userId, "correct-horse-battery")).isTrue();
+    }
+
+    @Test
+    void authenticate_accountsThatMayLogIn_succeed_whateverTheirRole() {
+        for (var role : java.util.List.of(Role.ADM, Role.WSA, Role.USR)) {
+            var userId = "fwdrole-" + newId();
+            insertUserWithPassword(userId, "correct-horse-battery", role);
+            assertThat(ForwardProxyServer.authenticate(userId, "correct-horse-battery")).as(role).isTrue();
+        }
+    }
+
+    @Test
+    void authenticate_accountsThatMayNotLogIn_areRefused_evenWithTheRightPassword() {
+        // Awaiting approval / suspended: the login page turns these away, so this second door must too.
+        for (var role : java.util.List.of(Role.PEN, Role.WSS)) {
+            var userId = "fwdrole-" + newId();
+            insertUserWithPassword(userId, "correct-horse-battery", role);
+            assertThat(ForwardProxyServer.authenticate(userId, "correct-horse-battery")).as(role).isFalse();
+        }
     }
 
     @Test
@@ -90,20 +116,39 @@ class ForwardProxyServerTest extends MapperTestBase {
     // ── isWhitelisted() ─────────────────────────────────────────────────────
 
     @Test
-    void isWhitelisted_emptyList_allowsAnyHost() {
-        ForwardProxyServer.setWhitelist("");
-        assertThat(ForwardProxyServer.isWhitelisted("example.com")).isTrue();
+    void isWhitelisted_emptyList_allowsNothing() {
+        ForwardProxyServer.setWhitelist("", 0L);
+        assertThat(ForwardProxyServer.isWhitelisted("example.com")).isFalse();
     }
 
     @Test
     void isWhitelisted_matchesExactAndWildcardSubdomain_caseInsensitively() {
-        ForwardProxyServer.setWhitelist("*.Example.com\nfoo.com\n# comment\n\n");
+        ForwardProxyServer.setWhitelist("*.Example.com\nfoo.com\n# comment\n\n", 0L);
         assertThat(ForwardProxyServer.isWhitelisted("EXAMPLE.com")).isTrue();
         assertThat(ForwardProxyServer.isWhitelisted("api.example.com")).isTrue();
         assertThat(ForwardProxyServer.isWhitelisted("foo.com")).isTrue();
         assertThat(ForwardProxyServer.isWhitelisted("evil.com")).isFalse();
         assertThat(ForwardProxyServer.isWhitelisted(null)).isFalse();
         assertThat(ForwardProxyServer.isWhitelisted("")).isFalse();
+    }
+
+    @Test
+    void isWhitelisted_allowAllOverride_allowsAnyHost_withoutTouchingTheList() {
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
+        ForwardProxyServer.setAllowAllDestinations(true, 0L);
+        try {
+            assertThat(ForwardProxyServer.isWhitelisted("anything.example.com")).isTrue();
+            assertThat(ForwardProxyServer.isWhitelisted("evil.test")).isTrue();
+            // Still not a bypass for a missing/blank host - there's nothing to allow.
+            assertThat(ForwardProxyServer.isWhitelisted(null)).isFalse();
+            assertThat(ForwardProxyServer.isWhitelisted("")).isFalse();
+            // The underlying list is untouched, so turning the override back off restores it exactly.
+            assertThat(ForwardProxyServer.getWhitelist()).isEqualTo("only-this.example.com");
+        } finally {
+            ForwardProxyServer.setAllowAllDestinations(false, 0L);
+        }
+        assertThat(ForwardProxyServer.isWhitelisted("anything.example.com")).isFalse();
+        assertThat(ForwardProxyServer.isWhitelisted("only-this.example.com")).isTrue();
     }
 
     // ── isLoopbackTarget() ──────────────────────────────────────────────────
@@ -179,7 +224,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_nonWhitelistedDestination_isRedirectedToBlockedPage() {
-        ForwardProxyServer.setWhitelist("only-this.example.com");
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
         var addr = ForwardProxyServer.overrideFor("anyone", "not-whitelisted.example.com:443", "10.1.1.1", "10.1.1.1");
         assertThat(addr).isNotNull();
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
@@ -199,6 +244,7 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_loopbackDestination_isAllowedWhenClientIsAlsoLoopback() {
+        ForwardProxyServer.setWhitelist("127.0.0.1", 0L); // an empty whitelist allows nothing
         // A client that's already connecting from 127.0.0.1 gains nothing from this SSRF pivot -
         // it already has direct network access to this machine's loopback-bound ports - so the
         // guard is exempted for it (see overrideFor()'s class-level reasoning).
@@ -210,12 +256,13 @@ class ForwardProxyServerTest extends MapperTestBase {
 
     @Test
     void overrideFor_hostsProfileEntryPointingAtLoopback_isAllowedWhenClientIsAlsoLoopback() {
+        ForwardProxyServer.setWhitelist("foo.oe", 0L); // an empty whitelist allows nothing
         var userId = "fwdloopback-" + newId();
         var user = insertUserWithPassword(userId, "correct-horse-battery");
 
         var hostsService = new tricatch.oe.hosts.service.HostsProfService(FACTORY);
         var profile = hostsService.create(user.getUserNo());
-        hostsService.updateContent(profile.getHostsId(), user.getUserNo(), "127.0.0.1 foo.oe");
+        hostsService.updateContent(profile.getHostsId(), user.getUserNo(), "127.0.0.1 foo.oe", null);
         hostsService.toggleSelected(profile.getHostsId(), user.getUserNo());
         ForwardProxyServer.refreshUserHosts(user);
 
@@ -225,5 +272,34 @@ class ForwardProxyServerTest extends MapperTestBase {
         var addr = ForwardProxyServer.overrideFor(userId, "foo.oe:443", "10.1.1.1", "127.0.0.1");
         assertThat(addr.getAddress().isLoopbackAddress()).isTrue();
         assertThat(addr.getPort()).isEqualTo(443); // not redirected to BlockedPageServer's port
+    }
+
+    // ── getRecentlyBlockedHosts() ───────────────────────────────────────────
+
+    @Test
+    void getRecentlyBlockedHosts_recordsANonWhitelistedDestination() {
+        var host = "blocked-" + newId() + ".example.com";
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
+        ForwardProxyServer.overrideFor("anyone", host + ":443", "10.1.1.1", "10.1.1.1");
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).contains(host);
+    }
+
+    @Test
+    void getRecentlyBlockedHosts_excludesLoopbackBlocks() {
+        // Adding 127.0.0.1 to the whitelist would never unblock it (a separate SSRF guard), so it
+        // must never show up as a suggestion.
+        ForwardProxyServer.overrideFor("anyone", "127.0.0.1:9999", "10.1.1.1", "10.1.1.1");
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).doesNotContain("127.0.0.1");
+    }
+
+    @Test
+    void getRecentlyBlockedHosts_stopsListingAHostOnceItsWhitelisted() {
+        var host = "now-allowed-" + newId() + ".example.com";
+        ForwardProxyServer.setWhitelist("only-this.example.com", 0L);
+        ForwardProxyServer.overrideFor("anyone", host + ":443", "10.1.1.1", "10.1.1.1");
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).contains(host);
+
+        ForwardProxyServer.setWhitelist(host, 0L);
+        assertThat(ForwardProxyServer.getRecentlyBlockedHosts()).doesNotContain(host);
     }
 }

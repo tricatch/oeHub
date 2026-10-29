@@ -1,0 +1,500 @@
+package tricatch.oe.hub.proxy.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.javalin.http.Context;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tricatch.oe.hub.config.ClientIp;
+import tricatch.oe.hub.controller.AuthController;
+import tricatch.oe.hub.controller.SettingsController;
+import tricatch.oe.hub.proxy.ReverseProxySettings;
+import tricatch.oe.hub.proxy.model.ProxyVhost;
+import tricatch.oe.hub.util.NameTakenException;
+import tricatch.oe.hub.proxy.service.ProxyConfService;
+import tricatch.oe.hub.proxy.service.ProxyVhostService;
+import tricatch.oe.proxy.ReverseProxyServer;
+import tricatch.oe.proxy.event.HttpEventManager;
+import tricatch.oe.proxy.event.consumer.HttpEventMonitorConsumer;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+import javax.naming.ldap.LdapName;
+
+public class ProxyController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ProxyController.class);
+
+    private final ProxyVhostService vhostService;
+    private final ProxyConfService  confService;
+    private final ObjectMapper objectMapper;
+
+    public ProxyController(SqlSessionFactory sqlSessionFactory, ObjectMapper objectMapper) {
+        this.vhostService = new ProxyVhostService(sqlSessionFactory);
+        this.confService  = new ProxyConfService(sqlSessionFactory);
+        this.objectMapper = objectMapper;
+    }
+
+    public void showProxy(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        var clientIp = ClientIp.of(ctx);
+        var localSvrOverride = confService.get("local_svr", hubUser.getUserNo());
+        var ipIdentifierEnabled = ReverseProxyServer.isIpIdentifierEnabled();
+        var claimedOid = ReverseProxyServer.getClaimedIdentifier(clientIp);
+        var claimedBySelf = claimedOid != null && claimedOid.equals(hubUser.getOid());
+        var claimedByUserId = (claimedOid != null && !claimedBySelf) ? ReverseProxySettings.getUserIdForOid(claimedOid) : null;
+        var model = new HashMap<String, Object>();
+        model.put("user", hubUser);
+        model.put("clientIp", clientIp);
+        model.put("localSvr", localSvrOverride != null && !localSvrOverride.isBlank() ? localSvrOverride : clientIp);
+        model.put("oid", hubUser.getOid());
+        model.put("ipIdentifierEnabled", ipIdentifierEnabled);
+        model.put("internalOnlyUpstream", ReverseProxyServer.isInternalOnlyUpstream());
+        model.put("ipClaimedBySelf", claimedBySelf);
+        model.put("ipClaimedByUserId", claimedByUserId);
+        ctx.render("templates/oehub/proxy.pebble", model);
+    }
+
+    // "Use This IP" on the oeProxy page - lets an owner explicitly claim their current browsing
+    // IP for the reverse proxy's IP-based fallback (see ReverseProxyServer.resolveIdentifier()),
+    // instead of relying only on the X-OeHub-Oid header. The IP is read server-side from the
+    // request itself (ClientIp.of(ctx): the connection's address, or a local proxy's header for
+    // it), never from client input, so a caller cannot claim an IP other than the one they're
+    // actually connecting from.
+    public void apiTakeIp(Context ctx) {
+        // An admin can turn the IP-based fallback off entirely (Settings > oeProxy - Identifier)
+        // when it's unreliable; resolveIdentifier() then never consults ClaimedIpRegistry at all, so a
+        // claim recorded while disabled would report success but never take effect. showProxy
+        // hides the button for this case too, but this request-time check covers a page left open
+        // across a setting change and any direct API call.
+        if (!ReverseProxyServer.isIpIdentifierEnabled()) {
+            ctx.status(409).json(Map.of("error", "ip_identifier_disabled"));
+            return;
+        }
+        var hubUser = AuthController.currentUser(ctx);
+        ReverseProxyServer.claimIp(ClientIp.of(ctx), hubUser.getUserNo());
+        ctx.json(Map.of("ip", ClientIp.of(ctx), "ttlHours", ReverseProxyServer.claimedIpTtlHours()));
+    }
+
+    public void showMonitor(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        var model = new HashMap<String, Object>();
+        model.put("user", hubUser);
+        model.put("proxyActive", !vhostService.listSelected(hubUser.getUserNo()).isEmpty());
+        ctx.render("templates/oehub/proxy-monitor.pebble", model);
+    }
+
+    public void monitorEvent(Context ctx) throws IOException {
+        ctx.res().setContentType("text/event-stream");
+        ctx.res().setCharacterEncoding("UTF-8");
+        ctx.res().setHeader("Cache-Control", "no-cache");
+        ctx.res().setHeader("Connection", "keep-alive");
+        ctx.res().setHeader("X-Accel-Buffering", "no");
+
+        // Subscribed by the viewer's own account oid, not raw client IP: under NAT/CGNAT/shared
+        // egress, two different oeHub accounts can share an IP, and HttpEvents are now tagged
+        // with their true owner identifier (see ReverseProxyServer.resolveIdentifier()) for
+        // exactly this reason — matching on IP here would let this account's monitor view another
+        // tenant's live traffic (headers, cookies, bodies) whenever their proxied traffic shares
+        // this IP.
+        String clientId = AuthController.currentUser(ctx).getOid();
+        String channelId = clientId + "/hub-" + System.nanoTime();
+
+        OutputStream out = ctx.res().getOutputStream();
+        ReentrantLock writeLock = new ReentrantLock();
+
+        writeLock.lock();
+        try {
+            out.write(": connected\n\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+        } finally {
+            writeLock.unlock();
+        }
+
+        HttpEventMonitorConsumer consumer = new HttpEventMonitorConsumer(clientId, channelId, out, writeLock);
+        HttpEventManager.getInstance().addEventConsumer(consumer);
+
+        try {
+            for (;;) {
+                Thread.sleep(5000);
+                if (writeLock.tryLock()) {
+                    try {
+                        out.write(": keepalive\n\n".getBytes(StandardCharsets.UTF_8));
+                        out.flush();
+                    } finally {
+                        writeLock.unlock();
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (IOException e) {
+            logger.debug("Monitor SSE client disconnected: channelId={}", channelId);
+        } finally {
+            HttpEventManager.getInstance().removeEventConsumer(consumer);
+            try { out.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    public void apiDownloadCa(Context ctx) throws IOException {
+        var certPath = SettingsController.caCertPath();
+        if (!java.nio.file.Files.exists(certPath)) {
+            ctx.status(404).result("CA certificate not configured.");
+            return;
+        }
+        var bytes = java.nio.file.Files.readAllBytes(certPath);
+        ctx.res().setContentType("application/x-x509-ca-cert");
+        ctx.res().setHeader("Content-Disposition", "attachment; filename=\"" + certFilename(bytes) + "\"");
+        ctx.res().setContentLength(bytes.length);
+        ctx.res().getOutputStream().write(bytes);
+    }
+
+    private static String certFilename(byte[] certBytes) {
+        try {
+            var cert = (X509Certificate) CertificateFactory.getInstance("X.509")
+                    .generateCertificate(new ByteArrayInputStream(certBytes));
+            var ldapName = new LdapName(cert.getSubjectX500Principal().getName());
+            String cn = null, o = null;
+            for (var rdn : ldapName.getRdns()) {
+                if ("CN".equalsIgnoreCase(rdn.getType()) && cn == null) cn = rdn.getValue().toString();
+                if ("O".equalsIgnoreCase(rdn.getType())  && o  == null) o  = rdn.getValue().toString();
+            }
+            var name = cn != null ? cn : o;
+            if (name != null && !name.isBlank()) {
+                name = name.trim().replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-{2,}", "-");
+                return name + ".cer";
+            }
+        } catch (Exception ignored) {}
+        return "oeHub-CA.cer";
+    }
+
+    public void apiList(Context ctx) {
+        ctx.json(vhostService.list(AuthController.currentUser(ctx).getUserNo()));
+    }
+
+    public void apiCreate(Context ctx) {
+        ctx.json(vhostService.create(AuthController.currentUser(ctx).getUserNo()));
+        ctx.status(201);
+    }
+
+    public void apiUpdateContent(Context ctx) throws Exception {
+        var hubUser = AuthController.currentUser(ctx);
+        var vhostId = ctx.pathParam("vhostId");
+        var body    = objectMapper.readValue(ctx.body(), Map.class);
+        var updated = vhostService.updateContent(vhostId, hubUser.getUserNo(), (String) body.get("content"));
+        if (updated == null) { ctx.status(404); return; }
+
+        // A shared (collabo) vhost's content lives on one canonical row; other collaborators who
+        // currently have it selected are otherwise left routing on a now-stale cached config until
+        // they trigger their own refresh. Drop their cache so their next request reloads it.
+        if (updated.getParentId() != null) {
+            for (Long collaboratorUserNo : vhostService.selectedCollaboratorUserNos(updated.getParentId(), hubUser.getUserNo())) {
+                ReverseProxyServer.invalidateVirtualHosts(collaboratorUserNo);
+            }
+        }
+
+        if (updated.isSelected() && !applyMergedConfig(hubUser.getUserNo(), ClientIp.of(ctx))) {
+            // The draft content above was still saved successfully; only pushing it live as part
+            // of the merged config failed. Return it anyway (with a 400) so the client can tell
+            // the two apart instead of reporting this as a plain save failure.
+            flagUpstreamRejection(ctx);
+            ctx.status(400).json(updated);
+            return;
+        }
+        ctx.json(updated);
+    }
+
+    public void apiUpdateName(Context ctx) throws Exception {
+        var hubUser    = AuthController.currentUser(ctx);
+        var vhostId = ctx.pathParam("vhostId");
+        var body    = objectMapper.readValue(ctx.body(), Map.class);
+        ProxyVhost updated;
+        try {
+            updated = vhostService.updateProfile(vhostId, hubUser.getUserNo(), (String) body.get("name"));
+        } catch (NameTakenException e) {
+            ctx.status(409); return;
+        }
+        if (updated == null) { ctx.status(404); return; }
+        ctx.json(updated);
+    }
+
+    public void apiToggleSelected(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        var updated = vhostService.toggleSelected(ctx.pathParam("vhostId"), hubUser.getUserNo());
+        if (updated == null) { ctx.status(404); return; }
+        if (!applyMergedConfig(hubUser.getUserNo(), ClientIp.of(ctx))) {
+            // The selection toggle itself was still saved; only the resulting merge was rejected.
+            flagUpstreamRejection(ctx);
+            ctx.status(400).json(updated);
+            return;
+        }
+        ctx.json(updated);
+    }
+
+    public void apiUpdateShareScope(Context ctx) throws Exception {
+        var hubUser       = AuthController.currentUser(ctx);
+        var vhostId    = ctx.pathParam("vhostId");
+        var body       = objectMapper.readValue(ctx.body(), Map.class);
+        var shareScope = (String) body.get("shareScope");
+        if (shareScope == null || (!shareScope.equals("workspace") && !shareScope.equals("private") && !shareScope.equals("collabo"))) {
+            ctx.status(400); return;
+        }
+        var updated = vhostService.updateShareScope(vhostId, hubUser.getUserNo(), shareScope);
+        if (updated == null) { ctx.status(404); return; }
+        ctx.json(updated);
+    }
+
+    public void apiRegister(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        var vhostId = ctx.pathParam("vhostId");
+        var registered = vhostService.registerCollabo(hubUser.getUserNo(), vhostId);
+        if (registered == null) { ctx.status(404); return; }
+        ctx.json(registered);
+    }
+
+    public void apiReorder(Context ctx) throws Exception {
+        var ids = objectMapper.readValue(ctx.body(), List.class);
+        vhostService.reorder(AuthController.currentUser(ctx).getUserNo(), ids);
+        ctx.status(204);
+    }
+
+    public void apiDelete(Context ctx) {
+        var userNo = AuthController.currentUser(ctx).getUserNo();
+        vhostService.delete(ctx.pathParam("vhostId"), userNo);
+        // The live routing table is a copy of the selected vhosts as of the last apply; a deleted
+        // vhost's routes would otherwise keep serving until the next apply or a restart.
+        refreshLiveRouting(vhostService, confService, userNo, ClientIp.of(ctx), true);
+        ctx.status(204);
+    }
+
+    public void apiDeleteAll(Context ctx) {
+        var userNo = AuthController.currentUser(ctx).getUserNo();
+        vhostService.deleteAll(userNo);
+        refreshLiveRouting(vhostService, confService, userNo, ClientIp.of(ctx), true);
+        ctx.status(204);
+    }
+
+    public void apiCopy(Context ctx) {
+        var copy = vhostService.copyVhost(AuthController.currentUser(ctx).getUserNo(), ctx.pathParam("vhostId"));
+        if (copy == null) { ctx.status(404); return; }
+        ctx.json(copy);
+        ctx.status(201);
+    }
+
+    public void apiSearch(Context ctx) {
+        var hubUser    = AuthController.currentUser(ctx);
+        var keyword = ctx.queryParam("q");
+        if (keyword == null || keyword.isBlank()) { ctx.json(List.of()); return; }
+        ctx.json(vhostService.searchOthers(hubUser.getUserNo(), keyword));
+    }
+
+    public void apiExport(Context ctx) throws Exception {
+        var hubUser   = AuthController.currentUser(ctx);
+        var vhosts = vhostService.list(hubUser.getUserNo());
+        var export = Map.of("version", 1, "exportedAt", java.time.LocalDateTime.now().toString(), "vhosts", vhosts);
+        var ts     = java.time.LocalDateTime.now().toString().replace(":", "-").substring(0, 19);
+        ctx.contentType("application/json")
+           .header("Content-Disposition", "attachment; filename=\"oevhost-" + ts + ".json\"")
+           .result(objectMapper.writeValueAsString(export));
+    }
+
+    public void apiImport(Context ctx) throws Exception {
+        var hubUser    = AuthController.currentUser(ctx);
+        var merge   = "true".equals(ctx.queryParam("merge"));
+        var body    = objectMapper.readValue(ctx.body(), Map.class);
+        if (body.get("vhosts") == null) { ctx.status(400).result("Missing 'vhosts' field"); return; }
+
+        // Validated in full before anything is written (a replace-import deletes first).
+        List<ProxyVhost> entries;
+        try {
+            entries = ProxyVhostService.entriesFromImport(body.get("vhosts"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).result(e.getMessage());
+            return;
+        }
+
+        var imported = vhostService.importVhosts(hubUser.getUserNo(), entries, merge);
+        // A replace-import deletes the previous vhosts, so their routes must go too; a merge only
+        // adds, so a failed apply there just leaves the current routing untouched.
+        refreshLiveRouting(vhostService, confService, hubUser.getUserNo(), ClientIp.of(ctx), !merge);
+        ctx.json(imported);
+    }
+
+    public void apiShare(Context ctx) throws Exception {
+        var vhostId = ctx.pathParam("vhostId");
+        var vhost   = vhostService.get(vhostId);
+        if (vhost == null) { ctx.status(404); return; }
+        if ("private".equals(vhost.getShareScope())) { ctx.status(403); return; }
+        var model = new HashMap<String, Object>();
+        model.put("vhost",       vhost);
+        model.put("owner",       vhostService.getOwnerUsername(vhostId));
+        model.put("contentJson", tricatch.oe.hub.util.HtmlJsonUtil.escapeForScript(objectMapper.writeValueAsString(vhost.getVhostContent())));
+        ctx.render("templates/oehub/proxy-share.pebble", model);
+    }
+
+    public void apiShareText(Context ctx) {
+        var vhostId = ctx.pathParam("vhostId");
+        var vhost   = vhostService.get(vhostId);
+        if (vhost == null) { ctx.status(404); return; }
+        if ("private".equals(vhost.getShareScope())) { ctx.status(403); return; }
+        var owner  = vhostService.getOwnerUsername(vhostId);
+        var modDt  = vhost.getUpdatedAt() != null
+            ? vhost.getUpdatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "";
+        ctx.contentType("text/plain; charset=utf-8")
+           .result("# " + vhost.getVhostProfile() + " / " + owner + " / " + modDt + "\n\n" + vhost.getVhostContent());
+    }
+
+    public void apiConfGet(Context ctx) {
+        var hubUser  = AuthController.currentUser(ctx);
+        var value = confService.get(ctx.pathParam("name"), hubUser.getUserNo());
+        ctx.json(Map.of("value", value != null ? value : ""));
+    }
+
+    public void apiConfSet(Context ctx) throws Exception {
+        var hubUser  = AuthController.currentUser(ctx);
+        var body  = objectMapper.readValue(ctx.body(), Map.class);
+        var name  = ctx.pathParam("name");
+        var value = (String) body.get("value");
+
+        if ("vhost".equals(name)) {
+            try {
+                applyAndPersistVhostConfig(confService, hubUser.getUserNo(), ClientIp.of(ctx), value);
+            } catch (VhostApplyException e) {
+                flagUpstreamRejection(ctx);
+                ctx.status(400).result("Invalid vhost configuration: " + e.getCause().getMessage());
+                return;
+            }
+        } else if ("local_svr".equals(name)) {
+            // Validate the new value by re-pushing the currently selected vhosts under it
+            // *before* persisting, so a value that fails to apply never ends up saved (same
+            // validate-before-persist rule as the "vhost" branch above).
+            if (!applyMergedConfig(hubUser.getUserNo(), ClientIp.of(ctx), value)) {
+                flagUpstreamRejection(ctx);
+                ctx.status(400).result("Invalid vhost configuration");
+                return;
+            }
+            confService.set(name, hubUser.getUserNo(), value, hubUser.getUserNo());
+        } else {
+            confService.set(name, hubUser.getUserNo(), value, hubUser.getUserNo());
+        }
+        ctx.status(204);
+    }
+
+    private boolean applyMergedConfig(Long userNo, String routeIp) {
+        return applyMergedConfig(vhostService, confService, userNo, routeIp, null);
+    }
+
+    // Used by apiConfSet's local_svr branch to validate a candidate override value against the
+    // currently selected vhosts before it's persisted, without touching the DB first.
+    private boolean applyMergedConfig(Long userNo, String routeIp, String localSvrOverride) {
+        return applyMergedConfig(vhostService, confService, userNo, routeIp, localSvrOverride);
+    }
+
+    // Recompute the merged vhost config from the user's currently selected virtual hosts
+    // and push it live into the running proxy — usable from outside this controller
+    // (e.g. on login) without needing a ProxyController instance.
+    public static boolean applyMergedConfig(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp) {
+        return applyMergedConfig(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, null);
+    }
+
+    /**
+     * Re-pushes the user's live routing after their vhosts changed in the database. With
+     * failClosed (something was removed) a merge that can't be applied drops the cached table
+     * instead of leaving the removed routes serving; the next request rebuilds it from the
+     * database. Without it, a failed apply just keeps the current routing.
+     */
+    private static void refreshLiveRouting(ProxyVhostService vhostService, ProxyConfService confService,
+                                           Long userNo, String routeIp, boolean failClosed) {
+        boolean applied = applyMergedConfig(vhostService, confService, userNo, routeIp, null);
+        if (!applied && failClosed) ReverseProxyServer.invalidateVirtualHosts(userNo);
+    }
+
+    /** Same as above for callers outside this controller (e.g. restoring a user backup). */
+    public static void refreshLiveRouting(SqlSessionFactory sqlSessionFactory, Long userNo, String routeIp, boolean failClosed) {
+        refreshLiveRouting(new ProxyVhostService(sqlSessionFactory), new ProxyConfService(sqlSessionFactory), userNo, routeIp, failClosed);
+    }
+
+    // routeIp is only used below for the ${LOCAL_SVR} substitution fallback (see resolveLocalSvr) -
+    // IP-to-owner identification now lives entirely in ClaimedIpRegistry via the explicit
+    // "Use This IP" flow (ProxyController.apiTakeIp), not in this method.
+    // Returns false (and leaves the persisted "vhost" config untouched) if the merged YAML was
+    // rejected by ReverseProxyServer — same validate-before-persist rule as apiConfSet's vhost
+    // handling, so a bad merge never leaves the DB holding config that silently fails to reload.
+    // localSvrOverride, when non-null, is used in place of the persisted "local_svr" conf value
+    // (see resolveLocalSvr) so a candidate value can be validated before it's saved.
+    private static boolean applyMergedConfig(ProxyVhostService vhostService, ProxyConfService confService, Long userNo, String routeIp, String localSvrOverride) {
+        String merged;
+        try {
+            var selected = vhostService.listSelected(userNo);
+            merged = ReverseProxyServer.mergeVhostYaml(selected.stream().map(ProxyVhost::getVhostContent).toList());
+        } catch (Exception e) {
+            logger.warn("Failed to merge vhost config for user {}: {}", userNo, e.getMessage());
+            return false;
+        }
+        try {
+            applyAndPersistVhostConfig(confService, userNo, routeIp, merged, localSvrOverride);
+            return true;
+        } catch (VhostApplyException e) {
+            return false;
+        }
+    }
+
+    // Shared by apiConfSet's vhost handling and applyMergedConfig: live-apply first, and only
+    // persist the "vhost" config value if ReverseProxyServer actually accepted it, so a bad save
+    // never leaves the DB holding YAML that will keep failing to load (silently) on every future
+    // reload/restart. A null/blank value clears the live routing instead of applying anything.
+    private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml) throws VhostApplyException {
+        applyAndPersistVhostConfig(confService, userNo, routeIp, vhostYaml, null);
+    }
+
+    // localSvrOverride, when non-null, is used instead of the persisted "local_svr" conf value —
+    // lets a candidate override be validated (via setVirtualHosts) before it's saved to the DB.
+    private static void applyAndPersistVhostConfig(ProxyConfService confService, Long userNo, String routeIp, String vhostYaml, String localSvrOverride) throws VhostApplyException {
+        upstreamRejected.remove();
+        try {
+            if (vhostYaml != null && !vhostYaml.isBlank()) {
+                var localSvr = resolveLocalSvr(confService, userNo, routeIp, localSvrOverride);
+                ReverseProxyServer.setVirtualHosts(userNo, substituteLocalSvr(vhostYaml, localSvr));
+            } else {
+                ReverseProxyServer.clearVirtualHosts(userNo);
+            }
+            confService.set("vhost", userNo, vhostYaml != null ? vhostYaml : "", userNo);
+        } catch (Exception e) {
+            logger.warn("Failed to apply vhost config for user {}: {}", userNo, e.getMessage());
+            if (e instanceof tricatch.oe.proxy.exception.UpstreamNotInternalException) upstreamRejected.set(Boolean.TRUE);
+            throw new VhostApplyException(e);
+        }
+    }
+
+    // Set (on the request's own thread) when the apply that just failed was refused because a backend
+    // is outside the internal network, so the handler can tell the page - which otherwise only sees
+    // "400" - to explain that instead of a generic failure. Reset at the start of every apply.
+    private static final ThreadLocal<Boolean> upstreamRejected = new ThreadLocal<>();
+
+    private static void flagUpstreamRejection(Context ctx) {
+        if (Boolean.TRUE.equals(upstreamRejected.get())) ctx.header("X-Oe-Reason", "upstream-internal-only");
+        upstreamRejected.remove();
+    }
+
+    private static class VhostApplyException extends Exception {
+        VhostApplyException(Throwable cause) { super(cause); }
+    }
+
+    private static String resolveLocalSvr(ProxyConfService confService, Long userNo, String fallback, String explicitOverride) {
+        var override = explicitOverride != null ? explicitOverride : confService.get("local_svr", userNo);
+        return override != null && !override.isBlank() ? override : fallback;
+    }
+
+    private static String substituteLocalSvr(String content, String localSvr) {
+        if (localSvr == null || localSvr.isBlank()) return content;
+        return content.replace("${LOCAL_SVR}", localSvr);
+    }
+}

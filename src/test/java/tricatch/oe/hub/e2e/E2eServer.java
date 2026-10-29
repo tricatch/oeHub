@@ -15,29 +15,44 @@ import java.util.concurrent.TimeUnit;
 /**
  * Boots the real oeHub server as a separate OS process, the same way a user would run it
  * ({@code gradlew run}), so Playwright drives an actually-running instance instead of an
- * in-JVM fake. Each instance gets its own {@code -Dhome} data directory (under {@code build/})
+ * in-JVM fake. Each instance gets its own {@code -Doe.home} data directory (under {@code build/})
  * so it never touches the real {@code ~/oeHub} data.
  */
 public class E2eServer implements AutoCloseable {
 
     private final int port;
     private final Path homeDir;
+    private final java.util.List<String> extraJvmArgs;
     private Process process;
 
     public E2eServer(int port) {
+        this(port, java.util.List.of());
+    }
+
+    /** extraJvmArgs are appended after the standard ones below (e.g. "-Doe.mode=workspace"). */
+    public E2eServer(int port, java.util.List<String> extraJvmArgs) {
         this.port = port;
         this.homeDir = Path.of("build", "e2e-home-" + port).toAbsolutePath();
+        this.extraJvmArgs = extraJvmArgs;
     }
 
     public int port() {
         return port;
     }
 
+    /**
+     * The forward proxy port this instance binds, offset from the app port so it never collides
+     * with a dev server on the default 36980 (or with another E2eServer running alongside).
+     */
+    public int fwdproxyPort() {
+        return port - 10000;
+    }
+
     public String baseUrl() {
         return "http://localhost:" + port;
     }
 
-    /** The isolated -Dhome data directory this instance runs with (root-ca/, data/, etc.). */
+    /** The isolated -Doe.home data directory this instance runs with (root-ca/, data/, etc.). */
     public Path homeDir() {
         return homeDir;
     }
@@ -54,10 +69,12 @@ public class E2eServer implements AutoCloseable {
 
         var command = new ArrayList<String>();
         command.add(javaBin);
-        command.add("-Ddev=true");
-        command.add("-Dport=" + port);
-        command.add("-Dhome=" + homeDir);
+        command.add("-Doe.dev=true");
+        command.add("-Doe.port=" + port);
+        command.add("-Doe.home=" + homeDir);
+        command.add("-Doe.fwdproxy.port=" + fwdproxyPort());
         command.add("-Djava.net.preferIPv4Stack=true");
+        command.addAll(extraJvmArgs);
         command.add("-cp");
         command.add(classpath);
         command.add("tricatch.oe.hub.OeHubApplication");

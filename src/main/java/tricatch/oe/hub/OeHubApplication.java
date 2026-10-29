@@ -5,6 +5,8 @@ import io.javalin.http.staticfiles.Location;
 import io.javalin.rendering.FileRenderer;
 import io.pebbletemplates.pebble.PebbleEngine;
 import io.pebbletemplates.pebble.loader.FileLoader;
+import tricatch.oe.hub.config.ClientIp;
+import tricatch.oe.hub.config.ScanBlocker;
 import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.i18n.Messages;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -13,21 +15,31 @@ import org.h2.tools.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tricatch.oe.hub.config.AppHome;
+import tricatch.oe.hub.config.BackupService;
 import tricatch.oe.hub.config.DatabaseConfig;
+import tricatch.oe.hub.config.DbMigration;
 import tricatch.oe.hub.config.JwtService;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.controller.AdminHostsUaController;
 import tricatch.oe.hub.controller.AdminHostsUrlController;
 import tricatch.oe.hub.controller.OidExtensionController;
 import tricatch.oe.hub.controller.AdminUserController;
+import tricatch.oe.hub.controller.AuditLogController;
 import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SetupController;
 import tricatch.oe.hub.controller.SettingsController;
 import tricatch.oe.hub.controller.UserController;
+import tricatch.oe.hub.controller.MemberController;
+import tricatch.oe.hub.controller.WorkspaceController;
+import tricatch.oe.hub.folder.FolderKind;
+import tricatch.oe.hub.folder.ListFolderController;
+import tricatch.oe.hub.controller.WsaSettingsController;
 import tricatch.oe.hosts.controller.HostsController;
 import tricatch.oe.fwdproxy.BlockedPageServer;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
+import tricatch.oe.hub.proxy.ReverseProxySettings;
+import tricatch.oe.hub.proxy.controller.ProxyController;
 import tricatch.oe.proxy.ReverseProxyServer;
-import tricatch.oe.proxy.controller.ProxyController;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -57,14 +69,85 @@ public class OeHubApplication {
         return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    // A fresh value every single request (unlike the CSRF token, which is stable per browser) -
+    // reusing one across requests would let an attacker who ever saw it once (e.g. in a cached
+    // response) replay it to get their own injected <script> past the CSP below.
+    private static String generateCspNonce() {
+        var bytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    // script-src is the directive that actually matters here: 'self' covers our own /js/*.js
+    // files, 'nonce-<value>' covers every inline <script nonce="{{ cspNonce }}"> the templates
+    // render, and the two CDN hosts cover Bootstrap/Ace/js-yaml (all pinned with SRI integrity
+    // hashes in the templates themselves, on top of this). Without 'strict-dynamic', host sources
+    // and the nonce both stay in effect together, so Ace's own dynamic loading of its worker/mode
+    // files from the same cdnjs origin still works.
+    //
+    // style-src stays at 'unsafe-inline': the templates use inline style="..." attributes
+    // pervasively (icon sizing etc.), and CSS injection can't read IndexedDB or exfiltrate the
+    // workspace key the way injected JS can - script-src is where the real value is, so that's
+    // where the strictness goes.
+    //
+    // connect-src stays 'self' in production. With -Doe.dev=true it also allows the jsdelivr CDN,
+    // because DevTools fetches the Bootstrap .css.map/.js.map source maps from there and would
+    // otherwise log a CSP violation for each one; nothing in the app itself connects to it.
+    private static String buildCsp(String nonce, boolean dev) {
+        return "default-src 'self'; "
+            + "script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            + "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            + "img-src 'self' data:; "
+            + "font-src 'self' data:; "
+            + "connect-src 'self'" + (dev ? " https://cdn.jsdelivr.net" : "") + "; "
+            + "worker-src 'self' https://cdnjs.cloudflare.com blob:; "
+            + "object-src 'none'; "
+            + "base-uri 'self'; "
+            + "form-action 'self'; "
+            + "frame-ancestors 'self'";
+    }
+
+    /** Login gate plus role check for a role-scoped prefix: anonymous callers are sent to the
+     *  login page (pages) or get 401 (API), logged-in callers without the role get 403. */
+    private static void requireRole(io.javalin.http.Context ctx,
+                                    java.util.function.Predicate<tricatch.oe.hub.model.HubUser> allowed,
+                                    boolean page) {
+        var user = AuthController.currentUser(ctx);
+        if (user == null) {
+            if (page) ctx.redirect("/login?redirect=" + ctx.path());
+            else ctx.status(401).result("Unauthorized");
+            ctx.skipRemainingHandlers();
+            return;
+        }
+        if (!allowed.test(user)) {
+            ctx.status(403).result("Forbidden");
+            ctx.skipRemainingHandlers();
+        }
+    }
+
     private static boolean constantTimeEquals(String a, String b) {
         return java.security.MessageDigest.isEqual(
             a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
             b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    // The only routes that accept a multipart (file upload) body: importing an existing root CA
+    // certificate + key, from the setup wizard and from admin settings. A new upload route must be
+    // added here, or every request to it is refused with 415.
+    private static final java.util.Set<String> MULTIPART_ROUTES = java.util.Set.of(
+        "/setup/ca/import",
+        "/adm/settings/ca/import");
+
+    private static <T> T findCause(Throwable e, Class<T> type) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (type.isInstance(t)) return type.cast(t);
+            if (t.getCause() == t) break;
+        }
+        return null;
+    }
+
     private static int resolvePort() {
-        String prop = System.getProperty("port");
+        String prop = System.getProperty("oe.port");
         if (prop != null && !prop.isBlank()) {
             try { return Integer.parseInt(prop.trim()); }
             catch (NumberFormatException ignored) {}
@@ -73,7 +156,7 @@ public class OeHubApplication {
     }
 
     private static String resolveVersion() {
-        String sysProp = System.getProperty("app.version");
+        String sysProp = System.getProperty("oe.app.version");
         if (sysProp != null && !sysProp.isBlank()) return sysProp;
         String manifest = OeHubApplication.class.getPackage().getImplementationVersion();
         return manifest != null ? manifest : "unknown";
@@ -81,7 +164,7 @@ public class OeHubApplication {
 
     public static Javalin createApp(SqlSessionFactory sqlSessionFactory) {
 
-        boolean dev = "true".equals(System.getProperty("dev"));
+        boolean dev = "true".equals(System.getProperty("oe.dev"));
 
         var messagesMap = java.util.Map.of("en", new Messages("en"), "ko", new Messages("ko"));
 
@@ -89,17 +172,31 @@ public class OeHubApplication {
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
+        // oe.mode=workspace disables oeProxy entirely (cloudGroupService design doc §2.6) - the
+        // controller itself is never constructed, not just unrouted, so no CA/proxy-config file
+        // I/O can happen from a code path that's supposed to not exist in this mode.
+        boolean workspaceMode = AppHome.isWorkspaceMode();
+
         var jwtService  = new JwtService(sqlSessionFactory);
         var settings    = new SettingsController(sqlSessionFactory, objectMapper);
         var auth        = new AuthController(sqlSessionFactory, jwtService);
-        var setup       = new SetupController(sqlSessionFactory, settings, objectMapper, auth);
+        var setup       = new SetupController(sqlSessionFactory, settings, auth);
         var hosts       = new HostsController(sqlSessionFactory, settings, objectMapper);
-        var proxy       = new ProxyController(sqlSessionFactory, objectMapper);
+        var proxy       = workspaceMode ? null : new ProxyController(sqlSessionFactory, objectMapper);
+        var hostsFolders = new ListFolderController(sqlSessionFactory, FolderKind.HOSTS, objectMapper);
+        var proxyFolders = workspaceMode ? null : new ListFolderController(sqlSessionFactory, FolderKind.PROXY, objectMapper);
         var userCtrl    = new UserController(sqlSessionFactory, objectMapper);
         var adminUser   = new AdminUserController(sqlSessionFactory);
+        var auditLogCtrl = new AuditLogController(sqlSessionFactory);
         var adminUa     = new AdminHostsUaController(sqlSessionFactory, objectMapper);
         var adminUrl    = new AdminHostsUrlController(sqlSessionFactory, objectMapper);
+        var wsaSettings = new WsaSettingsController();
+        var member      = new MemberController(sqlSessionFactory);
         var oidExtension = new OidExtensionController(settings);
+        // Instance-admin workspace console (cloudGroupService design doc §2.5/§3 item 2) -
+        // workspace mode only, so constructed unconditionally here (cheap, no I/O) but only
+        // routed below under "if (workspaceMode)", same pattern as ProxyController's inverse.
+        var workspaceCtrl = new WorkspaceController(sqlSessionFactory);
 
         setup.refreshSetupState();
 
@@ -113,6 +210,29 @@ public class OeHubApplication {
                 config.staticFiles.add("/static", Location.CLASSPATH);
             }
 
+            // Scan blocking (ScanBlocker): an address that racked up too many anonymous 404s is
+            // refused outright, first, before any other filter does work for it. The counting side
+            // is the after-handler below.
+            config.routes.before(ctx -> {
+                if (ScanBlocker.isBlocked(ClientIp.of(ctx))) {
+                    ctx.status(403).result("Forbidden");
+                    ctx.skipRemainingHandlers();
+                }
+            });
+
+            // File uploads (multipart bodies) are accepted only on the routes that take one -
+            // see MULTIPART_ROUTES. Everywhere else they are refused before anything reads the
+            // body: without this, the CSRF filter below would make Jetty parse a scanner's
+            // multipart POST just to look for a _csrf field in it.
+            config.routes.before(ctx -> {
+                var contentType = ctx.contentType();
+                if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")
+                        && !MULTIPART_ROUTES.contains(ctx.path())) {
+                    ctx.status(415).result("Unsupported Media Type");
+                    ctx.skipRemainingHandlers();
+                }
+            });
+
             // CSRF protection (double-submit cookie): a per-browser random token is set as a
             // non-HttpOnly cookie so client JS can read and echo it back; every state-changing
             // request must present the same value via header or form field. A cross-site page
@@ -124,7 +244,7 @@ public class OeHubApplication {
                 if (token == null || token.isBlank()) {
                     token = generateCsrfToken();
                     var sb = new StringBuilder(CSRF_COOKIE_NAME).append('=').append(token).append("; Path=/; SameSite=Lax");
-                    if ("https".equalsIgnoreCase(ctx.scheme())) sb.append("; Secure");
+                    if (tricatch.oe.hub.config.CookieSecurity.isSecure(ctx.scheme())) sb.append("; Secure");
                     ctx.res().addHeader("Set-Cookie", sb.toString());
                 }
                 ctx.attribute("csrfToken", token);
@@ -140,6 +260,15 @@ public class OeHubApplication {
                         ctx.skipRemainingHandlers();
                     }
                 }
+            });
+
+            // Content-Security-Policy, nonce-based on script-src (see buildCsp/generateCspNonce) -
+            // runs early, before any handler needs the nonce for rendering, same as the CSRF pair
+            // above.
+            config.routes.before(ctx -> {
+                String nonce = generateCspNonce();
+                ctx.attribute("cspNonce", nonce);
+                ctx.res().addHeader("Content-Security-Policy", buildCsp(nonce, dev));
             });
 
             // Set locale from cookie (fallback: Accept-Language header, then "en")
@@ -178,36 +307,16 @@ public class OeHubApplication {
                     ctx.skipRemainingHandlers();
                 }
             });
-            io.javalin.http.Handler settingsAdminOnly = ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            };
-            config.routes.before("/oehub/settings", settingsAdminOnly);
-            config.routes.before("/oehub/settings/*", settingsAdminOnly);
-            config.routes.before("/oehub/admin/*", ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            });
-            config.routes.before("/api/admin/*", ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            });
-            config.routes.before("/oehub/h2", ctx -> {
-                var user = AuthController.currentUser(ctx);
-                if (user == null || !"adm".equals(user.getRole())) {
-                    ctx.status(403).result("Forbidden");
-                    ctx.skipRemainingHandlers();
-                }
-            });
+            // Role-scoped URL prefixes (see Role): the path alone says who may call it.
+            //   /adm/* and /api/adm/* - instance admin only (settings, CA, global presets, the
+            //                           workspace console, H2 console);
+            //   /wsa/* and /api/wsa/* - workspace admin (members, invites, teams, audit log, key
+            //                           rotation), always scoped to the caller's own workspace.
+            // Everything else under /oehub/* and /api/* is open to any logged-in account.
+            config.routes.before("/adm/*",     ctx -> requireRole(ctx, Role::isInstanceAdmin, true));
+            config.routes.before("/wsa/*",     ctx -> requireRole(ctx, Role::isWorkspaceAdmin, true));
+            config.routes.before("/api/adm/*", ctx -> requireRole(ctx, Role::isInstanceAdmin, false));
+            config.routes.before("/api/wsa/*", ctx -> requireRole(ctx, Role::isWorkspaceAdmin, false));
             config.routes.before("/api/*", ctx -> {
                 // oeProxy CA certificate download is deliberately public — a device installing
                 // the root CA to trust the SSL reverse proxy may not have (or need) an oeHub
@@ -215,26 +324,47 @@ public class OeHubApplication {
                 if ("/api/proxy/ca".equals(ctx.path())) {
                     return;
                 }
+                // Password recovery must be reachable by a locked-out, logged-out caller by
+                // definition - it's the account-level auth check itself (recovery verifier /
+                // bcrypt), same trust boundary as /login (e2eEncryption design doc §3 "복구 플로우
+                // 프로토콜").
+                if ("/api/recover/verify".equals(ctx.path()) || "/api/recover/reset".equals(ctx.path())) {
+                    return;
+                }
+                // The browser needs an account's KDF salt before it can log in (workspace mode -
+                // see AuthController.apiKdfSalt), so this one is deliberately anonymous too.
+                if ("/api/auth/kdf".equals(ctx.path())) {
+                    return;
+                }
                 if (AuthController.currentUser(ctx) == null) {
                     ctx.status(401).result("Unauthorized");
                     ctx.skipRemainingHandlers();
                 }
             });
-            // The /setup/* CRUD routes (hosts-url, hosts-ua, oid-domain-default, ca/generate,
-            // ca/import) exist so the first-run wizard can manage global presets and the CA
-            // before any admin account/session exists. They must lock down as soon as an admin
-            // account exists — not only once the whole wizard (admin + CA) is complete — otherwise
-            // there is a window after admin creation, before the CA step, where any unauthenticated
-            // caller could POST /setup/ca/import and install their own root CA as the trust root
-            // for the entire SSL reverse proxy. SetupController.processSetup logs the newly-created
-            // admin in immediately so the legitimate wizard flow keeps working once this closes.
+            // The /setup/* CRUD routes (ca/generate, ca/import) exist so the first-run wizard can
+            // manage the CA before any admin account/session exists. They must lock down as soon as
+            // an admin account exists — not only once the whole wizard (admin + CA) is complete —
+            // otherwise there is a window after admin creation, before the CA step, where any
+            // unauthenticated caller could POST /setup/ca/import and install their own root CA as
+            // the trust root for the entire SSL reverse proxy. SetupController.processSetup logs the
+            // newly-created admin in immediately so the legitimate wizard flow keeps working once
+            // this closes.
             config.routes.before("/setup/*", ctx -> {
                 if (SetupController.isAdminConfigured()) {
-                    var user = AuthController.currentUser(ctx);
-                    if (user == null || !"adm".equals(user.getRole())) {
+                    if (!Role.isInstanceAdmin(AuthController.currentUser(ctx))) {
                         ctx.status(403).result("Forbidden");
                         ctx.skipRemainingHandlers();
                     }
+                }
+            });
+
+            // Counting side of scan blocking (see the first before-filter): only anonymous 404s -
+            // a logged-in user's 404 (a deleted shared profile, a retried save) is not probing.
+            config.routes.after(ctx -> {
+                if (ctx.statusCode() != 404 || AuthController.currentUser(ctx) != null) return;
+                var ip = ClientIp.of(ctx);
+                if (ScanBlocker.recordNotFound(ip)) {
+                    logger.warn("Blocking {} for 10 min after repeated 404s (last: {})", ip, ctx.path());
                 }
             });
 
@@ -244,6 +374,11 @@ public class OeHubApplication {
                 // would otherwise allow clickjacking (e.g. an invisible overlay tricking a
                 // logged-in admin into clicking "grant admin" or "delete user").
                 ctx.header("X-Frame-Options", "DENY");
+                // Only where the site is known to be served over HTTPS: browsers ignore HSTS on plain
+                // HTTP, and a stray header there would only mislead.
+                if (tricatch.oe.hub.config.CookieSecurity.isSecure(ctx.scheme())) {
+                    ctx.header("Strict-Transport-Security", "max-age=31536000");
+                }
                 var path = ctx.path();
                 if (!path.startsWith("/css/") && !path.startsWith("/icon/") && !path.startsWith("/logo/") && !path.startsWith("/js/")) {
                     ctx.header("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -252,22 +387,18 @@ public class OeHubApplication {
                 }
             });
 
+            // Anonymous: browsers ask for /favicon.ico on their own (raw text/JSON responses have no
+            // <link rel=icon>), and answering 404 would count toward ScanBlocker for every visitor.
+            config.routes.get("/favicon.ico", ctx -> ctx.redirect("/icon/oe_logo_favicon.svg", io.javalin.http.HttpStatus.MOVED_PERMANENTLY));
+
             config.routes.get("/setup", setup::showSetup);
             config.routes.post("/setup", setup::processSetup);
-            config.routes.post("/setup/ca/generate", setup::generateCa);
-            config.routes.post("/setup/ca/import",   setup::importCa);
-            config.routes.get("/setup/hosts-url",              setup::apiSetupUrlList);
-            config.routes.post("/setup/hosts-url",             setup::apiSetupUrlCreate);
-            config.routes.patch("/setup/hosts-url/{urlId}",    setup::apiSetupUrlUpdate);
-            config.routes.delete("/setup/hosts-url/{urlId}",   setup::apiSetupUrlDelete);
-            config.routes.put("/setup/hosts-url/order",        setup::apiSetupUrlReorder);
-            config.routes.get("/setup/hosts-ua",               setup::apiSetupUaList);
-            config.routes.post("/setup/hosts-ua",              setup::apiSetupUaCreate);
-            config.routes.patch("/setup/hosts-ua/{uaId}",      setup::apiSetupUaUpdate);
-            config.routes.delete("/setup/hosts-ua/{uaId}",     setup::apiSetupUaDelete);
-            config.routes.put("/setup/hosts-ua/order",         setup::apiSetupUaReorder);
-            config.routes.post("/setup/oid-domain-default", setup::saveOidDomainDefault);
-
+            if (!workspaceMode) {
+                // CA setup only makes sense for oeProxy, which doesn't exist in workspace mode -
+                // cloudGroupService design doc §2.6.
+                config.routes.post("/setup/ca/generate", setup::generateCa);
+                config.routes.post("/setup/ca/import",   setup::importCa);
+            }
             config.routes.get("/", ctx -> {
                 var model = new HashMap<String, Object>();
                 model.put("user", AuthController.currentUser(ctx));
@@ -286,18 +417,38 @@ public class OeHubApplication {
             });
             config.routes.get("/register", auth::showRegister);
             config.routes.post("/register", auth::processRegister);
+            config.routes.get("/recover", auth::showRecover);
+            if (workspaceMode) {
+                config.routes.get("/api/auth/kdf", auth::apiKdfSalt);
+                // Privacy policy: deliberately anonymous (it is linked from the sign-up notice, before
+                // any account exists) and workspace-mode only - self-hosted gets a plain 404. It lives
+                // outside /oehub/*, so the login filter above never applies to it.
+                config.routes.get("/privacy", ctx -> ctx.render("templates/privacy.pebble", new HashMap<String, Object>()));
+            }
+            config.routes.post("/api/recover/verify", auth::apiRecoverVerify);
+            config.routes.post("/api/recover/reset",  auth::apiRecoverReset);
 
             // Admin settings
-            config.routes.get("/oehub/settings",              settings::showSettings);
-            config.routes.post("/api/admin/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
-            config.routes.post("/api/admin/settings/identifier",         settings::apiSaveIdentifier);
-            config.routes.post("/api/admin/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
-            config.routes.post("/api/admin/settings/fwdproxy-whitelist", settings::apiSaveFwdProxyWhitelist);
-            config.routes.post("/oehub/settings/ca/generate", settings::generateCa);
-            config.routes.post("/oehub/settings/ca/import",   settings::importCa);
+            config.routes.get("/adm/settings",              settings::showSettings);
+            config.routes.post("/api/adm/settings/backup-interval", settings::apiSaveBackupInterval);
+            if (!workspaceMode) {
+                // IP identifier / allowed domains (forward-proxy relay whitelist) / PROXY_SVR address /
+                // CA / oeOID domain defaults are all oeProxy-only concerns - meaningless (and their
+                // backing servers non-existent) under workspace mode.
+                config.routes.post("/api/adm/settings/oid-domain-default", settings::apiSaveOidDomainDefault);
+                config.routes.post("/api/adm/settings/identifier",         settings::apiSaveIdentifier);
+                config.routes.post("/api/adm/settings/allowed-domains",    settings::apiSaveAllowedDomains);
+                config.routes.post("/api/adm/settings/allowed-domains/allow-all", settings::apiSaveAllowAllDomains);
+                config.routes.get("/api/adm/settings/blocked-domains",     settings::apiListBlockedDomains);
+                config.routes.post("/api/adm/settings/proxy-svr-address",  settings::apiSaveProxySvrAddress);
+                config.routes.post("/api/adm/settings/trust-internal-cert", settings::apiSaveTrustInternalCert);
+                config.routes.post("/api/adm/settings/internal-only-upstream", settings::apiSaveInternalOnlyUpstream);
+                config.routes.post("/adm/settings/ca/generate", settings::generateCa);
+                config.routes.post("/adm/settings/ca/import",   settings::importCa);
+            }
 
             // H2 console (adm only)
-            config.routes.get("/oehub/h2", ctx ->
+            config.routes.get("/adm/h2", ctx ->
                 ctx.redirect("http://localhost:" + h2ConsolePort + "/login.do?setting=oeHub"));
 
             // oeHosts UI
@@ -305,13 +456,22 @@ public class OeHubApplication {
             config.routes.get("/oehub/my/setting",  hosts::showMySetting);
 
             // oeHosts REST API
+            // Sidebar folders and the tree order - registered before the /api/hosts/{hostsId}/...
+            // routes below so a "folders" segment is never read as a hosts id.
+            config.routes.get("/api/hosts/folders",                hostsFolders::apiList);
+            config.routes.post("/api/hosts/folders",               hostsFolders::apiCreate);
+            config.routes.patch("/api/hosts/folders/{folderId}",   hostsFolders::apiUpdate);
+            config.routes.delete("/api/hosts/folders/{folderId}",  hostsFolders::apiDelete);
+            config.routes.put("/api/hosts/tree-order",             hostsFolders::apiSaveTreeOrder);
             config.routes.get("/api/hosts",                       hosts::apiList);
             config.routes.post("/api/hosts",                      hosts::apiCreate);
             config.routes.delete("/api/hosts",                    hosts::apiDeleteAll);
             config.routes.patch("/api/hosts/{hostsId}/content",    hosts::apiUpdateContent);
             config.routes.patch("/api/hosts/{hostsId}/name",       hosts::apiUpdateName);
             config.routes.patch("/api/hosts/{hostsId}/selected",   hosts::apiToggleSelected);
-            config.routes.patch("/api/hosts/{hostsId}/visibility",  hosts::apiUpdateVisibility);
+            config.routes.patch("/api/hosts/{hostsId}/share-scope", hosts::apiUpdateShareScope);
+            config.routes.get("/api/hosts/{hostsId}/view",         hosts::apiGetForView);
+            config.routes.post("/api/hosts/{hostsId}/link",        hosts::apiSetLink);
             config.routes.post("/api/hosts/{hostsId}/copy",        hosts::apiCopy);
             config.routes.post("/api/hosts/{hostsId}/register",    hosts::apiRegister);
             config.routes.delete("/api/hosts/{hostsId}",           hosts::apiDelete);
@@ -333,12 +493,19 @@ public class OeHubApplication {
             config.routes.put("/api/hosts/url/my/order",          hosts::apiMyUrlReorder);
             config.routes.get("/api/hosts/conf/{name}",            hosts::apiEnvGet);
             config.routes.put("/api/hosts/conf/{name}",            hosts::apiEnvSet);
-            config.routes.post("/api/oid/domain/my",              hosts::apiMyOidDomainSave);
+            if (!workspaceMode) {
+                // oeOID (X-OeHub-Oid) domains only matter to oeProxy, which workspace mode never runs.
+                config.routes.post("/api/oid/domain/my",          hosts::apiMyOidDomainSave);
+            }
             config.routes.get("/api/oid/download",                 oidExtension::apiDownload);
 
             // Share (public, no auth)
             config.routes.get("/share/{hostsId}/oelink",            hosts::apiShare);
             config.routes.get("/share/{hostsId}/text",             hosts::apiShareText);
+            // Fully-public link (public, no auth, no workspace membership - e2eEncryption design
+            // doc §6's last item) - a distinct trust boundary from /share above.
+            config.routes.get("/link/{hostsId}/oelink",             hosts::apiPublicLink);
+            config.routes.get("/link/{hostsId}/oelink/text",        hosts::apiPublicLinkText);
 
             // My info
             config.routes.get("/oehub/my/info", ctx -> {
@@ -348,6 +515,26 @@ public class OeHubApplication {
                 model.put("user", user);
                 model.put("createAt", user.getCreateAt() != null ? user.getCreateAt().format(fmt) : "");
                 model.put("lastLoginAt", user.getLastLoginAt() != null ? user.getLastLoginAt().format(fmt) : "");
+                if (workspaceMode) {
+                    try (var session = sqlSessionFactory.openSession()) {
+                        var ws = session.getMapper(tricatch.oe.hub.mapper.WorkspaceMapper.class).findByWsNo(user.getWsNo());
+                        model.put("wsName", ws != null ? ws.getWsName() : "");
+                        // What the "delete account" section offers: "user" (just this account),
+                        // "workspace" (last member - the workspace goes too), "blocked" (sole admin
+                        // while others remain), "none" (instance admin - section hidden).
+                        var userMapper = session.getMapper(tricatch.oe.hub.mapper.HubUserMapper.class);
+                        String deleteMode;
+                        if (Role.ADM.equals(user.getRole())) {
+                            deleteMode = "none";
+                        } else if (Role.WSA.equals(user.getRole()) && userMapper.countWsAdmins(user.getWsNo()) <= 1) {
+                            deleteMode = userMapper.countOtherLoginMembers(user.getWsNo(), user.getUserNo()) > 0
+                                ? "blocked" : "workspace";
+                        } else {
+                            deleteMode = "user";
+                        }
+                        model.put("deleteAccountMode", deleteMode);
+                    }
+                }
                 ctx.render("templates/oehub/my-info.pebble", model);
             });
 
@@ -358,66 +545,171 @@ public class OeHubApplication {
                 ctx.render("templates/oehub/licenses.pebble", model);
             });
 
-            // oeProxy UI
-            config.routes.get("/oehub/proxy", proxy::showProxy);
-            config.routes.get("/oehub/proxy/monitor", proxy::showMonitor);
+            if (!workspaceMode) {
+                // oeProxy UI
+                config.routes.get("/oehub/proxy", proxy::showProxy);
+                config.routes.get("/oehub/proxy/monitor", proxy::showMonitor);
 
-            // oeProxy SSE monitor event stream
-            config.routes.get("/api/proxy/monitor/event", proxy::monitorEvent);
+                // oeProxy SSE monitor event stream
+                config.routes.get("/api/proxy/monitor/event", proxy::monitorEvent);
 
-            // oeProxy CA certificate download (no auth required — browser needs to install)
-            config.routes.get("/api/proxy/ca", proxy::apiDownloadCa);
+                // oeProxy CA certificate download (no auth required — browser needs to install)
+                config.routes.get("/api/proxy/ca", proxy::apiDownloadCa);
 
-            // oeProxy "Use This IP" - claim the current browsing IP for IP-based owner fallback
-            config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
+                // oeProxy "Use This IP" - claim the current browsing IP for IP-based owner fallback
+                config.routes.post("/api/proxy/take-ip", proxy::apiTakeIp);
 
-            // oeProxy REST API
-            config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
-            config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);
-            config.routes.delete("/api/proxy/vhosts",                       proxy::apiDeleteAll);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/content",      proxy::apiUpdateContent);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/name",         proxy::apiUpdateName);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/selected",     proxy::apiToggleSelected);
-            config.routes.patch("/api/proxy/vhosts/{vhostId}/visibility",   proxy::apiUpdateVisibility);
-            config.routes.post("/api/proxy/vhosts/{vhostId}/copy",          proxy::apiCopy);
-            config.routes.post("/api/proxy/vhosts/{vhostId}/register",      proxy::apiRegister);
-            config.routes.delete("/api/proxy/vhosts/{vhostId}",             proxy::apiDelete);
-            config.routes.get("/api/proxy/vhosts/search",                   proxy::apiSearch);
-            config.routes.put("/api/proxy/vhosts/order",                    proxy::apiReorder);
-            config.routes.get("/api/proxy/vhosts/export",                   proxy::apiExport);
-            config.routes.post("/api/proxy/vhosts/import",                  proxy::apiImport);
+                // oeProxy REST API
+                // Sidebar folders - same layout and ordering reason as the /api/hosts/folders routes.
+                config.routes.get("/api/proxy/vhosts/folders",                  proxyFolders::apiList);
+                config.routes.post("/api/proxy/vhosts/folders",                 proxyFolders::apiCreate);
+                config.routes.patch("/api/proxy/vhosts/folders/{folderId}",     proxyFolders::apiUpdate);
+                config.routes.delete("/api/proxy/vhosts/folders/{folderId}",    proxyFolders::apiDelete);
+                config.routes.put("/api/proxy/vhosts/tree-order",               proxyFolders::apiSaveTreeOrder);
+                config.routes.get("/api/proxy/vhosts",                          proxy::apiList);
+                config.routes.post("/api/proxy/vhosts",                         proxy::apiCreate);
+                config.routes.delete("/api/proxy/vhosts",                       proxy::apiDeleteAll);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/content",      proxy::apiUpdateContent);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/name",         proxy::apiUpdateName);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/selected",     proxy::apiToggleSelected);
+                config.routes.patch("/api/proxy/vhosts/{vhostId}/share-scope", proxy::apiUpdateShareScope);
+                config.routes.post("/api/proxy/vhosts/{vhostId}/copy",          proxy::apiCopy);
+                config.routes.post("/api/proxy/vhosts/{vhostId}/register",      proxy::apiRegister);
+                config.routes.delete("/api/proxy/vhosts/{vhostId}",             proxy::apiDelete);
+                config.routes.get("/api/proxy/vhosts/search",                   proxy::apiSearch);
+                config.routes.put("/api/proxy/vhosts/order",                    proxy::apiReorder);
+                config.routes.get("/api/proxy/vhosts/export",                   proxy::apiExport);
+                config.routes.post("/api/proxy/vhosts/import",                  proxy::apiImport);
+            }
 
             // User backup / restore
             config.routes.get("/api/user/backup",   userCtrl::apiBackup);
             config.routes.post("/api/user/restore",  userCtrl::apiRestore);
             config.routes.post("/api/user/change-password", userCtrl::apiChangePassword);
+            config.routes.get("/api/user/crypto-keys", userCtrl::apiMyCryptoKeys);
+            config.routes.post("/api/user/recovery-key", userCtrl::apiReissueRecoveryKey);
+            if (workspaceMode) {
+                // Self-service withdrawal - any logged-in account, but only where the service
+                // notice/privacy policy promise it (workspace mode).
+                config.routes.post("/api/user/delete-account", userCtrl::apiDeleteAccount);
+            }
+            // Personal API tokens: disabled for now (2026-09-16) - unclear real-world use case
+            // yet. UserController.apiListApiTokens/apiCreateApiToken/apiDeleteApiToken and
+            // AuthController.resolveUserFromApiToken are left in place, just unrouted/uncalled,
+            // so this is cheap to turn back on later.
+            // config.routes.get("/api/user/api-tokens",                userCtrl::apiListApiTokens);
+            // config.routes.post("/api/user/api-tokens",               userCtrl::apiCreateApiToken);
+            // config.routes.delete("/api/user/api-tokens/{tokenId}",   userCtrl::apiDeleteApiToken);
 
             // Admin: user management
-            config.routes.get("/oehub/admin/users",               adminUser::showUsers);
-            config.routes.get("/api/admin/users",                 adminUser::apiSearch);
-            config.routes.patch("/api/admin/users/{userNo}/role",  adminUser::apiSetRole);
-            config.routes.post("/api/admin/users/{userNo}/reset-password", adminUser::apiResetPassword);
-            config.routes.delete("/api/admin/users/{userNo}",      adminUser::apiDeleteUser);
+            config.routes.get("/wsa/users",               adminUser::showUsers);
+            config.routes.get("/api/wsa/users",                 adminUser::apiSearch);
+            config.routes.get("/api/wsa/users/pending",         adminUser::apiListPending);
+            config.routes.post("/api/wsa/users/{userNo}/approve", adminUser::apiApprovePending);
+            config.routes.post("/api/wsa/users/{userNo}/reject",  adminUser::apiRejectPending);
+            config.routes.get("/api/wsa/invites",               adminUser::apiListInvites);
+            config.routes.post("/api/wsa/invites",              adminUser::apiCreateInvite);
+            config.routes.patch("/api/wsa/users/{userNo}/role",  adminUser::apiSetRole);
+            // Admin-initiated password reset only ever changes the server-side password hash - it
+            // cannot re-wrap wrapped_private_key (that requires the OLD password, which the admin
+            // never has), so under workspace mode it would silently strand the target member unable
+            // to decrypt their own workspace content (e2eEncryption design doc §3/§9). Self-hosted's
+            // identity crypto is a dummy placeholder (design doc §1), so the same action is harmless
+            // there and stays available. The self-service /recover flow (which DOES re-wrap, via the
+            // recovery code) remains the only supported recovery path in workspace mode.
+            if (!workspaceMode) {
+                config.routes.post("/api/wsa/users/{userNo}/reset-password", adminUser::apiResetPassword);
+            }
+            config.routes.get("/api/wsa/workspace/rotation-rows", adminUser::apiWorkspaceRotationRows);
+            config.routes.post("/api/wsa/workspace/rotate",      adminUser::apiRotateWorkspaceKey);
+            config.routes.delete("/api/wsa/users/{userNo}",      adminUser::apiDeleteUser);
+
+            // Any member of a workspace: see who is in it, issue invite codes and approve sign-ups
+            // (workspace mode only).
+            // Deliberately open to every logged-in account - the handlers act on the caller's own
+            // workspace, and rejecting, roles, removal and team assignment stay under "/api/wsa/*".
+            if (workspaceMode) {
+                config.routes.get("/oehub/members",                          member::showMembers);
+                config.routes.get("/api/members/users",                      member::apiListMembers);
+                config.routes.get("/api/members/invites",                    member::apiListMyInvites);
+                config.routes.post("/api/members/invites",                   adminUser::apiCreateInvite);
+                config.routes.get("/api/members/teams",                      adminUser::apiListTeams);
+                config.routes.get("/api/members/pending",                    adminUser::apiListPending);
+                config.routes.post("/api/members/pending/{userNo}/approve",  adminUser::apiApprovePending);
+            }
+
+            // Admin: Tier-1 audit log - reachable by whoever "/wsa/*" already lets in
+            // (wsa, or self-hosted's 'adm' - see Role.isWorkspaceAdmin), no separate
+            // gating needed since AuditLogController itself always scopes to the caller's own ws_no.
+            config.routes.get("/wsa/audit-log",           auditLogCtrl::showAuditLog);
+            config.routes.get("/api/wsa/audit-log",             auditLogCtrl::apiListAuditLog);
+
+            // Admin: instance-wide workspace console (cloudGroupService design doc §2.5/§3 item 2)
+            // - workspace mode only, meaningless in self-hosted which has exactly one workspace
+            // (itself, design doc §2.7). 'adm'-only, gated above by the "/adm/*" and "/api/adm/*" prefix guards.
+            if (workspaceMode) {
+                config.routes.get("/adm/workspaces",              workspaceCtrl::showWorkspaces);
+                config.routes.get("/api/adm/workspaces",                workspaceCtrl::apiListWorkspaces);
+                config.routes.patch("/api/adm/workspaces/{wsNo}/status", workspaceCtrl::apiUpdateWorkspaceStatus);
+            }
+
+            // Admin: teams (cloudGroupService design doc §2.9) - workspace mode only, meaningless
+            // in self-hosted's single-workspace-is-the-instance model (design doc §2.7). Same
+            // wsa scoping/guard as the rest of "/api/wsa/*" above - no separate "team admin" role.
+            if (workspaceMode) {
+                config.routes.get("/api/wsa/teams",                 adminUser::apiListTeams);
+                config.routes.post("/api/wsa/teams",                adminUser::apiCreateTeam);
+                config.routes.patch("/api/wsa/teams/{teamNo}",      adminUser::apiRenameTeam);
+                config.routes.delete("/api/wsa/teams/{teamNo}",     adminUser::apiDeleteTeam);
+                config.routes.patch("/api/wsa/users/{userNo}/team", adminUser::apiSetUserTeam);
+            }
+
+            // Workspace admin: the shared Open URL / User-Agent presets of their own workspace - the
+            // same handlers as the "/api/adm/hosts/*" routes below (instance admin, own workspace).
+            config.routes.get("/wsa/settings",                 wsaSettings::showSettings);
+            config.routes.get("/api/wsa/hosts/ua",              adminUa::apiList);
+            config.routes.post("/api/wsa/hosts/ua",             adminUa::apiCreate);
+            config.routes.patch("/api/wsa/hosts/ua/{uaId}",     adminUa::apiUpdate);
+            config.routes.delete("/api/wsa/hosts/ua/{uaId}",    adminUa::apiDelete);
+            config.routes.put("/api/wsa/hosts/ua/order",        adminUa::apiReorder);
+            config.routes.get("/api/wsa/hosts/url",             adminUrl::apiList);
+            config.routes.post("/api/wsa/hosts/url",            adminUrl::apiCreate);
+            config.routes.patch("/api/wsa/hosts/url/{urlId}",   adminUrl::apiUpdate);
+            config.routes.delete("/api/wsa/hosts/url/{urlId}",  adminUrl::apiDelete);
+            config.routes.put("/api/wsa/hosts/url/order",       adminUrl::apiReorder);
 
             // Admin: hosts user-agent presets
-            config.routes.get("/api/admin/hosts/ua",              adminUa::apiList);
-            config.routes.post("/api/admin/hosts/ua",             adminUa::apiCreate);
-            config.routes.patch("/api/admin/hosts/ua/{uaId}",     adminUa::apiUpdate);
-            config.routes.delete("/api/admin/hosts/ua/{uaId}",    adminUa::apiDelete);
-            config.routes.put("/api/admin/hosts/ua/order",        adminUa::apiReorder);
-            config.routes.get("/api/admin/hosts/url",             adminUrl::apiList);
-            config.routes.post("/api/admin/hosts/url",            adminUrl::apiCreate);
-            config.routes.patch("/api/admin/hosts/url/{urlId}",   adminUrl::apiUpdate);
-            config.routes.delete("/api/admin/hosts/url/{urlId}",  adminUrl::apiDelete);
-            config.routes.put("/api/admin/hosts/url/order",       adminUrl::apiReorder);
-            config.routes.get("/api/proxy/conf/{name}",                     proxy::apiConfGet);
-            config.routes.put("/api/proxy/conf/{name}",                     proxy::apiConfSet);
+            config.routes.get("/api/adm/hosts/ua",              adminUa::apiList);
+            config.routes.post("/api/adm/hosts/ua",             adminUa::apiCreate);
+            config.routes.patch("/api/adm/hosts/ua/{uaId}",     adminUa::apiUpdate);
+            config.routes.delete("/api/adm/hosts/ua/{uaId}",    adminUa::apiDelete);
+            config.routes.put("/api/adm/hosts/ua/order",        adminUa::apiReorder);
+            config.routes.get("/api/adm/hosts/url",             adminUrl::apiList);
+            config.routes.post("/api/adm/hosts/url",            adminUrl::apiCreate);
+            config.routes.patch("/api/adm/hosts/url/{urlId}",   adminUrl::apiUpdate);
+            config.routes.delete("/api/adm/hosts/url/{urlId}",  adminUrl::apiDelete);
+            config.routes.put("/api/adm/hosts/url/order",       adminUrl::apiReorder);
+            if (!workspaceMode) {
+                config.routes.get("/api/proxy/conf/{name}",                     proxy::apiConfGet);
+                config.routes.put("/api/proxy/conf/{name}",                     proxy::apiConfSet);
 
-            // Proxy share (public, no auth)
-            config.routes.get("/share/proxy/{vhostId}/view",                proxy::apiShare);
-            config.routes.get("/share/proxy/{vhostId}/text",                proxy::apiShareText);
+                // Proxy share (public, no auth)
+                config.routes.get("/share/proxy/{vhostId}/view",                proxy::apiShare);
+                config.routes.get("/share/proxy/{vhostId}/text",                proxy::apiShareText);
+            }
 
             config.routes.exception(Exception.class, (e, ctx) -> {
+                // A request Jetty itself refuses to parse (e.g. an anonymous scanner's oversized
+                // multipart POST, which the CSRF filter's formParam() makes Jetty read) is the
+                // client's fault: answer with Jetty's own 4xx and keep it to one log line.
+                var badRequest = findCause(e, org.eclipse.jetty.http.HttpException.class);
+                if (badRequest != null && badRequest.getCode() >= 400 && badRequest.getCode() < 500) {
+                    var cause = ((Throwable) badRequest).getCause();
+                    var reason = cause != null ? cause.getMessage() : badRequest.getReason();
+                    logger.warn("Rejected malformed request on {} ({}): {}", ctx.path(), badRequest.getCode(), reason);
+                    ctx.status(badRequest.getCode()).result("Bad Request");
+                    return;
+                }
                 // Full detail (including e.getMessage(), which can contain internal paths or
                 // driver/library text) goes to the server log only - returning it to the client
                 // would leak implementation details to anonymous callers on any unauthenticated
@@ -437,7 +729,8 @@ public class OeHubApplication {
     }
 
     private static FileRenderer createRenderer(boolean dev, java.util.Map<String, Messages> messagesMap) {
-        var builder = new PebbleEngine.Builder();
+        var builder = new PebbleEngine.Builder()
+            .extension(new tricatch.oe.hub.util.AssetUrlExtension(dev));
         if (dev) {
             var prefix = Path.of("src/main/resources").toAbsolutePath() + "/";
             builder.loader(new FileLoader(prefix)).cacheActive(false);
@@ -450,10 +743,15 @@ public class OeHubApplication {
             enriched.put("msg", messages.asMap());
             enriched.put("msgJson", messages.toJson());
             enriched.put("currentLocale", locale);
+            // Templates hide Proxy nav/UI entirely under oe.mode=workspace - see AppHome.isWorkspaceMode.
+            enriched.put("workspaceMode", AppHome.isWorkspaceMode());
             // Set by the CSRF before-filter on this same request; read from the Context attribute
             // (not ctx.cookie()) because a freshly-generated token isn't echoed back in the
             // request's own Cookie header until the browser's next request.
             enriched.put("csrfToken", ctx.attribute("csrfToken"));
+            // Set by the CSP before-filter on this same request - every inline <script> tag must
+            // carry this exact value (nonce="{{ cspNonce }}") or the browser refuses to run it.
+            enriched.put("cspNonce", ctx.attribute("cspNonce"));
             var writer = new java.io.StringWriter();
             try {
                 pebble.getTemplate(filePath).evaluate(writer, enriched);
@@ -465,14 +763,20 @@ public class OeHubApplication {
     }
 
     static String h2JdbcUrl() {
-        var dbPath = AppHome.oeHubDir().resolve("data").resolve("oeHub-h2")
-                         .toAbsolutePath().toString().replace("\\", "/");
+        var dbPath = AppHome.dbFilePath().toAbsolutePath().toString().replace("\\", "/");
         return "jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE";
     }
 
     public static void main(String[] args) throws Exception {
 
         Security.addProvider(new BouncyCastleProvider());
+
+        // -Doe.migrate=<name>: apply one bundled schema migration to the existing database and exit,
+        // before anything (H2 console, schema init, servers) opens the database - see DbMigration.
+        var migration = System.getProperty("oe.migrate");
+        if (migration != null && !migration.isBlank()) {
+            System.exit(DbMigration.run(migration.trim()));
+        }
 
         appPort = resolvePort();
         h2ConsolePort = appPort + 1;
@@ -482,32 +786,39 @@ public class OeHubApplication {
         Server.createWebServer("-webPort", String.valueOf(h2ConsolePort),
                 "-properties", oeHubDir.toString()).start();
         // Credentials intentionally not logged here (see DatabaseConfig) - keeps them out of log
-        // files/aggregation even though the /oehub/h2 route itself already requires admin login.
+        // files/aggregation even though the /adm/h2 route itself already requires admin login.
         logger.info("H2 Console: http://localhost:{}/login.do?setting=oeHub", h2ConsolePort);
 
         var sqlSessionFactory = DatabaseConfig.buildSqlSessionFactory();
-        ReverseProxyServer.init(sqlSessionFactory);
+        ReverseProxySettings.init(sqlSessionFactory);
         ForwardProxyServer.init(sqlSessionFactory);
+        BackupService.init(sqlSessionFactory);
         createApp(sqlSessionFactory).start(appPort);
 
-        try {
-            ReverseProxyServer.startSslPassServer();
-        } catch (tricatch.oe.proxy.exception.NotReadyCaException e) {
-            logger.warn("SSL proxy not started: CA certificate not configured yet. ({})", e.getMessage());
-        } catch (Exception e) {
-            logger.error("Failed to start SSL proxy server: " + e.getMessage(), e);
-        }
+        // oe.mode=workspace never starts any of the network-level Proxy servers - see
+        // cloudGroupService design doc §2.6. ReverseProxySettings.init()/ForwardProxyServer.init()
+        // just above are cheap, side-effect-light state setup (OID secret, whitelist load) left
+        // unconditional rather than touching the oe-proxy library further.
+        if (!AppHome.isWorkspaceMode()) {
+            try {
+                ReverseProxyServer.startSslPassServer();
+            } catch (tricatch.oe.proxy.exception.NotReadyCaException e) {
+                logger.warn("SSL proxy not started: CA certificate not configured yet. ({})", e.getMessage());
+            } catch (Exception e) {
+                logger.error("Failed to start SSL proxy server: " + e.getMessage(), e);
+            }
 
-        try {
-            ForwardProxyServer.start();
-        } catch (Exception e) {
-            logger.error("Failed to start forward proxy server: " + e.getMessage(), e);
-        }
+            try {
+                ForwardProxyServer.start();
+            } catch (Exception e) {
+                logger.error("Failed to start forward proxy server: " + e.getMessage(), e);
+            }
 
-        try {
-            BlockedPageServer.start(SettingsController.caCertPath(), SettingsController.caKeyPath());
-        } catch (Exception e) {
-            logger.error("Failed to start forward-proxy blocked-page server: " + e.getMessage(), e);
+            try {
+                BlockedPageServer.start(SettingsController.caCertPath(), SettingsController.caKeyPath());
+            } catch (Exception e) {
+                logger.error("Failed to start forward-proxy blocked-page server: " + e.getMessage(), e);
+            }
         }
     }
 

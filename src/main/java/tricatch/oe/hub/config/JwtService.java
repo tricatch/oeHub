@@ -22,6 +22,15 @@ public class JwtService {
     private static final String KEY_PRIVATE = "auth.privateKey";
     private static final String KEY_PUBLIC  = "auth.publicKey";
 
+    // How long a "remember me" session (JWT expiry and the matching auth cookie's Max-Age, see
+    // AuthController.loginAs) stays valid without a fresh login. Was 365 days; a stolen cookie
+    // (XSS, malware, a shared machine) stays a usable bearer credential for exactly this long,
+    // regardless of what else compromised the client - shortening it bounds that exposure window
+    // without removing "remember me" itself. Session-only logins (rememberMe unchecked) are
+    // unaffected, see SESSION_ONLY_SECONDS below.
+    public static final long REMEMBER_ME_SECONDS = 30L * 24 * 3600;
+    private static final long SESSION_ONLY_SECONDS = 24L * 3600;
+
     private final PrivateKey privateKey;
     private final PublicKey  publicKey;
 
@@ -62,16 +71,17 @@ public class JwtService {
     public record VerifiedToken(Long userNo, int tokenVersion) {}
 
     public String issue(Long userNo, int tokenVersion, boolean rememberMe) {
-        var now    = new Date();
-        var expiry = rememberMe
-            ? new Date(now.getTime() + 365L * 24 * 3600 * 1000)
-            : new Date(now.getTime() + 24L  * 3600 * 1000);
+        return issueAt(userNo, tokenVersion, new Date(),
+            rememberMe ? REMEMBER_ME_SECONDS : SESSION_ONLY_SECONDS);
+    }
 
+    // The clock is a parameter so a test can mint a token that is already expired.
+    String issueAt(Long userNo, int tokenVersion, Date issuedAt, long ttlSeconds) {
         return Jwts.builder()
             .subject(String.valueOf(userNo))
             .claim("tv", tokenVersion)
-            .issuedAt(now)
-            .expiration(expiry)
+            .issuedAt(issuedAt)
+            .expiration(new Date(issuedAt.getTime() + ttlSeconds * 1000))
             .signWith(privateKey)
             .compact();
     }
@@ -90,10 +100,33 @@ public class JwtService {
             // version 0, which matches the DEFAULT 0 every existing user row already has.
             Integer tv = claims.get("tv", Integer.class);
             return new VerifiedToken(userNo, tv != null ? tv : 0);
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            // Routine: sessions last 24 hours (30 days with "remember me"), so an expired cookie
+            // shows up on ordinary use and is not worth a warning or a stack trace.
+            if (logger.isDebugEnabled()) logger.debug("auth cookie expired: {}", e.getMessage());
         } catch (JwtException | IllegalArgumentException e) {
-            logger.warn("errorJwtVerify - {}", e.getMessage(), e);
+            // A bad signature or malformed token is worth noticing, but the message says it all -
+            // no stack trace.
+            logger.warn("errorJwtVerify - {}", e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * A stable 32-byte secret for a purpose other than signing JWTs (e.g. the decoy KDF salts),
+     * derived from the persisted JWT private key so it survives restarts without another stored
+     * secret. The purpose string keeps secrets for different uses independent of each other; the
+     * JWT private key itself is never used directly outside this class.
+     */
+    public byte[] deriveSecret(String purpose) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            digest.update(("oeHub:" + purpose).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            return digest.digest(privateKey.getEncoded());
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     private static KeyPair generateKeyPair() throws GeneralSecurityException {
@@ -112,10 +145,15 @@ public class JwtService {
         return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(bytes));
     }
 
+    // No HTTP request / logged-in actor at JVM-startup key generation time, so attribute it to
+    // the reserved "system" sentinel (0L) rather than a real HUB_USR.user_no (see CLAUDE.md).
     private static void upsert(HubConfMapper mapper, String kid, String val, LocalDateTime now) {
         var conf = new HubConf();
         conf.setConfKey(kid);
         conf.setConfVal(val);
+        conf.setCreatedBy(0L);
+        conf.setUpdatedBy(0L);
+        conf.setCreateAt(now);
         conf.setUpdatedAt(now);
         mapper.upsert(conf);
     }

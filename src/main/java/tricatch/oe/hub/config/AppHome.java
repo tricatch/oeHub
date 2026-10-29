@@ -7,15 +7,48 @@ import java.util.Set;
 
 public class AppHome {
 
-    // -Dhome, when set, IS the oeHub data directory (used as-is, no "oeHub" appended) —
-    // e.g. `sudo java -jar oeHub.jar -Dhome=/home/alice/oeHub` to keep using that exact
+    // -Doe.home, when set, IS the oeHub data directory (used as-is, no "oeHub" appended) —
+    // e.g. `sudo java -jar oeHub.jar -Doe.home=/home/alice/oeHub` to keep using that exact
     // path instead of /root/oeHub. Without it, defaults to <user.home>/oeHub.
     public static Path oeHubDir() {
-        var override = System.getProperty("home");
+        var override = System.getProperty("oe.home");
         if (override != null && !override.isBlank()) {
             return Path.of(override);
         }
         return Path.of(System.getProperty("user.home"), "oeHub");
+    }
+
+    // -Doe.mode=workspace runs oeHub as a multi-tenant cloud service (oeHosts only, oeProxy fully
+    // disabled - see cloudGroupService design doc §2.6). Any other value, or no value at all,
+    // is "self-hosted" (oeHosts + oeProxy, the app's existing single-workspace behavior) - the
+    // default, so existing installs keep working unmodified with no flag.
+    public static boolean isWorkspaceMode() {
+        return "workspace".equals(System.getProperty("oe.mode", "self-hosted"));
+    }
+
+    // Workspace mode gets a distinct filename so an operator can switch -Doe.mode back and forth
+    // during testing without the two modes' databases colliding on the same file, and so the two
+    // are visually distinguishable on disk later.
+    public static String dbFileName() {
+        return isWorkspaceMode() ? "oeHub-h2-ws" : "oeHub-h2";
+    }
+
+    // -Doe.data.dir, when set, IS the directory holding the H2 database file, its generated
+    // password file, and scheduled backups - used as-is instead of <home>/data. This only
+    // relocates that containing folder (e.g. onto a different volume); the database *filename*
+    // itself still follows dbFileName() below - not user-overridable, so the self-hosted/workspace
+    // naming rule can't be bypassed. Independent of -Doe.home, which relocates the rest of the
+    // app's data (config, CA) too.
+    public static Path dbDataDir() {
+        var override = System.getProperty("oe.data.dir");
+        if (override != null && !override.isBlank()) {
+            return Path.of(override);
+        }
+        return oeHubDir().resolve("data");
+    }
+
+    public static Path dbFilePath() {
+        return dbDataDir().resolve(dbFileName());
     }
 
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");

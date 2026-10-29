@@ -3,13 +3,13 @@
 {% block title %}oeProxy{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/proxy.css">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/proxy.css') }}">
 {% endblock %}
 
 {% block content %}
 <div class="proxy-app" id="proxyApp">
-<script>if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('proxyApp').classList.add('expanded');</script>
+<script nonce="{{ cspNonce }}">if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('proxyApp').classList.add('expanded');</script>
 
   <!-- Sidebar -->
   <div class="proxy-sidebar">
@@ -23,6 +23,9 @@
       </button>
       <button class="oe-nav-action-btn" id="btnSearchToggle" title="{{ msg['tooltip.search'] }}">
         <span class="oe-icon oe-icon-search" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnAddFolder" title="{{ msg['tooltip.new.folder'] }}">
+        <span class="oe-icon oe-icon-new-folder" style="width:15px;height:15px"></span>
       </button>
     </div>
     <div class="oe-search-panel d-none" id="searchPanel">
@@ -51,13 +54,7 @@
       <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.vhost'] }}" disabled>
         <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
       </button>
-      <span class="oe-visibility-wrap d-none" id="visibilityWrap">
-        <select class="oe-visibility-select" id="visibilitySelect">
-          <option value="public">{{ msg['visibility.public'] }}</option>
-          <option value="private">{{ msg['visibility.private'] }}</option>
-          <option value="collabo">{{ msg['visibility.collabo'] }}</option>
-        </select>
-      </span>
+      {% include "templates/oehub/share-scope-select.pebble" %}
     </div>
     <span class="oe-save-status" id="saveStatus"></span>
     <div class="proxy-empty" id="emptyState">{{ msg['proxy.empty'] }}</div>
@@ -82,7 +79,7 @@
         <button class="oe-nav-action-btn" id="btnSaveMergedVhost" title="{{ msg['tooltip.save.merged'] }}" disabled>
           <span class="oe-icon oe-icon-save-merge" style="width:15px;height:15px"></span>
         </button>
-        <button class="oe-nav-action-btn" id="btnMonitor" title="{{ msg['tooltip.monitor'] }}" onclick="window.open('/oehub/proxy/monitor','_blank')" disabled>
+        <button class="oe-nav-action-btn" id="btnMonitor" title="{{ msg['tooltip.monitor'] }}" disabled>
           <span class="oe-icon oe-icon-monitor" style="width:15px;height:15px"></span>
         </button>
         <button class="oe-nav-action-btn" data-bs-toggle="modal" data-bs-target="#caInstallModal" title="{{ msg['tooltip.install.guide'] }}">
@@ -203,43 +200,78 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
-<script src="/js/ace-init.js"></script>
-<script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.44.0/ace.min.js" integrity="sha384-awj15LyQFNOkL94NhJ0EEH9En00b0Toh1WOLAwpTnYY45w1aVce0uz8hhK4eIfTR" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.1/js-yaml.min.js" integrity="sha384-ZeqCzuWczURac3RacSufGD7oSbzeaX7xxnnOr3PTcYTLx4Av0qBj0kBq7AeCtHLA" crossorigin="anonymous"></script>
+<script src="{{ asset('/js/ace-init.js') }}"></script>
+<script src="{{ asset('/js/list-folders.js') }}"></script>
+<script src="{{ asset('/js/autosave.js') }}"></script>
+<script src="{{ asset('/js/share-scope-menu.js') }}"></script>
+<script nonce="{{ cspNonce }}">
 
 let LOCAL_SVR = '{{ localSvr }}';
 const LOCAL_SVR_DETECTED = '{{ clientIp }}';
+// Settings > "Allow internal-network backends only": when on, a backend given as a public IP literal
+// is flagged here; a host name cannot be judged in the browser, so the server checks those when the
+// configuration is applied and again on every connection.
+const INTERNAL_ONLY_UPSTREAM = {{ internalOnlyUpstream ? 'true' : 'false' }};
 
 (function() {
   let vhosts = [];
   let activeVhostId = null;
   let isReadonly = false;
-  let saveTimer = null;
-  let savedCrc = 0;
 
   const vhostList        = document.getElementById('vhostList');
   const editorTitle      = document.getElementById('editorTitle');
   const saveStatus       = document.getElementById('saveStatus');
+  const autosave = OE_AUTOSAVE.create({
+    editorEl: document.getElementById('cmEditor'), statusEl: saveStatus, save: saveVhostContent
+  });
   const btnDelete        = document.getElementById('btnDelete');
   const btnShare         = document.getElementById('btnShare');
   const btnCopyShareLink = document.getElementById('btnCopyShareLink');
   const btnDownload      = document.getElementById('btnDownload');
   const emptyState       = document.getElementById('emptyState');
   const editorBody       = document.getElementById('editorBody');
-  const visibilityWrap   = document.getElementById('visibilityWrap');
-  const visibilitySelect = document.getElementById('visibilitySelect');
+  const shareScopeWrap   = document.getElementById('shareScopeWrap');
+  const shareScopeSelect = document.getElementById('shareScopeSelect');
 
   // ── Ace Editor ─────────────────────────────────────────────
   const editor = initAceEditor('cmEditor', 'ace/mode/yaml');
   editor.session.on('change', () => {
-    if (!isReadonly && activeVhostId) scheduleSave();
+    if (!isReadonly && activeVhostId) autosave.changed(editor.getValue());
     updateAceAnnotations(editor.getValue());
   });
 
   const mergedEditor = initAceEditor('cmMergedConfig', 'ace/mode/yaml', {
     fontSize: '0.78rem', highlightActiveLine: false, readOnly: true,
   });
+
+  // Why a vhost config was not applied: the server marks the one reason worth explaining apart.
+  function applyFailedMessage(res) {
+    return res.headers.get('X-Oe-Reason') === 'upstream-internal-only'
+      ? MSG['toast.vhost.upstream.internal.only'] : MSG['toast.vhost.apply.failed'];
+  }
+
+  // True only for a backend URL whose host is an IP literal outside loopback, private (RFC 1918 /
+  // RFC 4193) and link-local space. Anything else - a name, ${LOCAL_SVR}, an unparsable value - is
+  // not this function's business.
+  function isPublicIpLiteral(hostUrl) {
+    let hostname;
+    try { hostname = new URL(hostUrl).hostname; } catch (e) { return false; }
+    const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+    if (v4) {
+      const [a, b] = [Number(v4[1]), Number(v4[2])];
+      const internal = a === 127 || a === 10 || hostname === '0.0.0.0' || (a === 172 && b >= 16 && b <= 31)
+        || (a === 192 && b === 168) || (a === 169 && b === 254);
+      return !internal;
+    }
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      const v6 = hostname.slice(1, -1).toLowerCase();
+      return !(v6 === '::1' || v6 === '::' || v6.startsWith('fe8') || v6.startsWith('fe9')
+        || v6.startsWith('fea') || v6.startsWith('feb') || v6.startsWith('fc') || v6.startsWith('fd'));
+    }
+    return false;
+  }
 
   function validateSchema(parsed) {
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.virtual))
@@ -254,6 +286,7 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
         v.location.forEach((loc, j) => {
           const lp = `${p}.location[${j}]`;
           if (!loc || typeof loc.host !== 'string' || !loc.host) errors.push(`${lp}: ${MSG['proxy.validate.host.required']}`);
+          else if (INTERNAL_ONLY_UPSTREAM && isPublicIpLiteral(loc.host)) errors.push(`${lp}: ${MSG['proxy.validate.host.internal.only']}`);
           if (!Array.isArray(loc.path) || loc.path.length === 0)  errors.push(`${lp}: ${MSG['proxy.validate.path.required']}`);
           if (loc.header !== undefined && !Array.isArray(loc.header)) errors.push(`${lp}: ${MSG['proxy.validate.header.array']}`);
         });
@@ -294,7 +327,6 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
 
   // ── Render sidebar ─────────────────────────────────────────
   function renderVhosts() {
-    vhostList.innerHTML = '';
     document.getElementById('vhostCount').textContent = MSG['proxy.sidebar.count'].replace('{0}', vhosts.length);
     if (vhosts.length === 0) {
       emptyState.classList.remove('d-none');
@@ -303,59 +335,51 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       emptyState.classList.add('d-none');
       editorBody.style.display = '';
     }
-    vhosts.forEach(v => {
-      const item = document.createElement('div');
-      item.className = 'oe-list-item' + (v.vhostId === activeVhostId ? ' active' : '');
-      item.dataset.vhostId = v.vhostId;
-      item.draggable = true;
-      item.innerHTML = `
-        <span class="oe-list-drag${v.visibility === 'private' ? ' private' : v.visibility === 'collabo' ? ' collabo' : ''}">&#9776;</span>
-        <span class="oe-list-name${v.visibility === 'private' ? ' private' : v.visibility === 'collabo' ? ' collabo' : ''}" data-vhostid="${v.vhostId}">${escHtml(v.vhostProfile)}</span>
-        <div class="form-check form-switch mb-0 oe-list-toggle">
-          <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${v.selected ? 'checked' : ''}>
-        </div>`;
-
-      item.addEventListener('click', e => { if (e.target.type === 'checkbox') return; activateVhost(v.vhostId, false); });
-      item.querySelector('.oe-list-check').addEventListener('change', () => toggleSelected(v.vhostId));
-      if (!v.parentId) item.querySelector('.oe-list-name').addEventListener('dblclick', e => startRename(e.target, v));
-      item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', v.vhostId); });
-      item.addEventListener('dragover',  e => { e.preventDefault(); item.classList.add('drag-over'); });
-      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-      item.addEventListener('drop', e => {
-        e.preventDefault(); item.classList.remove('drag-over');
-        reorder(e.dataTransfer.getData('text/plain'), v.vhostId);
-      });
-      vhostList.appendChild(item);
-    });
+    folderList.render();
   }
+
+  const folderList = createListFolders({
+    container: vhostList,
+    apiBase: '/api/proxy/vhosts',
+    idKey: 'vhostId',
+    nameKey: 'vhostProfile',
+    getItems: () => vhosts,
+    setItems: items => { vhosts = items; },
+    rerender: renderVhosts,
+    isActive: v => v.vhostId === activeVhostId,
+    publicLinkTitle: () => null,
+    onActivate: v => activateVhost(v.vhostId, false),
+    onToggle: v => toggleSelected(v.vhostId),
+    canRename: v => !v.parentId,
+    onRename: startRename
+  });
+  document.getElementById('btnAddFolder').addEventListener('click', () => folderList.createFolder());
 
 
   // ── Activate ───────────────────────────────────────────────
   function activateVhost(vhostId, readonly) {
-    flushPendingSave();
-    activeVhostId = vhostId;
     const v = vhosts.find(x => x.vhostId === vhostId);
+    const shown = autosave.activate(v && !readonly ? vhostId : null, v ? v.vhostContent : '');
+    activeVhostId = vhostId;
     if (!v) return;
     editorTitle.textContent = v.vhostProfile;
-    setContent(v.vhostContent);
+    setContent(shown);
     setReadOnly(readonly);
     btnDelete.disabled = readonly;
-    visibilityWrap.classList.toggle('d-none', readonly);
-    visibilitySelect.value = v.visibility || 'public';
-    visibilitySelect.disabled = !!v.parentId;
-    applyVisibilityStyle();
-    btnShare.disabled = v.visibility === 'private';
-    btnCopyShareLink.disabled = v.visibility === 'private';
+    shareScopeWrap.classList.toggle('d-none', readonly);
+    shareScopeSelect.value = v.shareScope || 'workspace';
+    shareScopeSelect.disabled = !!v.parentId;
+    syncShareScopeMenu();
+    btnShare.disabled = v.shareScope === 'private';
+    btnCopyShareLink.disabled = v.shareScope === 'private';
     btnDownload.disabled = false;
-    saveStatus.textContent = '';
     document.querySelectorAll('.oe-list-item').forEach(el =>
       el.classList.toggle('active', el.dataset.vhostId === String(vhostId)));
-    savedCrc = crc32(v.vhostContent);
     updateEditorMeta(v);
   }
 
   function activateSearchResult(result) {
-    flushPendingSave();
+    autosave.activate(null, '');
     activeVhostId = result.vhostId;
     emptyState.classList.add('d-none');
     editorBody.style.display = '';
@@ -366,8 +390,7 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     btnShare.disabled = false;
     btnCopyShareLink.disabled = false;
     btnDownload.disabled = false;
-    visibilityWrap.classList.add('d-none');
-    saveStatus.textContent = '';
+    shareScopeWrap.classList.add('d-none');
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
     fetch('/share/proxy/' + result.vhostId + '/text').then(r => {
@@ -381,83 +404,37 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     }).catch(() => { if (activeVhostId === result.vhostId) showToast(MSG['toast.load.failed']); });
   }
 
-  // ── Auto-save ──────────────────────────────────────────────
-  function scheduleSave() {
-    if (!activeVhostId || isReadonly) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveContent, 2000);
-  }
-
-  // Cancel the pending debounce and, if there's an unsaved edit, save it immediately.
-  // Call this before switching away from the currently active vhost so a quick
-  // switch within the 3s debounce window doesn't silently discard the edit.
-  function flushPendingSave() {
-    clearTimeout(saveTimer);
-    if (activeVhostId && !isReadonly) flushSaveFor(activeVhostId, editor.getValue());
-  }
-
-  async function saveContent() {
-    if (!activeVhostId || isReadonly) return;
-    await flushSaveFor(activeVhostId, editor.getValue());
-  }
-
-  async function flushSaveFor(vhostId, content) {
-    if (crc32(content) === savedCrc) return;
+  // ── Auto-save (OE_AUTOSAVE decides when; this does the request) ──
+  async function saveVhostContent(vhostId, content) {
     const lintErrors = lintDoc(content);
-    if (lintErrors.length > 0) {
-      if (vhostId === activeVhostId) {
-        saveStatus.textContent = lintErrors[0].message;
-        saveStatus.style.color = '#dc3545';
-      }
-      return;
+    if (lintErrors.length > 0) return {saved: false, message: lintErrors[0].message};
+    const res = await fetch('/api/proxy/vhosts/' + vhostId + '/content', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content})
+    });
+    if (res.status >= 500) throw new Error('save failed: ' + res.status);
+    // 400 still saved the draft server-side; only pushing it live (as part of the merged config)
+    // was rejected - e.g. a structurally invalid domain/location. Reflect the save so the editor
+    // doesn't re-send stale content, but call out that it isn't live yet.
+    if (!res.ok && res.status !== 400) return {saved: false, message: MSG['status.save.failed']};
+    const updated = await res.json();
+    const v = vhosts.find(x => x.vhostId === vhostId);
+    if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
+    if (vhostId === activeVhostId) updateEditorMeta(v);
+    if (res.status === 400) {
+      showToast(applyFailedMessage(res));
+      return {saved: true, notice: MSG['status.save.notApplied']};
     }
-    if (vhostId === activeVhostId) saveStatus.style.color = '';
-    try {
-      const res = await fetch('/api/proxy/vhosts/' + vhostId + '/content', {
-        method: 'PATCH', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content})
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        const v = vhosts.find(x => x.vhostId === vhostId);
-        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
-        mergeAndSave();
-        if (vhostId === activeVhostId) {
-          savedCrc = crc32(content);
-          updateEditorMeta(v);
-          saveStatus.textContent = MSG['status.saved'];
-          setTimeout(() => { saveStatus.textContent = ''; }, 2000);
-        }
-      } else if (res.status === 400) {
-        // The draft content was still saved server-side; only pushing it live (as part of the
-        // merged config) was rejected — e.g. a structurally invalid domain/location. Reflect the
-        // save so the editor doesn't re-send stale content, but call out that it isn't live yet.
-        const updated = await res.json();
-        const v = vhosts.find(x => x.vhostId === vhostId);
-        if (v) { v.vhostContent = content; v.updatedAt = updated.updatedAt; }
-        savedCrc = crc32(content);
-        if (vhostId === activeVhostId) {
-          updateEditorMeta(v);
-          saveStatus.textContent = MSG['status.save.notApplied'];
-          saveStatus.style.color = '#dc3545';
-          setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 4000);
-        }
-        showToast(MSG['toast.vhost.apply.failed']);
-      } else if (vhostId === activeVhostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
-    } catch (e) {
-      if (vhostId === activeVhostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
-    }
+    mergeAndSave();
+    return {saved: true};
   }
 
   // ── Add ────────────────────────────────────────────────────
+  // Not an inline onclick="...": the CSP has no 'unsafe-inline' for scripts, so it would be blocked.
+  document.getElementById('btnMonitor').addEventListener('click', () => {
+    window.open('/oehub/proxy/monitor', '_blank');
+  });
+
   document.getElementById('btnAdd').addEventListener('click', async () => {
     const res = await fetch('/api/proxy/vhosts', {method: 'POST'});
     if (res.ok) {
@@ -489,14 +466,14 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     });
     // The LOCAL_SVR value itself is always saved server-side even on this failure; only
     // re-pushing the merged config with the new substitution was rejected.
-    if (!res.ok) { showToast(MSG['toast.vhost.apply.failed']); return; }
+    if (!res.ok) { showToast(applyFailedMessage(res)); return; }
     mergeAndSave();
   });
 
   // ── Delete ─────────────────────────────────────────────────
   document.getElementById('btnDelete').addEventListener('click', async () => {
     if (!activeVhostId || !confirm(MSG['confirm.delete.vhost'])) return;
-    clearTimeout(saveTimer);
+    autosave.discard(activeVhostId);
     await fetch('/api/proxy/vhosts/' + activeVhostId, {method: 'DELETE'});
     vhosts = vhosts.filter(v => v.vhostId !== activeVhostId);
     activeVhostId = null;
@@ -506,7 +483,7 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     btnShare.disabled = true;
     btnCopyShareLink.disabled = true;
     btnDownload.disabled = true;
-    visibilityWrap.classList.add('d-none');
+    shareScopeWrap.classList.add('d-none');
     updateEditorMeta(null);
     renderVhosts();
   });
@@ -524,7 +501,7 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       const updated = await res.json();
       const v = vhosts.find(x => x.vhostId === vhostId);
       if (v) v.selected = updated.selected;
-      showToast(MSG['toast.vhost.apply.failed']);
+      showToast(applyFailedMessage(res));
     }
   }
 
@@ -566,10 +543,10 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: merged})
     });
-    if (!res.ok) showToast(MSG['toast.vhost.apply.failed']);
+    if (!res.ok) showToast(applyFailedMessage(res));
   }
 
-  // ── Use This IP (claims the current browsing IP for 8h - see ReverseProxyServer.resolveOid) ──
+  // ── Use This IP (claims the current browsing IP for 8h - see ReverseProxyServer.resolveIdentifier) ──
   // No button in the DOM at all once already claimed by self (see proxy.pebble's ipClaimedBySelf
   // branch), so this simply doesn't bind in that case.
   document.getElementById('btnTakeIp')?.addEventListener('click', async (e) => {
@@ -636,7 +613,10 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
         body: JSON.stringify({name: newName})
       });
       if (res.ok) { v.vhostProfile = newName; if (activeVhostId === v.vhostId) editorTitle.textContent = newName; }
-      else { el.textContent = v.vhostProfile; }
+      else {
+        el.textContent = v.vhostProfile;
+        if (res.status === 409) showToast(MSG['toast.vhost.name.taken']);
+      }
     };
     const onKeydown = e => {
       if (e.key === 'Enter')  { e.preventDefault(); el.removeEventListener('keydown', onKeydown); el.blur(); }
@@ -644,20 +624,6 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     };
     el.addEventListener('blur', commit, {once: true});
     el.addEventListener('keydown', onKeydown);
-  }
-
-  // ── Reorder ────────────────────────────────────────────────
-  async function reorder(srcId, targetId) {
-    const srcIdx = vhosts.findIndex(v => v.vhostId === srcId);
-    const tgtIdx = vhosts.findIndex(v => v.vhostId === targetId);
-    if (srcIdx === -1 || tgtIdx === -1) return;
-    const [moved] = vhosts.splice(srcIdx, 1);
-    vhosts.splice(tgtIdx, 0, moved);
-    renderVhosts();
-    await fetch('/api/proxy/vhosts/order', {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(vhosts.map(v => v.vhostId))
-    });
   }
 
   // ── Share ──────────────────────────────────────────────────
@@ -791,66 +757,62 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
     }
   });
 
-  // ── Visibility ─────────────────────────────────────────────
+  // ── Share scope ────────────────────────────────────────────
   function updateEditorMeta(v) {
     document.getElementById('metaCreator').textContent = v ? (v.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = v ? (fmtDateTime(v.updatedAt) || '—') : '—';
     const editorEl = document.getElementById('metaEditor');
-    editorEl.textContent = (v && v.lastEditorUserId && v.lastEditorUserId !== v.userId)
-      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + v.lastEditorUserId + ')'
+    editorEl.textContent = (v && v.updatedByUserId && v.updatedByUserId !== v.userId)
+      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + v.updatedByUserId + ')'
       : '';
   }
 
-  function applyVisibilityStyle() {
-    visibilitySelect.style.color = visibilitySelect.value === 'private' ? '#CC7722' : visibilitySelect.value === 'collabo' ? '#3b7dd8' : '';
-  }
-
   let _pendingCollabo = false;
-  let _prevVisibility = null;
+  let _prevShareScope = null;
 
-  async function doUpdateVisibility(visibility) {
-    const res = await fetch('/api/proxy/vhosts/' + activeVhostId + '/visibility', {
+  async function doUpdateShareScope(shareScope) {
+    const res = await fetch('/api/proxy/vhosts/' + activeVhostId + '/share-scope', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({visibility})
+      body: JSON.stringify({shareScope})
     });
     if (res.ok) {
       const updated = await res.json();
       const v = vhosts.find(x => x.vhostId === activeVhostId);
-      if (v) { v.visibility = updated.visibility; v.parentId = updated.parentId; }
+      if (v) { v.shareScope = updated.shareScope; v.parentId = updated.parentId; }
       const updatedV = vhosts.find(x => x.vhostId === activeVhostId);
-      visibilitySelect.disabled = !!(updatedV && updatedV.parentId);
-      applyVisibilityStyle();
-      btnShare.disabled = updated.visibility === 'private';
-      btnCopyShareLink.disabled = updated.visibility === 'private';
+      shareScopeSelect.disabled = !!(updatedV && updatedV.parentId);
+      syncShareScopeMenu();
+      btnShare.disabled = updated.shareScope === 'private';
+      btnCopyShareLink.disabled = updated.shareScope === 'private';
       renderVhosts();
       document.querySelectorAll('.oe-list-item').forEach(el =>
         el.classList.toggle('active', el.dataset.vhostId === String(activeVhostId)));
     }
   }
 
-  visibilitySelect.addEventListener('change', e => {
+  shareScopeSelect.addEventListener('change', e => {
     if (!activeVhostId) return;
     if (e.target.value === 'collabo') {
-      _prevVisibility = vhosts.find(x => x.vhostId === activeVhostId)?.visibility || 'public';
+      _prevShareScope = vhosts.find(x => x.vhostId === activeVhostId)?.shareScope || 'workspace';
       _pendingCollabo = true;
       new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
       return;
     }
-    doUpdateVisibility(e.target.value);
+    doUpdateShareScope(e.target.value);
   });
 
   document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
     bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
     if (_pendingCollabo && activeVhostId) {
       _pendingCollabo = false;
-      await doUpdateVisibility('collabo');
+      await doUpdateShareScope('collabo');
     }
   });
 
   document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
     if (_pendingCollabo) {
-      visibilitySelect.value = _prevVisibility;
-      applyVisibilityStyle();
+      shareScopeSelect.value = _prevShareScope;
+      syncShareScopeMenu();
       _pendingCollabo = false;
     }
   });
@@ -955,7 +917,7 @@ const LOCAL_SVR_DETECTED = '{{ clientIp }}';
 
   // ── Init ───────────────────────────────────────────────────
   (async () => {
-    const res = await fetch('/api/proxy/vhosts');
+    const [res] = await Promise.all([fetch('/api/proxy/vhosts'), folderList.load()]);
     vhosts = await res.json();
     renderVhosts();
     if (vhosts.length > 0) {

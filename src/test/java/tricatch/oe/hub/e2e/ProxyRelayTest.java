@@ -54,8 +54,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The SSL reverse proxy's HTTPS listener ({@code ReverseProxyServer}) binds a fixed,
  * non-configurable port 443 (unlike the app port, which {@link E2eServer} isolates per test via
- * {@code -Dport}) and routes by client IP (falling back from the X-OeHub-Oid header - see
- * {@code ReverseProxyServer.resolveOid()}). So this test always binds 443 on the machine it runs
+ * {@code -Doe.port}) and routes by client IP (falling back from the X-OeHub-Oid header - see
+ * {@code ReverseProxyServer.resolveIdentifier()}). So this test always binds 443 on the machine it runs
  * on, and every request here - setup, vhost API calls, and the raw TLS relay checks - must go
  * through 127.0.0.1 explicitly (not "localhost", which can resolve to ::1) so they're all seen
  * as the same client IP.
@@ -171,8 +171,17 @@ class ProxyRelayTest {
             .map(HttpCookie::getValue)
             .findFirst().orElseThrow(() -> new IllegalStateException("oe_csrf cookie not set"));
 
+        // publicKey/wrappedPrivateKey/wrappedPrivateKeyRecovery/recoveryVerifier/
+        // founderWrappedWsKey are normally generated client-side by setup.pebble's JS
+        // (e2eEncryption design doc §3/§4) - this test posts raw HTTP with no browser/WebCrypto
+        // involved, and doesn't exercise encryption at all, so placeholder opaque strings are
+        // enough to satisfy processSetup's presence check.
         var setupResponse = postForm("/setup", Map.of(
-            "userId", ADMIN_ID, "password", ADMIN_PW, "confirm", ADMIN_PW, "_csrf", csrfToken));
+            "userId", ADMIN_ID, "password", ADMIN_PW, "confirm", ADMIN_PW, "_csrf", csrfToken,
+            "publicKey", "test-public-key", "wrappedPrivateKey", "test-wrapped-private-key",
+            "wrappedPrivateKeyRecovery", "test-wrapped-private-key-recovery",
+            "recoveryVerifier", "test-recovery-verifier",
+            "founderWrappedWsKey", "test-founder-wrapped-ws-key"));
         assertThat(setupResponse.statusCode()).isEqualTo(302);
 
         var caResponse = postForm("/setup/ca/generate", Map.of(
@@ -211,10 +220,15 @@ class ProxyRelayTest {
         var selectResponse = patchJson("/api/proxy/vhosts/" + vhostId + "/selected", null);
         assertThat(selectResponse.statusCode()).isEqualTo(200);
 
-        // ReverseProxyServer.resolveOid() has no loopback/sole-account shortcut - a raw TLS
+        // ReverseProxyServer.resolveIdentifier() has no loopback/sole-account shortcut - a raw TLS
         // client (no X-OeHub-Oid header, see openRelaySocket()) is only ever attributed to this
         // account because this test explicitly claims 127.0.0.1 via ClaimedIpRegistry first,
-        // exactly like clicking "Use This IP" on the oeProxy page would.
+        // exactly like clicking "Use This IP" on the oeProxy page would. IP-based identification
+        // is opt-in (off by default - Settings > Identifier), so it must be enabled before
+        // take-ip will accept the claim (ProxyController.apiTakeIp otherwise 409s).
+        var enableIpResponse = postJson("/api/adm/settings/identifier", "{\"ipEnabled\":true}");
+        assertThat(enableIpResponse.statusCode()).isEqualTo(200);
+
         var takeIpResponse = postJson("/api/proxy/take-ip", null);
         assertThat(takeIpResponse.statusCode()).isEqualTo(200);
     }
@@ -446,7 +460,7 @@ class ProxyRelayTest {
         // Mirrors the primary real-world use case in example/vhost_example_en.yaml: pointing a
         // friendly HTTPS domain straight at oeHub's own app port, so the reverse proxy's
         // auto-generated SSL cert fronts the web UI itself instead of a raw http://ip:port URL.
-        // Uses this test's own isolated app port (APP_PORT, via E2eServer's -Dport) rather than
+        // Uses this test's own isolated app port (APP_PORT, via E2eServer's -Doe.port) rather than
         // the literal default 36912 - that number is just APP_PORT's default value, nothing the
         // proxy treats specially.
         var yaml = "virtual:\n"

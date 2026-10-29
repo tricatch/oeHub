@@ -1,8 +1,8 @@
 package tricatch.oe.mapper;
 
 import org.junit.jupiter.api.Test;
-import tricatch.oe.proxy.mapper.ProxyConfMapper;
-import tricatch.oe.proxy.model.ProxyConf;
+import tricatch.oe.hub.proxy.mapper.ProxyConfMapper;
+import tricatch.oe.hub.proxy.model.ProxyConf;
 
 import java.time.LocalDateTime;
 
@@ -15,6 +15,10 @@ class ProxyConfMapperTest extends MapperTestBase {
         c.setUserNo(userNo);
         c.setConfKey(key);
         c.setConfVal(val);
+        var actor = userNo != null ? userNo : 0L;
+        c.setCreatedBy(actor);
+        c.setUpdatedBy(actor);
+        c.setCreateAt(LocalDateTime.now());
         c.setUpdatedAt(LocalDateTime.now());
         return c;
     }

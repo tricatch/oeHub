@@ -3,12 +3,12 @@
 {% block title %}oeHub{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/css/index.css">
+  <link rel="stylesheet" href="{{ asset('/css/index.css') }}">
 {% endblock %}
 
 {% block content %}
 
-<div class="oe-content py-4">
+<div class="oe-content py-4{{ workspaceMode ? '' : ' oe-content-wide' }}">
 
   <!-- Hero -->
   <div class="oe-hero">
@@ -20,7 +20,7 @@
 
   <!-- Tools -->
   <div class="row g-4 mb-4">
-    <div class="col-md-6">
+    <div class="{{ workspaceMode ? 'col-md-12' : 'col-md-6' }}">
       <a href="/oehub/hosts" class="oe-tool-card card">
         <div class="card-body p-4">
           <div class="oe-tool-name">oeHosts</div>
@@ -28,10 +28,15 @@
             <li>{{ msg['index.hosts.desc1'] }}</li>
             <li>{{ msg['index.hosts.desc2'] }}</li>
             <li>{{ msg['index.hosts.desc3'] }}</li>
+            <li>{{ msg['index.hosts.desc4'] }}</li>
+            <li>{{ msg['index.hosts.desc5'] }}</li>
+            {# Content encryption exists only in workspace mode; self-hosted stores profiles as plaintext #}
+            {% if workspaceMode %}<li>{{ msg['index.hosts.desc6'] }}</li>{% endif %}
           </ul>
         </div>
       </a>
     </div>
+    {% if not workspaceMode %}
     <div class="col-md-6">
       <a href="/oehub/proxy" class="oe-tool-card card">
         <div class="card-body p-4">
@@ -41,14 +46,17 @@
             <li>{{ msg['index.proxy.desc2'] }}</li>
             <li>{{ msg['index.proxy.desc3'] }}</li>
             <li>{{ msg['index.proxy.desc4'] }}</li>
+            <li>{{ msg['index.proxy.desc5'] }}</li>
+            <li>{{ msg['index.proxy.desc6'] }}</li>
           </ul>
         </div>
       </a>
     </div>
+    {% endif %}
   </div>
 
   <div class="oe-footer">
-    MIT License &copy; 2026 <a href="https://github.com/tricatch" target="_blank" rel="noopener">tricatch</a>
+    MIT License &copy; 2026 <a href="https://github.com/tricatch/oeHub" target="_blank" rel="noopener">tricatch</a>
   </div>
 
 </div>

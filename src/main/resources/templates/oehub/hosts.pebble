@@ -3,15 +3,22 @@
 {% block title %}oeHosts{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/hosts.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.0/ace.min.js"></script>
-<script src="/js/ace-init.js"></script>
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/hosts.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.44.0/ace.min.js" integrity="sha384-awj15LyQFNOkL94NhJ0EEH9En00b0Toh1WOLAwpTnYY45w1aVce0uz8hhK4eIfTR" crossorigin="anonymous"></script>
+<script src="{{ asset('/js/ace-init.js') }}"></script>
+<script src="{{ asset('/js/chrome-launch-args.js') }}"></script>
+<script src="{{ asset('/js/chrome-cmd-modal.js') }}"></script>
+<script src="{{ asset('/js/oelink-cmd-modal.js') }}"></script>
+<script src="{{ asset('/js/oelink-install-modal.js') }}"></script>
+<script src="{{ asset('/js/list-folders.js') }}"></script>
+<script src="{{ asset('/js/autosave.js') }}"></script>
+<script src="{{ asset('/js/share-scope-menu.js') }}"></script>
 {% endblock %}
 
 {% block content %}
 <div class="hosts-app" id="hostsApp">
-<script>if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('hostsApp').classList.add('expanded');</script>
+<script nonce="{{ cspNonce }}">if (localStorage.getItem('oeWidthExpanded') === 'true') document.getElementById('hostsApp').classList.add('expanded');</script>
 
   <!-- Sidebar -->
   <div class="hosts-sidebar">
@@ -25,6 +32,9 @@
       </button>
       <button class="oe-nav-action-btn" id="btnSearchToggle" title="{{ msg['tooltip.search'] }}">
         <span class="oe-icon oe-icon-search" style="width:15px;height:15px"></span>
+      </button>
+      <button class="oe-nav-action-btn" id="btnAddFolder" title="{{ msg['tooltip.new.folder'] }}">
+        <span class="oe-icon oe-icon-new-folder" style="width:15px;height:15px"></span>
       </button>
     </div>
 
@@ -47,8 +57,8 @@
       <button class="oe-nav-action-btn" id="btnShare" title="{{ msg['tooltip.share.oelink'] }}" disabled>
         <span class="oe-icon oe-icon-share" style="width:15px;height:15px"></span>
       </button>
-      <button class="oe-nav-action-btn" id="btnCopyShareLink" title="{{ msg['tooltip.open.plain'] }}" disabled>
-        <span class="oe-icon oe-icon-content" style="width:15px;height:15px"></span>
+      <button class="oe-nav-action-btn d-none" id="btnPublicLink" title="{{ msg['tooltip.public.link'] }}" disabled>
+        <span class="oe-icon oe-icon-public-link" style="width:15px;height:15px"></span>
       </button>
       <button class="oe-nav-action-btn" id="btnDownload" title="{{ msg['tooltip.export'] }}" disabled>
         <span class="oe-icon oe-icon-download" style="width:15px;height:15px"></span>
@@ -56,13 +66,7 @@
       <button class="oe-nav-action-btn oe-nav-action-danger" id="btnDelete" title="{{ msg['tooltip.delete.profile'] }}" disabled>
         <span class="oe-icon oe-icon-delete" style="width:15px;height:15px"></span>
       </button>
-      <span class="oe-visibility-wrap d-none" id="visibilityWrap">
-        <select class="oe-visibility-select" id="visibilitySelect">
-          <option value="public">{{ msg['visibility.public'] }}</option>
-          <option value="private">{{ msg['visibility.private'] }}</option>
-          <option value="collabo">{{ msg['visibility.collabo'] }}</option>
-        </select>
-      </span>
+      {% include "templates/oehub/share-scope-select.pebble" %}
     </div>
     <span class="oe-save-status" id="saveStatus"></span>
 
@@ -82,7 +86,8 @@
     </div>
     <div class="oe-editor-meta" id="editorMeta">
       <span><span id="metaUpdated"></span> / <span id="metaCreator"></span><span id="metaEditor"></span></span>
-      <span class="oe-myip-badge oe-editor-meta-ip">PROXY_SVR: {{ proxyIp }}</span>
+      {# PROXY_SVR is oeProxy's address - meaningless in workspace mode, which has no oeProxy #}
+      {% if not workspaceMode %}<span class="oe-myip-badge oe-editor-meta-ip">PROXY_SVR: {{ proxyIp }}</span>{% endif %}
     </div>
   </div>
 
@@ -178,6 +183,8 @@
         </button>
         <div class="hosts-info-pop d-none" id="resolverRulesInfoPop">{{ msg['hosts.resolver.rules.info'] }}</div>
       </div>
+      {# --proxy-server points Chrome at oeProxy's forward proxy, which workspace mode never runs #}
+      {% if not workspaceMode %}
       <div class="hosts-browser-option" style="padding-left:0; border-top:none;">
         <div class="form-check form-switch mb-0">
           <input type="checkbox" class="form-check-input oe-list-check" id="toggleProxyServer" role="switch">
@@ -186,14 +193,15 @@
         <button type="button" class="hosts-info-btn" id="btnProxyServerInfo" aria-label="{{ msg['tooltip.proxy.server'] }}">
           <span class="oe-icon oe-icon-info" style="width:12px;height:12px"></span>
         </button>
-        <div class="hosts-info-pop d-none" id="proxyServerInfoPop">{{ msg['hosts.proxy.server.info'] }}</div>
+        <div class="hosts-info-pop d-none" id="proxyServerInfoPop">{{ msg['hosts.proxy.server.info'] | replace({'{0}': fwdproxyPort}) }}</div>
       </div>
+      {% endif %}
       <div class="hosts-chrome-btn-row">
         <button class="hosts-chrome-launch-btn" id="btnChrome" type="button">
           <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
           oelink://chrome
         </button>
-        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.url'] }}">
+        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.cmd'] }}">
           <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>oelink
         </button>
         <button class="hosts-chrome-cmd-btn" id="btnCopyWinChrome" type="button" title="{{ msg['tooltip.copy.win.chrome'] }}">
@@ -218,43 +226,13 @@
   </div>
 </div>
 
-<!-- oelink install modal -->
-<div class="modal fade" id="oelinkInstallModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content oe-modal">
-      <div class="modal-header oe-modal-header">
-        <h5 class="modal-title">{{ msg['modal.install.oelink'] }}</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-muted small mb-3">{{ msg['hosts.install.desc'] }}</p>
-        <div class="mb-3">
-          <div class="hosts-right-label mb-2">{{ msg['hosts.install.steps.title'] }}</div>
-          <ol class="small text-muted ps-3" style="line-height:1.9">
-            <li>{{ msg['hosts.install.step1'] }}</li>
-            <li>{{ msg['hosts.install.step2'] }}</li>
-            <li>{{ msg['hosts.install.step3'] | raw }}</li>
-            <li>{{ msg['hosts.install.step4'] }}</li>
-          </ol>
-        </div>
-        <div class="d-grid gap-2" id="oelinkDownloadButtons">
-          <!-- populated by JS -->
-        </div>
-      </div>
-      <div class="modal-footer">
-        <div class="form-check me-auto">
-          <input class="form-check-input" type="checkbox" id="oelinkGuideNoShow">
-          <label class="form-check-label small text-muted" for="oelinkGuideNoShow">{{ msg['hosts.install.no.show'] }}</label>
-        </div>
-        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
-      </div>
-    </div>
-  </div>
-</div>
+{% include "templates/oehub/_oelink-install-modal.pebble" %}
 
 {% set importLinkPlaceholder = msg['import.placeholder.hosts'] %}
 {% set importLinkTitle = "oeHosts" %}
 {% include "templates/oehub/_import-link-modal.pebble" %}
+{% include "templates/oehub/_chrome-cmd-modal.pebble" %}
+{% include "templates/oehub/_oelink-cmd-modal.pebble" %}
 
 <!-- Collabo confirm modal -->
 <div class="modal fade" id="collaboConfirmModal" tabindex="-1">
@@ -312,27 +290,183 @@
   </div>
 </div>
 
-<input type="file" id="importFileHidden" accept=".json" style="display:none">
+<!-- Public (no-login) link modal - e2eEncryption design doc §6's last item -->
+<div class="modal fade" id="publicLinkModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['modal.public.link.title'] }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small mb-3">{{ msg['public.link.warning'] }}</div>
+        <div class="d-none" id="publicLinkResultWrap">
+          <div class="input-group mb-2">
+            <input type="text" class="form-control setup-mono" id="publicLinkValue" readonly>
+            <button type="button" class="btn btn-sm btn-oe-secondary" id="btnCopyPublicLink" title="{{ msg['ui.copy.clipboard'] }}">
+              <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+            </button>
+          </div>
+          <div class="small text-muted mb-1">{{ msg['public.link.text.label'] }}</div>
+          <div class="input-group mb-1">
+            <input type="text" class="form-control setup-mono" id="publicLinkTextValue" readonly>
+            <button type="button" class="btn btn-sm btn-oe-secondary" id="btnCopyPublicLinkText" title="{{ msg['ui.copy.clipboard'] }}">
+              <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>
+            </button>
+          </div>
+          <div class="small text-muted mb-2">{{ msg['public.link.text.warning'] }}</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" id="btnRevokePublicLink">{{ msg['btn.revoke'] }}</button>
+        <button type="button" class="oe-modal-btn" id="btnGeneratePublicLink">{{ msg['btn.generate'] }}</button>
+        <button type="button" class="oe-modal-btn d-none" id="btnClosePublicLink" data-bs-dismiss="modal">{{ msg['btn.close'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-<script>
+<script nonce="{{ cspNonce }}">
 const PROXY_SVR = '{{ proxyIp }}';
-const FWDPROXY_PORT = 36980;
+const FWDPROXY_PORT = {{ fwdproxyPort }};
+// Workspace mode has no forward proxy, so the --proxy-server option does not exist there and can
+// never end up in a launch command - even if an earlier self-hosted setting was stored as enabled.
+const PROXY_SERVER_OPTION = {{ workspaceMode ? 'false' : 'true' }};
+function proxyServerOn() {
+  return PROXY_SERVER_OPTION && document.getElementById('toggleProxyServer').checked;
+}
 
 (function() {
   let profiles = [];
   let activeHostId = null;
   let isReadonly = false;
-  let saveTimer = null;
-  let savedCrc = 0;
   let defaultUserDataDir = '';
   const isWin = navigator.userAgent.includes('Win');
   const isMac = navigator.userAgent.includes('Mac');
+
+  // ── Content encryption (workspace mode only - e2eEncryption design doc §1/§6) ──────────
+  // hostsContent is decrypted in place right after it's fetched, so every other function in
+  // this file (editor display, merge/launch-flag building, search-result rendering) keeps
+  // working against plaintext exactly as before. The DEK for each workspace-mode profile is kept
+  // here (never persisted) so a save can re-encrypt with the same key without re-unwrapping.
+  const dekByHostId = {};
+
+  // Public-link DEK cache (e2eEncryption design doc §6 "living link" redesign) - separate from
+  // dekByHostId since a link uses its own DEK, independent of the row's normal content key.
+  // Populated on "Generate" and on reopening the modal for a row that already has a
+  // wrappedLinkKey (unwrapped with the workspace key), so saveHostsContent can refresh link_content
+  // on every save without re-unwrapping each time.
+  const linkDekByHostId = {};
+
+  // Returns true if this row's key (private or workspace, whichever it needed) had expired out
+  // of OE_SESSION_KEYS's idle cache - decryptAllProfiles uses this to show one toast for the
+  // whole page load rather than one per row.
+  async function decryptProfileInPlace(p) {
+    if (!window.OE_WORKSPACE_MODE || !p.wrappedContentKey) return false;
+    try {
+      // dekByHostId also needs the DEK itself (for re-encrypting on save), which the shared
+      // OE_CONTENT_CRYPTO.decrypt() helper (also used by hosts-share.pebble) doesn't expose -
+      // unwrap it here directly instead of calling the helper.
+      let dek;
+      if (p.shareScope === 'private') {
+        const privateKey = await OE_SESSION_KEYS.loadPrivateKey();
+        if (!privateKey) { p.hostsContent = ''; return true; }
+        dek = await OE_CRYPTO.unwrapContentKeyWithPersonalKey(p.wrappedContentKey, privateKey);
+      } else {
+        const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+        if (!wsKey) { p.hostsContent = ''; return true; }
+        dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedContentKey, wsKey);
+      }
+      const record = JSON.parse(p.hostsContent);
+      p.hostsContent = await OE_CRYPTO.decryptContent(record, dek);
+      dekByHostId[p.hostsId] = dek;
+      return false;
+    } catch (err) {
+      console.error('Failed to decrypt profile ' + p.hostsId + ':', err);
+      p.hostsContent = ''; // never display ciphertext/garbage as if it were real content
+      return false;
+    }
+  }
+
+  async function decryptAllProfiles(list) {
+    if (!window.OE_WORKSPACE_MODE) return;
+    // The idle-expired encryption key (session-keys.js) is a separate concept from the auth
+    // cookie itself - the user is still logged in, just needs to re-enter their password once to
+    // re-derive it (key-unlock.js). The toast only remains for a dismissed prompt.
+    await OE_KEY_UNLOCK.ensure();
+    const results = await Promise.all(list.map(decryptProfileInPlace));
+    if (results.some(Boolean)) showToast(MSG['change.password.error.no.cached.key']);
+  }
+
+  // Returns the payload to actually send to the server for this content: encrypted (workspace mode,
+  // DEK already known for this row) or the plaintext itself (self-hosted, or no DEK yet).
+  async function encryptForSave(hostId, plaintext) {
+    if (!window.OE_WORKSPACE_MODE) return plaintext;
+    const dek = dekByHostId[hostId];
+    if (!dek) return plaintext;
+    const enc = await OE_CRYPTO.encryptContent(plaintext, dek);
+    return JSON.stringify(enc);
+  }
+
+  // Generates a fresh DEK for a brand-new row, wrapped for the share scope it starts as
+  // ('workspace' for a new/copied profile - both use the workspace key, e2eEncryption design doc
+  // §6). Returns {encryptedContent, wrappedContentKey} to send along with the create, or null
+  // in self-hosted / when session keys aren't available yet.
+  async function encryptNewContent(plaintext) {
+    if (!window.OE_WORKSPACE_MODE) return null;
+    await OE_KEY_UNLOCK.ensure();
+    const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    if (!wsKey) return null;
+    const dek = await OE_CRYPTO.generateContentKey();
+    const enc = await OE_CRYPTO.encryptContent(plaintext, dek);
+    const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey);
+    return { encryptedContent: JSON.stringify(enc), wrappedContentKey };
+  }
+
+  // The one way a full row from the server becomes a visible entry in `profiles`: it is decrypted
+  // in place first (which also caches its DEK for later saves), so ciphertext can never reach the
+  // list or the editor. Any new "server hands back a row" path must go through here, never a bare
+  // profiles.push(). Returns false (after a toast) when the needed session key had expired.
+  async function addProfileRow(p) {
+    if (p.wrappedContentKey) await OE_KEY_UNLOCK.ensure();
+    const keyExpired = await decryptProfileInPlace(p);
+    if (keyExpired) showToast(MSG['change.password.error.no.cached.key']);
+    profiles.push(p);
+    renderProfiles();
+    activateProfile(p.hostsId, false);
+    return !keyExpired;
+  }
+
+  // Another member's public/collabo row, fetched via /view and decrypted with the same helper the
+  // share viewer uses (passes plaintext through unchanged in self-hosted/unencrypted rows).
+  async function fetchViewPlaintext(hostsId) {
+    const res = await fetch('/api/hosts/' + hostsId + '/view');
+    if (!res.ok) throw new Error('view failed');
+    const row = await res.json();
+    return OE_CONTENT_CRYPTO.decrypt(row.wrappedContentKey, row.hostsContent, row.shareScope);
+  }
+
+  // Request options for POST /api/hosts/{id}/copy. In workspace mode HostsProfService.copyProfile
+  // refuses an encrypted source unless handed a fresh {encryptedContent, wrappedContentKey}
+  // (copying its ciphertext as-is with no key would strand it - e2eEncryption design doc §9), so
+  // the source is decrypted and re-encrypted for the copy exactly like a brand-new profile.
+  // Throws if the source can't be read/decrypted.
+  async function copyRequestOptions(sourceHostId) {
+    const opts = {method: 'POST'};
+    if (!window.OE_WORKSPACE_MODE) return opts;
+    const enc = await encryptNewContent(await fetchViewPlaintext(sourceHostId));
+    if (enc) {
+      opts.headers = {'Content-Type': 'application/json'};
+      opts.body = JSON.stringify({encryptedContent: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey});
+    }
+    return opts;
+  }
 
   // Ace editor
   const editor = initAceEditor('cmHostsEditor', 'ace/mode/text');
   editor.session.on('change', () => {
     if (!isReadonly && activeHostId) {
-      scheduleSave();
+      autosave.changed(editor.getValue());
       updateShareButtons();
     }
   });
@@ -342,24 +476,29 @@ const FWDPROXY_PORT = 36980;
   const editorTitle   = document.getElementById('editorTitle');
   const hostsEditorBody = document.getElementById('hostsEditorBody');
   const saveStatus    = document.getElementById('saveStatus');
+  const autosave = OE_AUTOSAVE.create({
+    editorEl: document.getElementById('cmHostsEditor'), statusEl: saveStatus, save: saveHostsContent
+  });
   const schemePreview  = document.getElementById('schemePreview');
   const oelinkArgsPreview = document.getElementById('oelinkArgsPreview');
   const btnDelete        = document.getElementById('btnDelete');
   const btnShare         = document.getElementById('btnShare');
-  const btnCopyShareLink = document.getElementById('btnCopyShareLink');
+  const btnPublicLink    = document.getElementById('btnPublicLink');
   const btnDownload      = document.getElementById('btnDownload');
+  // Only meaningful in workspace mode - self-hosted's existing /share link is already fully public/
+  // no-login, so there's nothing separate to offer there (e2eEncryption design doc §6).
+  if (window.OE_WORKSPACE_MODE) btnPublicLink.classList.remove('d-none');
   const emptyState    = document.getElementById('emptyState');
   const loadingUrlInput  = document.getElementById('loadingUrl');
   const userDataDirInput = document.getElementById('userDataDir');
   const userAgentInput   = document.getElementById('userAgent');
   let uaPresets = [];
   let urlPresets = [];
-  const visibilityWrap   = document.getElementById('visibilityWrap');
-  const visibilitySelect = document.getElementById('visibilitySelect');
+  const shareScopeWrap   = document.getElementById('shareScopeWrap');
+  const shareScopeSelect = document.getElementById('shareScopeSelect');
 
   // ── Render sidebar ─────────────────────────────────────────
   function renderProfiles() {
-    profileList.innerHTML = '';
     document.getElementById('profileCount').textContent = MSG['hosts.sidebar.count'].replace('{0}', profiles.length);
     const empty = document.getElementById('emptyState');
     if (profiles.length === 0) {
@@ -372,75 +511,54 @@ const FWDPROXY_PORT = 36980;
         editor.resize();
       }
     }
-    profiles.forEach(p => {
-      const item = document.createElement('div');
-      item.className = 'oe-list-item' + (p.hostsId === activeHostId ? ' active' : '');
-      item.dataset.hostsId = p.hostsId;
-      item.draggable = true;
-      item.innerHTML = `
-        <span class="oe-list-drag${p.visibility === 'private' ? ' private' : p.visibility === 'collabo' ? ' collabo' : ''}">&#9776;</span>
-        <span class="oe-list-name${p.visibility === 'private' ? ' private' : p.visibility === 'collabo' ? ' collabo' : ''}" data-hostsid="${p.hostsId}">${escHtml(p.hostsProfile)}</span>
-        <div class="form-check form-switch mb-0 oe-list-toggle">
-          <input type="checkbox" class="form-check-input oe-list-check" role="switch" ${p.selected ? 'checked' : ''}>
-        </div>`;
-
-      // Click to activate
-      item.addEventListener('click', e => {
-        if (e.target.type === 'checkbox') return;
-        activateProfile(p.hostsId, false);
-      });
-
-      // Checkbox toggle
-      item.querySelector('.oe-list-check').addEventListener('change', () => toggleSelected(p.hostsId));
-
-      // Double-click to rename
-      if (!p.parentId) item.querySelector('.oe-list-name').addEventListener('dblclick', e => startRename(e.target, p));
-
-      // Drag & Drop
-      item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', p.hostsId); });
-      item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
-      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-      item.addEventListener('drop', e => {
-        e.preventDefault();
-        item.classList.remove('drag-over');
-        const srcId = e.dataTransfer.getData('text/plain');
-        reorder(srcId, p.hostsId);
-      });
-
-      profileList.appendChild(item);
-    });
+    folderList.render();
     updateSchemePreview();
   }
+
+  const folderList = createListFolders({
+    container: profileList,
+    apiBase: '/api/hosts',
+    idKey: 'hostsId',
+    nameKey: 'hostsProfile',
+    getItems: () => profiles,
+    setItems: items => { profiles = items; },
+    rerender: renderProfiles,
+    isActive: p => p.hostsId === activeHostId,
+    publicLinkTitle: p => p.wrappedLinkKey ? MSG['tooltip.hosts.public.link.issued'] : null,
+    onActivate: p => activateProfile(p.hostsId, false),
+    onToggle: p => toggleSelected(p.hostsId),
+    canRename: p => !p.parentId,
+    onRename: startRename
+  });
+  document.getElementById('btnAddFolder').addEventListener('click', () => folderList.createFolder());
 
 
   // ── Activate profile ───────────────────────────────────────
   function activateProfile(hostsId, readonly) {
-    flushPendingSave();
+    const p = profiles.find(x => x.hostsId === hostsId);
+    const shown = autosave.activate(p && !readonly ? hostsId : null, p ? p.hostsContent : '');
     activeHostId = hostsId;
     isReadonly = readonly;
-    const p = profiles.find(x => x.hostsId === hostsId);
     if (!p) return;
     editorTitle.textContent = p.hostsProfile;
-    editor.setValue(p.hostsContent, -1);
+    editor.setValue(shown, -1);
     editor.setReadOnly(readonly);
     document.getElementById('cmHostsEditor').classList.toggle('readonly', readonly);
     btnDelete.disabled = readonly;
-    visibilityWrap.classList.toggle('d-none', readonly);
-    visibilitySelect.value = p.visibility || 'public';
-    visibilitySelect.disabled = !!p.parentId;
-    applyVisibilityStyle();
+    shareScopeWrap.classList.toggle('d-none', readonly);
+    shareScopeSelect.value = p.shareScope || 'workspace';
+    shareScopeSelect.disabled = !!p.parentId;
+    syncShareScopeMenu();
     updateShareButtons();
     btnDownload.disabled = false;
-    saveStatus.textContent = '';
     document.querySelectorAll('.oe-list-item').forEach(el => {
       el.classList.toggle('active', el.dataset.hostsId === String(hostsId));
     });
-    savedCrc = crc32(p.hostsContent);
     updateEditorMeta(p);
   }
 
   function activateSearchResult(result) {
-    flushPendingSave();
+    autosave.activate(null, '');
     activeHostId = result.hostsId;
     isReadonly = true;
     emptyState.classList.add('d-none');
@@ -454,90 +572,87 @@ const FWDPROXY_PORT = 36980;
     document.getElementById('cmHostsEditor').classList.add('readonly');
     btnDelete.disabled = true;
     btnShare.disabled = false;
-    btnCopyShareLink.disabled = false;
     btnDownload.disabled = false;
-    visibilityWrap.classList.add('d-none');
-    saveStatus.textContent = '';
+    shareScopeWrap.classList.add('d-none');
     updateEditorMeta(null);
     document.querySelectorAll('.oe-list-item').forEach(el => el.classList.remove('active'));
-    fetch('/share/' + result.hostsId + '/text').then(r => {
-      if (!r.ok) throw new Error('load failed');
-      return r.text();
-    }).then(raw => {
+    // /share/.../text (used before e2eEncryption) returns a synchronous plaintext body the
+    // server can't produce for encrypted (workspace mode) rows - it never holds the workspace key
+    // (design doc §1/§9). /view returns the row's raw fields instead and this decrypts them the
+    // same way hosts.pebble decrypts its own list (falls through unchanged in self-hosted/
+    // unencrypted rows, since OE_CONTENT_CRYPTO.decrypt() passes plaintext straight through).
+    fetchViewPlaintext(result.hostsId).then(plain => {
       if (activeHostId !== result.hostsId) return; // a newer selection has since taken over
-      const sep = raw.indexOf('\n\n');
-      editor.setValue(sep >= 0 ? raw.slice(sep + 2) : raw, -1);
+      editor.setValue(plain, -1);
       editor.resize(true);
     }).catch(() => { if (activeHostId === result.hostsId) showToast(MSG['toast.load.failed']); });
   }
 
-  // ── Auto-save ──────────────────────────────────────────────
-  function scheduleSave() {
-    if (!activeHostId || isReadonly) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveContent, 2000);
-  }
-
-  // Cancel the pending debounce and, if there's an unsaved edit, save it immediately.
-  // Call this before switching away from the currently active profile so a quick
-  // switch within the 3s debounce window doesn't silently discard the edit.
-  function flushPendingSave() {
-    clearTimeout(saveTimer);
-    if (activeHostId && !isReadonly) flushSaveFor(activeHostId, editor.getValue());
-  }
-
-  async function saveContent() {
-    if (!activeHostId || isReadonly) return;
-    await flushSaveFor(activeHostId, editor.getValue());
-  }
-
-  async function flushSaveFor(hostId, content) {
-    if (crc32(content) === savedCrc) return;
+  // Re-encrypts and attaches linkContent to the save body when this row has a live public link
+  // (e2eEncryption design doc §6 "living link" redesign), so the link stays in sync with every
+  // edit. Never throws - a failure here must not block saving the actual content.
+  async function attachLinkContentForSave(body, hostId, content) {
+    const p = profiles.find(x => x.hostsId === hostId);
+    if (!p || !p.wrappedLinkKey) return;
     try {
-      const res = await fetch('/api/hosts/' + hostId + '/content', {
-        method: 'PATCH', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content})
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        const p = profiles.find(x => x.hostsId === hostId);
-        if (p) { p.hostsContent = content; p.updatedAt = updated.updatedAt; }
-        updateSchemePreview();
-        if (hostId === activeHostId) {
-          savedCrc = crc32(content);
-          updateEditorMeta(p);
-          saveStatus.textContent = MSG['status.saved'];
-          setTimeout(() => { saveStatus.textContent = ''; }, 2000);
-        }
-      } else if (hostId === activeHostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
+      let linkDek = linkDekByHostId[hostId];
+      if (!linkDek) {
+        const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+        linkDek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedLinkKey, wsKey);
+        linkDekByHostId[hostId] = linkDek;
       }
-    } catch (e) {
-      if (hostId === activeHostId) {
-        saveStatus.textContent = MSG['status.save.failed'];
-        saveStatus.style.color = '#dc3545';
-        setTimeout(() => { saveStatus.textContent = ''; saveStatus.style.color = ''; }, 3000);
-      }
+      const linkEnc = await OE_CRYPTO.encryptContent(content, linkDek);
+      body.linkContent = JSON.stringify(linkEnc);
+    } catch (err) {
+      console.warn('Failed to refresh public link content for ' + hostId + ':', err);
     }
+  }
+
+  // ── Auto-save (OE_AUTOSAVE decides when; this does the request) ──
+  async function saveHostsContent(hostId, content) {
+    const payload = await encryptForSave(hostId, content);
+    const body = {content: payload};
+    await attachLinkContentForSave(body, hostId, content);
+    const res = await fetch('/api/hosts/' + hostId + '/content', {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (res.status >= 500) throw new Error('save failed: ' + res.status);
+    if (!res.ok) return {saved: false, message: MSG['status.save.failed']};
+    const updated = await res.json();
+    const p = profiles.find(x => x.hostsId === hostId);
+    if (p) { p.hostsContent = content; p.updatedAt = updated.updatedAt; }
+    updateSchemePreview();
+    if (hostId === activeHostId) updateEditorMeta(p);
+    return {saved: true};
   }
 
   // ── Add profile ────────────────────────────────────────────
   document.getElementById('btnAdd').addEventListener('click', async () => {
     const res = await fetch('/api/hosts', {method: 'POST'});
     if (res.ok) {
-      const p = await res.json();
-      profiles.push(p);
-      renderProfiles();
-      activateProfile(p.hostsId, false);
+      let p = await res.json();
+      // The server generates the initial example content in plaintext (it doesn't know how to
+      // encrypt), so in workspace mode the client encrypts it right after creation and patches the
+      // row with both the ciphertext and its wrapped key in one call. The patched row (ciphertext)
+      // then goes through addProfileRow like any other; if the patch fails, the plaintext row
+      // create() returned is shown as-is.
+      const enc = await encryptNewContent(p.hostsContent).catch(() => null);
+      if (enc) {
+        const patchRes = await fetch('/api/hosts/' + p.hostsId + '/content', {
+          method: 'PATCH', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({content: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey})
+        });
+        if (patchRes.ok) p = await patchRes.json();
+      }
+      await addProfileRow(p);
     }
   });
 
   // ── Delete profile ─────────────────────────────────────────
   document.getElementById('btnDelete').addEventListener('click', async () => {
     if (!activeHostId || !confirm(MSG['confirm.delete.profile'])) return;
-    clearTimeout(saveTimer);
+    autosave.discard(activeHostId);
     await fetch('/api/hosts/' + activeHostId, {method: 'DELETE'});
     profiles = profiles.filter(p => p.hostsId !== activeHostId);
     activeHostId = null;
@@ -545,9 +660,8 @@ const FWDPROXY_PORT = 36980;
     editor.setValue('', -1);
     btnDelete.disabled = true;
     btnShare.disabled = true;
-    btnCopyShareLink.disabled = true;
     btnDownload.disabled = true;
-    visibilityWrap.classList.add('d-none');
+    shareScopeWrap.classList.add('d-none');
     updateEditorMeta(null);
     renderProfiles();
   });
@@ -590,6 +704,7 @@ const FWDPROXY_PORT = 36980;
         if (activeHostId === p.hostsId) editorTitle.textContent = newName;
       } else {
         el.textContent = p.hostsProfile;
+        if (res.status === 409) showToast(MSG['toast.profile.name.taken']);
       }
     };
 
@@ -602,23 +717,10 @@ const FWDPROXY_PORT = 36980;
     el.addEventListener('keydown', onKeydown);
   }
 
-  // ── Reorder ────────────────────────────────────────────────
-  async function reorder(srcId, targetId) {
-    const srcIdx = profiles.findIndex(p => p.hostsId === srcId);
-    const tgtIdx = profiles.findIndex(p => p.hostsId === targetId);
-    if (srcIdx === -1 || tgtIdx === -1) return;
-    const [moved] = profiles.splice(srcIdx, 1);
-    profiles.splice(tgtIdx, 0, moved);
-    renderProfiles();
-    await fetch('/api/hosts/order', {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(profiles.map(p => p.hostsId))
-    });
-  }
-
   // ── Share ──────────────────────────────────────────────────
-  document.getElementById('btnShare').addEventListener('click', () => {
-    if (!activeHostId) return;
+  // Snapshot of the browser options, carried to the share page as ?chromeArgs= so it opens with
+  // the same toggles the sharer had on.
+  function shareChromeArgsQuery() {
     const args = {
       oelink:          document.getElementById('toggleOelink').checked,
       devTools:        document.getElementById('toggleDevTools').checked,
@@ -626,7 +728,7 @@ const FWDPROXY_PORT = 36980;
       extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
       extraArgs:        document.getElementById('extraArgs').value,
       hrr:              document.getElementById('toggleHostResolverRules').checked,
-      proxyServer:     document.getElementById('toggleProxyServer').checked,
+      proxyServer:     proxyServerOn(),
       uddEnabled:      document.getElementById('toggleUserDataDir').checked,
       udd:             defaultUserDataDir,
       urlEnabled:      document.getElementById('toggleOpenUrl').checked,
@@ -634,12 +736,117 @@ const FWDPROXY_PORT = 36980;
       uaEnabled:       document.getElementById('toggleUserAgent').checked,
       ua:              userAgentInput.value.trim()
     };
-    window.open('/share/' + activeHostId + '/oelink?chromeArgs=' + toBase64Url(JSON.stringify(args)), '_blank');
+    return '?chromeArgs=' + toBase64Url(JSON.stringify(args));
+  }
+
+  document.getElementById('btnShare').addEventListener('click', () => {
+    if (!activeHostId) return;
+    window.open('/share/' + activeHostId + '/oelink' + shareChromeArgsQuery(), '_blank');
   });
 
-  document.getElementById('btnCopyShareLink').addEventListener('click', () => {
+  // ── Public (no-login) link ────────────────────────────────
+  // The raw DEK still travels only in the URL fragment, never sent to the server - but the DEK
+  // itself is also wrapped with the workspace key and stored as wrappedLinkKey (e2eEncryption
+  // design doc §6 "living link" redesign), so any member's browser can recover the current URL by
+  // unwrapping it, and saveHostsContent (above) keeps link_content in sync with every edit.
+  // Text (non-browser) URL is a pure string substitution of the same key - the browser link puts
+  // the key in the URL fragment (never sent to the server), the text link puts the same key in
+  // the query string instead so non-JS clients like SwitchHosts can supply it in a plain GET
+  // (e2eEncryption design doc §6's text-link decision).
+  // The browser link also carries the current browser options (?chromeArgs=, same as btnShare);
+  // the text link has no use for them.
+  function showPublicLinkUrls(hostId, keyB64url) {
+    const base = location.origin + '/link/' + hostId + '/oelink';
+    document.getElementById('publicLinkValue').value = base + shareChromeArgsQuery() + '#key=' + keyB64url;
+    document.getElementById('publicLinkTextValue').value = base + '/text?key=' + keyB64url;
+  }
+
+  // Once a link exists the modal offers revoke/close instead of generate: the link is already
+  // there to copy, and generating again would only replace it.
+  function setPublicLinkIssued(issued) {
+    document.getElementById('publicLinkResultWrap').classList.toggle('d-none', !issued);
+    document.getElementById('btnRevokePublicLink').disabled = !issued;
+    document.getElementById('btnGeneratePublicLink').classList.toggle('d-none', issued);
+    document.getElementById('btnClosePublicLink').classList.toggle('d-none', !issued);
+  }
+
+  document.getElementById('btnPublicLink').addEventListener('click', async () => {
     if (!activeHostId) return;
-    window.open('/share/' + activeHostId + '/text', '_blank');
+    const hostId = activeHostId;
+    document.getElementById('publicLinkValue').value = '';
+    document.getElementById('publicLinkTextValue').value = '';
+    setPublicLinkIssued(false);
+    new bootstrap.Modal(document.getElementById('publicLinkModal')).show();
+
+    const p = profiles.find(x => x.hostsId === hostId);
+    if (!p || !p.wrappedLinkKey) return;
+    try {
+      let dek = linkDekByHostId[hostId];
+      if (!dek) {
+        const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+        dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(p.wrappedLinkKey, wsKey);
+        linkDekByHostId[hostId] = dek;
+      }
+      const rawKeyBuf = await crypto.subtle.exportKey('raw', dek);
+      const keyB64url = OE_CRYPTO.bufToBase64(rawKeyBuf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      if (activeHostId !== hostId) return; // a newer selection has since taken over
+      showPublicLinkUrls(hostId, keyB64url);
+      setPublicLinkIssued(true);
+    } catch (e) {
+      console.warn('Failed to recover public link for ' + hostId + ':', e);
+    }
+  });
+
+  document.getElementById('btnGeneratePublicLink').addEventListener('click', async () => {
+    if (!activeHostId) return;
+    const hostId = activeHostId;
+    try {
+      const dek = await OE_CRYPTO.generateContentKey();
+      const enc = await OE_CRYPTO.encryptContent(editor.getValue(), dek);
+      const rawKeyBuf = await crypto.subtle.exportKey('raw', dek);
+      const keyB64url = OE_CRYPTO.bufToBase64(rawKeyBuf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+      const wrappedLinkKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey);
+      const res = await fetch('/api/hosts/' + hostId + '/link', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ linkContent: JSON.stringify(enc), wrappedLinkKey: wrappedLinkKey })
+      });
+      if (!res.ok) throw new Error('failed');
+      const p = profiles.find(x => x.hostsId === hostId);
+      if (p) p.wrappedLinkKey = wrappedLinkKey;
+      linkDekByHostId[hostId] = dek;
+      renderProfiles();
+      showPublicLinkUrls(hostId, keyB64url);
+      setPublicLinkIssued(true);
+    } catch (e) {
+      showToast(MSG['toast.public.link.failed']);
+    }
+  });
+
+  document.getElementById('btnCopyPublicLink').addEventListener('click', () => {
+    copyToClipboard(document.getElementById('publicLinkValue').value).then(() => showToast(MSG['toast.copied']));
+  });
+
+  document.getElementById('btnCopyPublicLinkText').addEventListener('click', () => {
+    copyToClipboard(document.getElementById('publicLinkTextValue').value).then(() => showToast(MSG['toast.copied']));
+  });
+
+  document.getElementById('btnRevokePublicLink').addEventListener('click', async () => {
+    if (!activeHostId) return;
+    const hostId = activeHostId;
+    const res = await fetch('/api/hosts/' + hostId + '/link', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    });
+    if (res.ok) {
+      const p = profiles.find(x => x.hostsId === hostId);
+      if (p) p.wrappedLinkKey = null;
+      delete linkDekByHostId[hostId];
+      renderProfiles();
+      showToast(MSG['toast.public.link.revoked']);
+      bootstrap.Modal.getInstance(document.getElementById('publicLinkModal')).hide();
+    } else {
+      showToast(MSG['toast.public.link.failed']);
+    }
   });
 
   // ── Download ───────────────────────────────────────────────
@@ -720,13 +927,24 @@ const FWDPROXY_PORT = 36980;
       el.querySelector('.search-copy-btn').addEventListener('click', async e => {
         e.stopPropagation();
         const url = isCollabo ? '/api/hosts/' + r.hostsId + '/register' : '/api/hosts/' + r.hostsId + '/copy';
-        const res = await fetch(url, {method: 'POST'});
+        // A collabo profile is registered as a reference row (no content/key of its own, see
+        // cloudGroupService design doc §4-2); anything else is copied.
+        var opts = {method: 'POST'};
+        if (!isCollabo) {
+          try {
+            opts = await copyRequestOptions(r.hostsId);
+          } catch (err) {
+            showToast(MSG['toast.copy.failed']);
+            return;
+          }
+        }
+        const res = await fetch(url, opts);
         if (res.ok) {
-          const p = await res.json();
-          profiles.push(p);
-          renderProfiles();
-          activateProfile(p.hostsId, false);
-          showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+          if (await addProfileRow(await res.json())) {
+            showToast(isCollabo ? MSG['toast.registered'] : MSG['toast.copied']);
+          }
+        } else {
+          showToast(MSG['toast.copy.failed']);
         }
       });
       container.appendChild(el);
@@ -747,20 +965,22 @@ const FWDPROXY_PORT = 36980;
     btn.disabled = true;
     btn.innerHTML = BUSY_HTML;
     feedback.style.display = 'none';
-    const res = await fetch('/api/hosts/' + hostId + '/copy', {method: 'POST'});
-    if (res.ok) {
-      const p = await res.json();
-      profiles.push(p);
-      renderProfiles();
-      activateProfile(p.hostsId, false);
-      bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
-      showToast(MSG['toast.imported']);
-    } else {
-      feedback.textContent = MSG['feedback.profile.not.found'];
-      feedback.style.display = 'block';
-      btn.disabled = false;
-      btn.innerHTML = IDLE_HTML;
-    }
+    try {
+      // The source row is 'workspace'-scope-only (collabo can't be reached this way - no /register
+      // fallback here, since a pasted link never carries the "is this collabo" info register vs
+      // copy needs).
+      const res = await fetch('/api/hosts/' + hostId + '/copy', await copyRequestOptions(hostId));
+      if (res.ok) {
+        const keyOk = await addProfileRow(await res.json());
+        bootstrap.Modal.getInstance(document.getElementById('importLinkModal')).hide();
+        if (keyOk) showToast(MSG['toast.imported']);
+        return;
+      }
+    } catch (e) { /* fall through to the not-found feedback below */ }
+    feedback.textContent = MSG['feedback.profile.not.found'];
+    feedback.style.display = 'block';
+    btn.disabled = false;
+    btn.innerHTML = IDLE_HTML;
   });
 
   // ── Scheme / Browser launch ────────────────────────────────
@@ -792,35 +1012,25 @@ const FWDPROXY_PORT = 36980;
   }
 
   function buildArgsLines() {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
-    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
-    const url = loadingUrlInput.value.trim();
+    const {rules} = buildResolverRules();
     const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
-    const userAgent   = userAgentInput.value.trim();
-    const lines = [];
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const {rules}          = buildResolverRules();
-    const hasRules         = Object.keys(rules).length > 0;
-    if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
-    if (hrrEnabled && hasRules)    lines.push('--host-resolver-rules "MAP ..."');
-    if (proxyServerEnabled)        lines.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
-    if (incognito)                 lines.push('--incognito');
-    if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
-    lines.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)             lines.unshift(`--oelink=${oelinkValue}`);
-    if (urlEnabled && url)         lines.push('  ' + url);
-
-    return lines;
+    return buildChromeArgLines({
+      oelinkEnabled: document.getElementById('toggleOelink').checked,
+      incognito: document.getElementById('toggleIncognito').checked,
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      urlEnabled: document.getElementById('toggleOpenUrl').checked,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      proxyServerEnabled: proxyServerOn(),
+      proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
+      url: loadingUrlInput.value.trim(),
+      userDataDir,
+      userAgent: userAgentInput.value.trim(),
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      hasRules: Object.keys(rules).length > 0,
+    });
   }
 
   function updateSchemePreview() {
@@ -884,6 +1094,12 @@ const FWDPROXY_PORT = 36980;
     const content = allEntries.filter(e => e.active).map(e => `${e.ip} ${e.host}`).join('\n');
     const name = selectedProfiles.map(p => p.hostsProfile).join(' + ');
 
+    // Workspace mode: the merged content must reach the server only as ciphertext (fresh DEK,
+    // wrapped with the workspace key - same as btnAdd). Encrypt before creating anything, so an
+    // expired key aborts the save instead of leaving a plaintext row behind.
+    const enc = await encryptNewContent(content).catch(() => null);
+    if (window.OE_WORKSPACE_MODE && !enc) { showToast(MSG['toast.merge.save.failed']); return; }
+
     const createRes = await fetch('/api/hosts', {method: 'POST'});
     if (!createRes.ok) { showToast(MSG['toast.merge.save.failed']); return; }
     let p = await createRes.json();
@@ -896,45 +1112,41 @@ const FWDPROXY_PORT = 36980;
 
     const contentRes = await fetch('/api/hosts/' + p.hostsId + '/content', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content})
+      body: JSON.stringify(enc
+        ? {content: enc.encryptedContent, wrappedContentKey: enc.wrappedContentKey}
+        : {content})
     });
     if (contentRes.ok) p = await contentRes.json();
 
-    profiles.push(p);
-    renderProfiles();
-    activateProfile(p.hostsId, false);
-    showToast(MSG['toast.merge.saved']);
+    if (await addProfileRow(p)) showToast(MSG['toast.merge.saved']);
   });
 
   function buildSchemeArgs(browser) {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
+    const oelinkEnabled = document.getElementById('toggleOelink').checked;
+    const urlEnabled    = document.getElementById('toggleOpenUrl').checked;
     const url = loadingUrlInput.value.trim();
     const {rules} = buildResolverRules();
     const rulesStr = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
     const uddEnabled  = document.getElementById('toggleUserDataDir').checked;
-    const uaEnabled   = document.getElementById('toggleUserAgent').checked;
-    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
     const userDataDir = resolveUDD(defaultUserDataDir, isWin ? 'win' : 'mac');
-    const userAgent   = userAgentInput.value.trim();
-    const parts = [];
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (proxyServerEnabled)        parts.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)             parts.unshift(`--oelink=${oelinkValue}`);
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr,
+      proxyServerEnabled: proxyServerOn(),
+      proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: userAgentInput.value.trim(),
+    });
+    const oelinkValue = chromeOelinkValue(uddEnabled, userDataDir);
+    if (oelinkEnabled) parts.unshift(`--oelink=${oelinkValue}`);
     if (urlEnabled && url) {
-      const wrapped = wrapDelayedUrl(url);
+      const wrapped = chromeOpenUrlArg(url);
       parts.push(isWin ? wrapped : macArgQuote(wrapped));
     }
     return parts.join(' ');
@@ -945,54 +1157,36 @@ const FWDPROXY_PORT = 36980;
   });
 
   document.getElementById('btnCopyScheme').addEventListener('click', () => {
-    const scheme = 'oelink://chrome?' + toBase64Url(buildSchemeArgs('chrome'));
-    copyToClipboard(scheme).then(() => showToast(MSG['toast.scheme.copied']));
+    openOelinkCmdModal('oelink://chrome?' + toBase64Url(buildSchemeArgs('chrome')));
   });
 
-  function buildDirectChromeCmd(os) {
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const url              = loadingUrlInput.value.trim();
-    const {rules}          = buildResolverRules();
-    const rulesStr         = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
-    const proxyServerEnabled = document.getElementById('toggleProxyServer').checked;
+  function showDirectChromeCmd(os) {
+    const urlEnabled = document.getElementById('toggleOpenUrl').checked;
+    const url         = loadingUrlInput.value.trim();
+    const {rules}     = buildResolverRules();
+    const rulesStr    = Object.entries(rules).map(([h, ip]) => `MAP ${h} ${ip}`).join(',');
     const userDataDir = resolveUDD(defaultUserDataDir, os);
-    const userAgent   = userAgentInput.value.trim();
-    const parts = [];
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (proxyServerEnabled)        parts.push(`--proxy-server="${PROXY_SVR}:${FWDPROXY_PORT}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    if (urlEnabled && url)         parts.push(wrapDelayedUrl(url));
-    if (os === 'win') {
-      const argList = parts.map(winArgQuote).join(', ');
-      return parts.length > 0
-        ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
-        : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
-    } else {
-      return parts.length > 0
-        ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
-        : 'open -na "Google Chrome"';
-    }
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr,
+      proxyServerEnabled: proxyServerOn(),
+      proxyServerValue: `${PROXY_SVR}:${FWDPROXY_PORT}`,
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: userAgentInput.value.trim(),
+    });
+    if (urlEnabled && url) parts.push(chromeOpenUrlArg(url));
+    const uddOn = document.getElementById('toggleUserDataDir').checked && userDataDir;
+    openChromeCmdModal(os, buildChromeCommandLine(os, parts), uddOn ? userDataDir : '');
   }
 
-  document.getElementById('btnCopyWinChrome').addEventListener('click', () => {
-    copyToClipboard(buildDirectChromeCmd('win')).then(() => showToast(MSG['toast.chrome.cmd.copied']));
-  });
-
-  document.getElementById('btnCopyMacChrome').addEventListener('click', () => {
-    copyToClipboard(buildDirectChromeCmd('mac')).then(() => showToast(MSG['toast.chrome.cmd.copied']));
-  });
+  document.getElementById('btnCopyWinChrome').addEventListener('click', () => showDirectChromeCmd('win'));
+  document.getElementById('btnCopyMacChrome').addEventListener('click', () => showDirectChromeCmd('mac'));
 
   // ── host-resolver-rules info popover ────────────────────────
   document.getElementById('btnResolverRulesInfo').addEventListener('click', (e) => {
@@ -1006,6 +1200,7 @@ const FWDPROXY_PORT = 36980;
     }
   });
 
+  {% if not workspaceMode %}
   // ── proxy-server info popover ───────────────────────────────
   document.getElementById('btnProxyServerInfo').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1017,29 +1212,10 @@ const FWDPROXY_PORT = 36980;
       pop.classList.add('d-none');
     }
   });
+  {% endif %}
 
-  // ── oelink help popover ─────────────────────────────────────
-  window.addEventListener('load', () => {
-    // ── oelink download buttons by OS ───────────────────────────
-    const ua = navigator.userAgent;
-    const isWin  = ua.includes('Win');
-    const isMac  = ua.includes('Mac');
-    const downloads = isWin ? [
-      { label: MSG['hosts.download.windows'], file: '/oelink/install_windows_oelink_scheme.zip' }
-    ] : isMac ? [
-      { label: MSG['hosts.download.macos'], file: '/oelink/install_macos_oelink_scheme.sh.tar.gz' }
-    ] : null;
-
-    const dlContainer = document.getElementById('oelinkDownloadButtons');
-    (downloads || []).forEach(d => {
-      const a = document.createElement('a');
-      a.href = d.file;
-      a.download = '';
-      a.className = 'oe-modal-btn justify-content-center';
-      a.innerHTML = `<span class="oe-icon oe-icon-download" style="width:13px;height:13px"></span>${d.label}`;
-      dlContainer.appendChild(a);
-    });
-  });
+  // ── oelink install commands by OS ───────────────────────────
+  wireOelinkInstallModal();
 
 
 
@@ -1047,39 +1223,65 @@ const FWDPROXY_PORT = 36980;
     document.getElementById('metaCreator').textContent = p ? (p.userId || '—') : '—';
     document.getElementById('metaUpdated').textContent = p ? (fmtDateTime(p.updatedAt) || '—') : '—';
     const editorEl = document.getElementById('metaEditor');
-    editorEl.textContent = (p && p.lastEditorUserId && p.lastEditorUserId !== p.userId)
-      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + p.lastEditorUserId + ')'
+    editorEl.textContent = (p && p.updatedByUserId && p.updatedByUserId !== p.userId)
+      ? ' (' + MSG['editor.meta.editedBy'] + ': ' + p.updatedByUserId + ')'
       : '';
-  }
-
-  function applyVisibilityStyle() {
-    visibilitySelect.style.color = visibilitySelect.value === 'private' ? '#CC7722' : visibilitySelect.value === 'collabo' ? '#3b7dd8' : '';
   }
 
   function updateShareButtons() {
     const p = profiles.find(x => x.hostsId === activeHostId);
     if (!p) return;
-    const disabled = p.visibility === 'private';
+    const disabled = p.shareScope === 'private';
     btnShare.disabled = disabled;
-    btnCopyShareLink.disabled = disabled;
+    // Fully-public link (e2eEncryption design doc §6's last item) only makes sense for 'workspace'
+    // share scope - 'collabo' is a restricted audience by design, defeating the "anyone, no login"
+    // point, and the button itself only exists in workspace mode (see its init-time unhide below).
+    if (btnPublicLink) btnPublicLink.disabled = p.shareScope !== 'workspace';
   }
 
-  // ── Visibility select ──────────────────────────────────────
+  // ── Share scope select ──────────────────────────────────────
   let _pendingCollabo = false;
-  let _prevVisibility = null;
+  let _prevShareScope = null;
 
-  async function doUpdateVisibility(visibility) {
-    const res = await fetch('/api/hosts/' + activeHostId + '/visibility', {
+  // The DEK itself never changes on a share-scope flip - only which KEK wraps it (e2eEncryption
+  // design doc §7). 'collabo' and 'workspace' both use the workspace key, so switching between
+  // them (or confirming collabo from workspace) needs no new wrap at all; only a flip to/from
+  // 'private' does. Reuses the already-known DEK from load rather than re-deriving anything.
+  async function computeRewrapForShareScope(hostId, newShareScope) {
+    if (!window.OE_WORKSPACE_MODE) return null;
+    const dek = dekByHostId[hostId];
+    if (!dek) return null;
+    if (newShareScope === 'private') {
+      const res = await fetch('/api/user/crypto-keys');
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.publicKey) return null;
+      const publicKey = await OE_CRYPTO.importPublicKey(data.publicKey);
+      return OE_CRYPTO.wrapContentKeyWithPersonalKey(dek, publicKey);
+    }
+    const wsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    return wsKey ? OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, wsKey) : null;
+  }
+
+  async function doUpdateShareScope(shareScope) {
+    const wrappedContentKey = await computeRewrapForShareScope(activeHostId, shareScope).catch(() => null);
+    const res = await fetch('/api/hosts/' + activeHostId + '/share-scope', {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({visibility})
+      body: JSON.stringify({shareScope, wrappedContentKey})
     });
     if (res.ok) {
       const updated = await res.json();
       const p = profiles.find(x => x.hostsId === activeHostId);
-      if (p) { p.visibility = updated.visibility; p.parentId = updated.parentId; }
+      if (p) {
+        p.shareScope = updated.shareScope; p.parentId = updated.parentId; p.wrappedContentKey = updated.wrappedContentKey;
+        // The server auto-revokes any live link when share scope leaves 'workspace' (design doc §6),
+        // so updated.wrappedLinkKey already reflects that - just mirror it and drop the cached DEK.
+        p.wrappedLinkKey = updated.wrappedLinkKey;
+        if (!p.wrappedLinkKey) delete linkDekByHostId[activeHostId];
+      }
       const updatedP = profiles.find(x => x.hostsId === activeHostId);
-      visibilitySelect.disabled = !!(updatedP && updatedP.parentId);
-      applyVisibilityStyle();
+      shareScopeSelect.disabled = !!(updatedP && updatedP.parentId);
+      syncShareScopeMenu();
       updateShareButtons();
       renderProfiles();
       document.querySelectorAll('.oe-list-item').forEach(el => {
@@ -1088,29 +1290,29 @@ const FWDPROXY_PORT = 36980;
     }
   }
 
-  visibilitySelect.addEventListener('change', e => {
+  shareScopeSelect.addEventListener('change', e => {
     if (!activeHostId) return;
     if (e.target.value === 'collabo') {
-      _prevVisibility = profiles.find(x => x.hostsId === activeHostId)?.visibility || 'public';
+      _prevShareScope = profiles.find(x => x.hostsId === activeHostId)?.shareScope || 'workspace';
       _pendingCollabo = true;
       new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
       return;
     }
-    doUpdateVisibility(e.target.value);
+    doUpdateShareScope(e.target.value);
   });
 
   document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
     bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
     if (_pendingCollabo && activeHostId) {
       _pendingCollabo = false;
-      await doUpdateVisibility('collabo');
+      await doUpdateShareScope('collabo');
     }
   });
 
   document.getElementById('collaboConfirmModal').addEventListener('hidden.bs.modal', () => {
     if (_pendingCollabo) {
-      visibilitySelect.value = _prevVisibility;
-      applyVisibilityStyle();
+      shareScopeSelect.value = _prevShareScope;
+      syncShareScopeMenu();
       _pendingCollabo = false;
     }
   });
@@ -1169,7 +1371,7 @@ const FWDPROXY_PORT = 36980;
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: String(e.target.checked)})
     });
-    if (e.target.checked && document.getElementById('toggleProxyServer').checked) {
+    if (e.target.checked && proxyServerOn()) {
       document.getElementById('toggleProxyServer').checked = false;
       fetch('/api/hosts/conf/proxy_server_enabled', {
         method: 'PUT', headers: {'Content-Type': 'application/json'},
@@ -1179,6 +1381,7 @@ const FWDPROXY_PORT = 36980;
     updateSchemePreview();
   });
 
+  {% if not workspaceMode %}
   document.getElementById('toggleProxyServer').addEventListener('change', e => {
     fetch('/api/hosts/conf/proxy_server_enabled', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
@@ -1193,7 +1396,7 @@ const FWDPROXY_PORT = 36980;
     }
     updateSchemePreview();
   });
-
+  {% endif %}
 
   // ── Loading URL save ───────────────────────────────────────
   let loadingUrlTimer;
@@ -1208,8 +1411,6 @@ const FWDPROXY_PORT = 36980;
     }, 800);
   });
 
-  let _pendingUdd = false;
-
   function applyUserDataDir(enabled) {
     userDataDirInput.classList.toggle('disabled', !enabled);
     fetch('/api/hosts/conf/user_data_dir_enabled', {
@@ -1219,29 +1420,7 @@ const FWDPROXY_PORT = 36980;
     updateSchemePreview();
   }
 
-  document.getElementById('toggleUserDataDir').addEventListener('change', e => {
-    if (e.target.checked) {
-      _pendingUdd = true;
-      new bootstrap.Modal(document.getElementById('uddWarnModal')).show();
-      return;
-    }
-    applyUserDataDir(false);
-  });
-
-  document.getElementById('btnUddConfirm').addEventListener('click', () => {
-    bootstrap.Modal.getInstance(document.getElementById('uddWarnModal')).hide();
-    if (_pendingUdd) {
-      _pendingUdd = false;
-      applyUserDataDir(true);
-    }
-  });
-
-  document.getElementById('uddWarnModal').addEventListener('hidden.bs.modal', () => {
-    if (_pendingUdd) {
-      document.getElementById('toggleUserDataDir').checked = false;
-      _pendingUdd = false;
-    }
-  });
+  wireConfirmToggle('toggleUserDataDir', 'uddWarnModal', 'btnUddConfirm', applyUserDataDir);
 
   document.getElementById('toggleOpenUrl').addEventListener('change', e => {
     loadingUrlInput.disabled = !e.target.checked;
@@ -1440,6 +1619,7 @@ const FWDPROXY_PORT = 36980;
 
   // ── Init ───────────────────────────────────────────────────
   (async () => {
+    const foldersLoaded = folderList.load();
     const [profilesRes, luRes, ipRes, uddRes, uddeRes, oueRes, hrrRes, uaRes, uaeRes, presetsRes, urlPresetsRes, exaRes, exaeRes, pseRes] = await Promise.all([
       fetch('/api/hosts'),
       fetch('/api/hosts/conf/open_url'),
@@ -1457,6 +1637,7 @@ const FWDPROXY_PORT = 36980;
       fetch('/api/hosts/conf/proxy_server_enabled')
     ]);
     profiles = await profilesRes.json();
+    await decryptAllProfiles(profiles);
     const lu   = await luRes.json();
     const ip   = await ipRes.json();
     const udd  = await uddRes.json();
@@ -1470,7 +1651,7 @@ const FWDPROXY_PORT = 36980;
     const exa  = await exaRes.json();
     const exae = await exaeRes.json();
     const pse  = await pseRes.json();
-    document.getElementById('toggleProxyServer').checked = pse.value === 'true';
+    if (PROXY_SERVER_OPTION) document.getElementById('toggleProxyServer').checked = pse.value === 'true';
     defaultUserDataDir = '${USERHOME}/oe-chrome';
     loadingUrlInput.value = lu.value || '';
     userDataDirInput.textContent = defaultUserDataDir;
@@ -1497,6 +1678,7 @@ const FWDPROXY_PORT = 36980;
     updateExtraArgsPreview();
     renderUaPresetMenu();
     renderUrlPresetMenu();
+    await foldersLoaded;
     renderProfiles();
     if (profiles.length > 0) {
       const initial = profiles.find(p => p.selected) || profiles[0];

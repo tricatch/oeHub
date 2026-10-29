@@ -88,43 +88,81 @@
 .proxy-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 0 0.25rem 0;
 }
 
-.oe-list-item {
+/* Sidebar tree (list-folders.js): one-level folders interleaved with items. Rows are 36px with
+   8px corners; a folder's items hang off a guide line that starts under the folder icon. Colors
+   are the brand greens: BC500 for "on" (folder icon), BC300 for the list switch and drop
+   markers, BC100 for the selected row and the "on" badge. */
+.oe-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 12px 16px;
+}
+.oe-tree > *,
+.oe-tree-children > * { flex-shrink: 0; }
+.oe-tree-group { display: flex; flex-direction: column; }
+.oe-tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 14px;
+  margin-top: -7px;
+  padding-top: 7px;
+  padding-bottom: 6px;
+  padding-left: 4px; /* keeps a selected row's background off the guide line */
+  border-left: 1px solid #D5D7CF;
+}
+
+.oe-list-item,
+.oe-list-folder {
   display: flex;
   align-items: center;
-  padding: 0.45rem 0 0.45rem 0.75rem;
+  height: 36px;
+  border-radius: 8px;
   cursor: pointer;
-  border-left: 3px solid transparent;
-  gap: 0.5rem;
   user-select: none;
-  font-size: 0.85rem;
+  font-size: 13px;
 }
-.oe-list-item:hover { background: rgba(0,0,0,0.05); }
-.oe-list-item.active { border-left-color: #a8d878; background: #dff2b8; }
-.oe-list-item.drag-over { background: #f5fbec; border-left-color: #a8d878; }
+/* Same left padding as a folder row, so a root item's glyph lines up with the folder icon; an
+   item in a folder keeps the same padding inside the folder's indented column. */
+.oe-list-item { padding-left: 6px; }
+.oe-list-item:hover,
+.oe-list-folder:hover { background: rgba(0,0,0,0.04); }
+.oe-list-item.active { background: #dff2b8; }
 
+/* Drop targets while dragging: a line above/below, or the folder lit up to take the item in. */
+.oe-list-item.drop-before,
+.oe-list-folder.drop-before { box-shadow: inset 0 2px 0 #a8d878; }
+.oe-list-item.drop-after,
+.oe-list-folder.drop-after  { box-shadow: inset 0 -2px 0 #a8d878; }
+.oe-list-folder.drop-into   { background: #dff2b8; box-shadow: inset 0 0 0 1px #a8d878; }
+
+/* Share-scope icon (default/private/collabo); a profile with a live public link shows the globe
+   instead. The icon alone tells the scope, so every icon (and name) takes the same neutral color.
+   The whole row is the drag handle. */
 .oe-list-drag {
   cursor: grab;
-  color: #6c757d;
+  color: #8A8D83;
   flex-shrink: 0;
-  font-size: 0.8rem;
-  opacity: 0.5;
-  line-height: 1;
-  padding: 0 2px;
+  width: 18px; /* the folder icon's width, icon centered in it */
+  margin-right: 8px;
+  display: flex;
+  justify-content: center;
 }
-.oe-list-drag.private  { color: #CC7722; opacity: 0.8; }
-.oe-list-drag.collabo  { color: #3b7dd8; opacity: 0.8; }
+.oe-list-drag .oe-icon { width: 14px; height: 14px; }
 
 .oe-list-name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 400;
+  color: #3A3D35;
 }
-.oe-list-name.private  { color: #CC7722; }
-.oe-list-name.collabo  { color: #3b7dd8; }
+.oe-list-item.active .oe-list-name { font-weight: 600; color: #1B1D18; }
 .oe-list-name.editing {
   overflow: visible;
   white-space: normal;
@@ -134,6 +172,91 @@
   background: #dff2b8;
   padding: 0 0.25rem;
 }
+
+/* On/off switch: 44x36 hit area around a 30x18 track. */
+.oe-tree-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+.oe-tree-switch-track {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: #D9DBD3;
+  transition: background 0.15s;
+}
+.oe-tree-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  transition: transform 0.15s;
+}
+.oe-tree-switch[aria-pressed="true"] .oe-tree-switch-track { background: #a8d878; }
+.oe-tree-switch[aria-pressed="true"] .oe-tree-switch-knob { transform: translateX(12px); }
+.oe-tree-switch:focus-visible { outline: 2px solid #a8d878; outline-offset: -2px; border-radius: 8px; }
+
+/* Folder row: the open/closed folder icon itself shows the state (no chevron). */
+.oe-list-folder { padding: 0 6px; gap: 8px; }
+.oe-list-folder:focus-visible { outline: 2px solid #a8d878; outline-offset: -2px; }
+.oe-list-folder-icon { width: 18px; height: 18px; flex-shrink: 0; color: #8A8D83; }
+.oe-list-folder.has-on .oe-list-folder-icon { color: #7ab84a; }
+.oe-list-folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3A3D35;
+}
+.oe-list-folder-name.editing {
+  overflow: visible;
+  white-space: normal;
+  word-break: break-all;
+  outline: 1.5px solid #a8d878;
+  border-radius: 4px;
+  background: #dff2b8;
+  padding: 0 0.25rem;
+}
+/* "on/total" badge */
+.oe-list-folder-count {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  background: #EEEFEA;
+  color: #5E6158;
+}
+.oe-list-folder.has-on .oe-list-folder-count { background: #dff2b8; color: #23251F; }
+.oe-list-folder-del {
+  display: none;
+  align-items: center;
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: #8A8D83;
+}
+.oe-list-folder-del .oe-icon { width: 13px; height: 13px; }
+.oe-list-folder:hover .oe-list-folder-del,
+.oe-list-folder:focus-within .oe-list-folder-del { display: inline-flex; }
+.oe-list-folder-del:hover { color: #dc3545; background: rgba(220,53,69,0.1); }
 
 /* Editor */
 .hosts-editor,
@@ -181,6 +304,35 @@
 }
 
 .oe-save-status { font-size: 0.75rem; color: #6c757d; }
+.oe-save-status.is-error { color: #dc3545; }
+
+/* Auto-save state outline on the editor container (autosave.js): amber while an edit is waiting
+   to be saved, red while a failed save is being retried. Drawn as an overlay because Ace fills
+   the container and would paint over a border or inset shadow. */
+.oe-autosave-dirty::after,
+.oe-autosave-failed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid #f0c36d;
+  pointer-events: none;
+  z-index: 10;
+}
+.oe-autosave-failed::after { border-color: #dc3545; }
+
+/* Save status overlay, positioned over the editor pane */
+.hosts-editor > .oe-save-status,
+.proxy-editor > .oe-save-status {
+  position: absolute;
+  top: 2.85rem;
+  right: 0.75rem;
+  font-size: 0.72rem;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
 
 .hosts-editor-body,
 .proxy-editor-body {
@@ -270,18 +422,32 @@
 .oe-list-toggle .form-check-input { cursor: pointer; width: 1.6rem; height: 0.88rem; margin-top: 0; }
 .oe-list-toggle .form-check-input:checked { background-color: #a8d878; border-color: #8ec45a; }
 
-/* Visibility select */
-.oe-visibility-wrap { display: flex; align-items: center; gap: 0.3rem; }
-.oe-visibility-select {
+/* Share scope select (oeHosts profiles, oeProxy vhosts) */
+.oe-share-scope-wrap { display: flex; align-items: center; gap: 0.3rem; }
+/* Share-scope picker (share-scope-select.pebble): button and menu entries carry the scope icon. */
+.oe-share-scope-icon { width: 14px; height: 14px; flex-shrink: 0; color: #8A8D83; }
+.oe-share-scope-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.75rem;
-  padding: 0.15rem 0.3rem;
+  padding: 0.15rem 0.4rem;
   border: 1px solid #dee2e6;
-  border-radius: 4px;
+  border-radius: 6px;
   color: #6c757d;
   background: #fff;
   cursor: pointer;
-  outline: none;
 }
+.oe-share-scope-btn:hover:not(:disabled) { border-color: #a8d878; }
+.oe-share-scope-btn:focus-visible { outline: 2px solid #a8d878; outline-offset: 1px; }
+.oe-share-scope-btn:disabled { opacity: 0.6; cursor: default; }
+.oe-share-scope-caret { width: 12px; height: 12px; }
+.oe-share-scope-menu { min-width: 0; font-size: 0.8rem; }
+.oe-share-scope-menu .dropdown-item { display: flex; align-items: center; gap: 6px; }
+.oe-share-scope-menu .dropdown-item:hover,
+.oe-share-scope-menu .dropdown-item:focus { background-color: #dff2b8; color: #3a6b10; }
+.oe-share-scope-menu .dropdown-item.active,
+.oe-share-scope-menu .dropdown-item:active { background-color: #dff2b8; color: #23251F; font-weight: 600; }
 
 /* Search panel */
 .oe-search-panel {
@@ -368,6 +534,5 @@
   border-top: 1px solid #dee2e6;
   background: #f8f9fa;
   font-size: 0.72rem;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   color: #6c757d;
 }

@@ -3,9 +3,9 @@
 {% block title %}{{ msg['users.title'] }}{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/settings.css">
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/settings.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 <style>
   .oe-role-icon { width: 16px; height: 16px; }
   .oe-role-icon-user  { color: #adb5bd; }
@@ -21,29 +21,73 @@
     pointer-events: none;
   }
   .users-search-wrap input { padding-left: 2rem; font-size: 0.74rem; }
-  .oe-subhead th { background: #fff; color: #6c757d; }
   tr.oe-removing { opacity: 0; transition: opacity 0.25s ease; }
   th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
   th[data-sort]:hover { color: #5a8a28; }
   .sort-icon { font-size: 0.68rem; margin-left: 0.2rem; opacity: 0.35; }
   th[data-sort].sort-asc .sort-icon,
   th[data-sort].sort-desc .sort-icon { opacity: 1; color: #5a9e2f; }
+  .team-name-text { cursor: text; border-radius: 4px; padding: 0.05rem 0.3rem; }
+  .team-name-text.editing { outline: 1px solid #a8d878; background: #fff; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="settings-app" id="usersApp">
-<script>(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('usersApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
+<script nonce="{{ cspNonce }}">(function(){if(localStorage.getItem('oeWidthExpanded')==='true'){document.getElementById('usersApp').classList.add('expanded');document.body.classList.add('oe-expanded');}})();</script>
 
 <div class="settings-main">
 
-  <h5>{{ msg['users.title'] }}</h5>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0">{{ msg['users.title'] }}</h5>
+    {% if workspaceMode %}
+    <!-- Hidden for now (placement felt off, not an urgent feature) - rotation itself stays live via
+         member-deletion auto-rotation; this manual trigger just isn't exposed in the UI. -->
+    <button type="button" class="btn btn-sm btn-oe-secondary" id="btnRotateWsKey" title="{{ msg['tooltip.rotate.ws.key'] }}" style="display: none;">{{ msg['users.rotate.ws.key'] }}</button>
+    {% endif %}
+  </div>
+
+  {% if workspaceMode %}
+  {% include "templates/oehub/_invites-card.pebble" %}
+  {% endif %}
+
+  {% include "templates/oehub/_pending-card.pebble" %}
+
+  {% if workspaceMode %}
+  <div class="oe-info-section" id="teamsSection">
+    <table class="oe-info-table mb-0">
+      <colgroup>
+        <col>
+        <col style="width:90px;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="2">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>{{ msg['teams.title'] }}</span>
+              <div class="d-flex align-items-center gap-2">
+                <input type="text" id="newTeamName" class="form-control form-control-sm" style="width:170px;" placeholder="{{ msg['teams.placeholder.name'] }}">
+                <button type="button" class="oe-tbl-btn oe-tbl-btn-action" id="btnCreateTeam" title="{{ msg['tooltip.new.team'] }}">
+                  <span class="oe-icon oe-icon-new" style="width:15px;height:15px"></span>
+                </button>
+              </div>
+            </div>
+          </th>
+        </tr>
+      </thead>
+      <tbody id="teamsTbody">
+        <tr><td colspan="2" class="text-muted text-center py-3">{{ msg['teams.empty'] }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   <div class="oe-info-section">
     <table class="oe-info-table mb-0">
       <colgroup>
         <col>
         <col style="width:90px;">
+        {% if workspaceMode %}<col style="width:170px;">{% endif %}
         <col style="width:150px;">
         <col style="width:150px;">
         <col style="width:155px;">
@@ -51,13 +95,20 @@
       </colgroup>
       <thead>
         <tr>
-          <th colspan="6">
+          <th colspan="{{ workspaceMode ? 7 : 6 }}">
             <div class="d-flex align-items-center justify-content-between">
               <span>{{ msg['users.card.header'] }}</span>
-              <div class="users-search-wrap mb-0">
-                <span class="oe-icon oe-icon-search"></span>
-                <input type="search" id="userSearch" class="form-control form-control-sm"
-                       placeholder="{{ msg['users.search.placeholder'] }}">
+              <div class="d-flex align-items-center gap-2">
+                {% if workspaceMode %}
+                <select id="teamFilterSelect" class="form-select form-select-sm w-auto">
+                  <option value="">{{ msg['teams.filter.all'] }}</option>
+                </select>
+                {% endif %}
+                <div class="users-search-wrap mb-0">
+                  <span class="oe-icon oe-icon-search"></span>
+                  <input type="search" id="userSearch" class="form-control form-control-sm"
+                         placeholder="{{ msg['users.search.placeholder'] }}">
+                </div>
               </div>
             </div>
           </th>
@@ -65,6 +116,7 @@
         <tr class="oe-subhead">
           <th>{{ msg['users.col.userid'] }}</th>
           <th class="text-center" data-sort="role">{{ msg['users.col.role'] }}<span class="sort-icon">↕</span></th>
+          {% if workspaceMode %}<th>{{ msg['users.col.team'] }}</th>{% endif %}
           <th>{{ msg['users.col.created'] }}</th>
           <th>{{ msg['users.col.updated'] }}</th>
           <th class="text-center" data-sort="lastLoginAt">{{ msg['users.col.last.login'] }}<span class="sort-icon">↕</span></th>
@@ -72,7 +124,7 @@
         </tr>
       </thead>
       <tbody id="usersTbody">
-        <tr><td colspan="6" class="text-muted text-center py-3">{{ msg['users.empty'] }}</td></tr>
+        <tr><td colspan="{{ workspaceMode ? 7 : 6 }}" class="text-muted text-center py-3">{{ msg['users.empty'] }}</td></tr>
       </tbody>
     </table>
 
@@ -82,7 +134,8 @@
 
 </div><!-- /settings-app -->
 
-<!-- Password reset result modal -->
+{% if not workspaceMode %}
+<!-- Password reset result modal - self-hosted only, see actionHtml()'s resetPasswordHtml -->
 <div class="modal fade" id="pwResetModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content oe-modal">
@@ -105,14 +158,46 @@
     </div>
   </div>
 </div>
+{% endif %}
 
-<script>
+<!-- Workspace-key rotation progress modal - non-dismissable, both the delete-member and manual
+     rotation entry points share it (e2eEncryption design doc §7.1). Deliberately not "fade": a
+     rotation can finish (and call hide()) while the fade-in transition from show() is still
+     running, and Bootstrap's Modal.hide() silently no-ops while _isTransitioning is true - no
+     animation means no transition window, so hide() always takes effect. -->
+<div class="modal" id="rotationProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header">
+        <h5 class="modal-title">{{ msg['rotation.progress.title'] }}</h5>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ msg['rotation.progress.text'] }}</p>
+        <div class="progress" style="height: 8px;">
+          <div class="progress-bar oe-progress-bar-brand" id="rotationProgressBar" role="progressbar" style="width: 0%"></div>
+        </div>
+        <div class="small text-muted text-end mt-1"><span id="rotationProgressCount"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ asset('/js/member-cards.js') }}"></script>
+<script nonce="{{ cspNonce }}">
 (function () {
   var currentUserId = '{{ user.userId | escape }}';
+  // The "admin" role this screen grants/revokes: 'wsa' in workspace mode (this screen is
+  // workspace-scoped and must never grant the instance-wide 'adm'), 'adm' in self-hosted
+  // (unchanged - no separate wsa role in practice there). See AdminUserController.apiSetRole.
+  var ADMIN_ROLE = '{{ workspaceMode ? "wsa" : "adm" }}';
   var searchTimer;
   var currentUsers = [];
+  var currentTeams = [];
   var sortCol = null;
   var sortDir = 1;
+  // '' = no filter (all), 'none' = only members with no team, otherwise a teamNo (as a string,
+  // since <select> option values are always strings but HubUser.teamNo comes back as a number).
+  var teamFilter = '';
 
   document.querySelectorAll('th[data-sort]').forEach(function(th) {
     th.addEventListener('click', function() { sortAndRender(this.dataset.sort); });
@@ -124,14 +209,28 @@
     searchTimer = setTimeout(function () { loadUsers(q); }, 300);
   });
 
+  var teamFilterSelect = document.getElementById('teamFilterSelect');
+  if (teamFilterSelect) {
+    teamFilterSelect.addEventListener('change', function () {
+      teamFilter = this.value;
+      renderUsers(filteredUsers());
+    });
+  }
+
+  function filteredUsers() {
+    if (!teamFilter) return currentUsers;
+    if (teamFilter === 'none') return currentUsers.filter(function (u) { return !u.teamNo; });
+    return currentUsers.filter(function (u) { return String(u.teamNo) === teamFilter; });
+  }
+
   function loadUsers(q) {
-    var url = '/api/admin/users' + (q.trim() ? '?q=' + encodeURIComponent(q.trim()) : '');
+    var url = '/api/wsa/users' + (q.trim() ? '?q=' + encodeURIComponent(q.trim()) : '');
     fetch(url)
       .then(function (r) { return r.json(); })
       .then(function (users) {
         currentUsers = users;
         if (sortCol) sortCurrentUsers();
-        renderUsers(currentUsers);
+        renderUsers(filteredUsers());
       })
       .catch(function () { showToast(MSG['toast.role.update.failed']); });
   }
@@ -141,7 +240,7 @@
     sortCol = col;
     sortCurrentUsers();
     updateSortHeaders();
-    renderUsers(currentUsers);
+    renderUsers(filteredUsers());
   }
 
   function sortCurrentUsers() {
@@ -149,8 +248,8 @@
       var av = a[sortCol] || '';
       var bv = b[sortCol] || '';
       if (sortCol === 'role') {
-        av = av === 'adm' ? 0 : 1;
-        bv = bv === 'adm' ? 0 : 1;
+        av = av === ADMIN_ROLE ? 0 : 1;
+        bv = bv === ADMIN_ROLE ? 0 : 1;
         return (av - bv) * sortDir;
       }
       if (!av && bv) return 1;
@@ -173,25 +272,38 @@
 
   function renderUsers(users) {
     var tbody = document.getElementById('usersTbody');
+    var colspan = window.OE_WORKSPACE_MODE ? 7 : 6;
     if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-3">' + escHtml(MSG['users.empty']) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="' + colspan + '" class="text-muted text-center py-3">' + escHtml(MSG['users.empty']) + '</td></tr>';
       return;
     }
     tbody.innerHTML = users.map(function (u) {
       return '<tr data-user-no="' + u.userNo + '" data-role="' + u.role + '">' +
         '<td>' + escHtml(u.userId) + '</td>' +
         '<td class="text-center">' + roleIconHtml(u.role) + '</td>' +
-        '<td class="small text-muted">' + escHtml(u.createAt) + '</td>' +
-        '<td class="small text-muted">' + escHtml(u.updatedAt) + '</td>' +
-        '<td class="small text-muted text-center">' + escHtml(u.lastLoginAt || '') + '</td>' +
+        (window.OE_WORKSPACE_MODE ? '<td>' + teamSelectHtml(u) + '</td>' : '') +
+        '<td class="small text-muted text-nowrap">' + escHtml(u.createAt) + '</td>' +
+        '<td class="small text-muted text-nowrap">' + escHtml(u.updatedAt) + '</td>' +
+        '<td class="small text-muted text-center text-nowrap">' + escHtml(u.lastLoginAt || '') + '</td>' +
         '<td class="text-end">' + actionHtml(u.userId, u.role) + '</td>' +
         '</tr>';
     }).join('');
     bindButtons();
   }
 
+  // Team reassignment dropdown for one member row (cloudGroupService design doc §2.9) - "no team"
+  // is always the first option, then every team in the workspace alphabetically (already sorted
+  // server-side by TeamMapper.findByWsNo).
+  function teamSelectHtml(u) {
+    var options = '<option value=""' + (!u.teamNo ? ' selected' : '') + '>' + escHtml(MSG['teams.select.none']) + '</option>' +
+      currentTeams.map(function (t) {
+        return '<option value="' + t.teamNo + '"' + (String(u.teamNo) === String(t.teamNo) ? ' selected' : '') + '>' + escHtml(t.teamName) + '</option>';
+      }).join('');
+    return '<select class="form-select form-select-sm user-team-select">' + options + '</select>';
+  }
+
   function roleIconHtml(role) {
-    var isAdmin = role === 'adm';
+    var isAdmin = role === ADMIN_ROLE;
     var cls = isAdmin ? 'oe-icon-admin oe-role-icon-admin' : 'oe-icon-user oe-role-icon-user';
     var title = isAdmin ? ' title="' + escHtml(MSG['users.role.admin']) + '"' : '';
     return '<span class="oe-icon ' + cls + ' oe-role-icon"' + title + '></span>';
@@ -199,17 +311,22 @@
 
   function actionHtml(userId, role) {
     var isSelf  = userId === currentUserId;
-    var isAdmin = role === 'adm';
+    var isAdmin = role === ADMIN_ROLE;
     var roleIcon     = isAdmin ? 'oe-icon-revoke-admin' : 'oe-icon-grant-admin';
     var roleTitle    = isAdmin ? MSG['users.btn.revoke.admin'] : MSG['users.btn.grant.admin'];
     var roleDisabled = (isAdmin && isSelf) ? ' disabled' : '';
     var delDisabled  = isSelf ? ' disabled' : '';
+    // Admin password reset can't re-wrap wrapped_private_key without the old password, so under
+    // workspace mode it would silently strand the target member unable to decrypt their own
+    // workspace content - the button/route only exist in self-hosted (see OeHubApplication).
+    var resetPasswordHtml = window.OE_WORKSPACE_MODE ? '' :
+      ' <button class="oe-tbl-btn oe-tbl-btn-action btn-reset-password ms-1"' +
+      ' title="' + escHtml(MSG['users.btn.reset.password']) + '">' +
+      '<span class="oe-icon oe-icon-reset-password" style="width:15px;height:15px"></span></button>';
     return '<button class="oe-tbl-btn oe-tbl-btn-action btn-toggle-role"' + roleDisabled +
       ' title="' + escHtml(roleTitle) + '">' +
       '<span class="oe-icon ' + roleIcon + '" style="width:15px;height:15px"></span></button>' +
-      ' <button class="oe-tbl-btn oe-tbl-btn-action btn-reset-password ms-1"' +
-      ' title="' + escHtml(MSG['users.btn.reset.password']) + '">' +
-      '<span class="oe-icon oe-icon-reset-password" style="width:15px;height:15px"></span></button>' +
+      resetPasswordHtml +
       ' <button class="oe-tbl-btn oe-tbl-btn-delete btn-delete-user ms-1"' + delDisabled +
       ' title="' + escHtml(MSG['tooltip.delete.user']) + '">' +
       '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button>';
@@ -225,26 +342,56 @@
     document.querySelectorAll('.btn-delete-user').forEach(function (btn) {
       btn.addEventListener('click', onDelete);
     });
+    document.querySelectorAll('.user-team-select').forEach(function (sel) {
+      sel.addEventListener('change', onChangeUserTeam);
+    });
   }
 
   function bindRowButtons(row) {
     var toggle = row.querySelector('.btn-toggle-role');
     var reset  = row.querySelector('.btn-reset-password');
     var del    = row.querySelector('.btn-delete-user');
+    var team   = row.querySelector('.user-team-select');
     if (toggle) toggle.addEventListener('click', onToggle);
     if (reset)  reset.addEventListener('click', onResetPassword);
     if (del)    del.addEventListener('click', onDelete);
+    if (team)   team.addEventListener('change', onChangeUserTeam);
+  }
+
+  function onChangeUserTeam() {
+    var sel = this;
+    var row = sel.closest('tr');
+    var userNo = row.dataset.userNo;
+    var teamNo = sel.value ? Number(sel.value) : null;
+    sel.disabled = true;
+    fetch('/api/wsa/users/' + userNo + '/team', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teamNo: teamNo })
+    }).then(function (r) {
+      sel.disabled = false;
+      if (r.ok) {
+        showToast(MSG['toast.user.team.updated']);
+        var u = currentUsers.find(function (u) { return String(u.userNo) === String(userNo); });
+        if (u) u.teamNo = teamNo;
+      } else {
+        showToast(MSG['toast.user.team.update.failed']);
+      }
+    }).catch(function () {
+      sel.disabled = false;
+      showToast(MSG['toast.user.team.update.failed']);
+    });
   }
 
   function onToggle() {
     var btn = this;
     var row = btn.closest('tr');
     var userNo = row.dataset.userNo;
-    var newRole = row.dataset.role === 'adm' ? 'usr' : 'adm';
-    var confirmMsg = newRole === 'adm' ? MSG['confirm.grant.admin'] : MSG['confirm.revoke.admin'];
+    var newRole = row.dataset.role === ADMIN_ROLE ? 'usr' : ADMIN_ROLE;
+    var confirmMsg = newRole === ADMIN_ROLE ? MSG['confirm.grant.admin'] : MSG['confirm.revoke.admin'];
     if (!confirm(confirmMsg)) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo + '/role', {
+    fetch('/api/wsa/users/' + userNo + '/role', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: newRole })
@@ -256,7 +403,11 @@
         applyRoleToRow(row, newRole);
       } else {
         btn.disabled = false;
-        r.text().then(function (t) { showToast(t || MSG['toast.role.update.failed']); });
+        r.clone().json().then(function (data) {
+          showToast(data && data.error === 'last_ws_admin' ? MSG['toast.last.ws.admin.blocked'] : MSG['toast.role.update.failed']);
+        }).catch(function () {
+          showToast(MSG['toast.role.update.failed']);
+        });
       }
     }).catch(function () {
       btn.disabled = false;
@@ -268,7 +419,7 @@
     var userId = row.cells[0].textContent.trim();
     row.dataset.role = newRole;
     row.cells[1].innerHTML = roleIconHtml(newRole);
-    row.cells[5].innerHTML = actionHtml(userId, newRole);
+    row.cells[row.cells.length - 1].innerHTML = actionHtml(userId, newRole);
     bindRowButtons(row);
   }
 
@@ -278,7 +429,7 @@
     var userNo = row.dataset.userNo;
     if (!confirm(MSG['confirm.reset.password'])) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo + '/reset-password', { method: 'POST' })
+    fetch('/api/wsa/users/' + userNo + '/reset-password', { method: 'POST' })
       .then(function (r) {
         btn.disabled = false;
         if (r.ok) {
@@ -294,19 +445,136 @@
       });
   }
 
-  document.getElementById('btnCopyResetPw').addEventListener('click', function () {
-    copyToClipboard(document.getElementById('pwResetValue').value).then(function () {
-      showToast(MSG['toast.password.copied']);
+  // pwResetModal (and this button) only exist in self-hosted - see actionHtml()'s resetPasswordHtml.
+  var btnCopyResetPw = document.getElementById('btnCopyResetPw');
+  if (btnCopyResetPw) {
+    btnCopyResetPw.addEventListener('click', function () {
+      copyToClipboard(document.getElementById('pwResetValue').value).then(function () {
+        showToast(MSG['toast.password.copied']);
+      });
     });
-  });
+  }
 
-  function onDelete() {
+  // Workspace-key rotation, on member departure or manually (e2eEncryption design doc §7/§7.1):
+  // the DEK behind every 'public'/'collabo' row never changes, only which key wraps it, so
+  // "rotation" is just a fresh wrap per remaining member (their public key, already known) and
+  // per shared row (their DEK, unwrapped with the OLD workspace key and re-wrapped with the new
+  // one) - no content is ever re-encrypted. Runs entirely in this browser; the server only ever
+  // receives the already-wrapped output (same server-blind pattern as approval, §5).
+  // excludeUserNo null/undefined means "exclude nobody" (rewrap for every member) - the manual
+  // rotation path uses this. onProgress(done, total), if given, is called once total is known
+  // (after rotation-rows is fetched) and again after each wrap/rewrap.
+  async function rotateWorkspaceKeyExcluding(excludeUserNo, onProgress) {
+    const oldWsKey = await OE_SESSION_KEYS.loadWorkspaceKey();
+    if (!oldWsKey) throw new Error('no cached workspace key');
+    const newWsKey = await OE_CRYPTO.generateWorkspaceKey();
+
+    const eligibleMembers = currentUsers.filter(function (u) {
+      var excluded = excludeUserNo != null && String(u.userNo) === String(excludeUserNo);
+      return !excluded && u.publicKey;
+    });
+    const rows = await (await fetch('/api/wsa/workspace/rotation-rows')).json();
+
+    const total = eligibleMembers.length + rows.length;
+    let done = 0;
+    if (onProgress) onProgress(done, total);
+
+    const memberWraps = [];
+    for (const u of eligibleMembers) {
+      const publicKey = await OE_CRYPTO.importPublicKey(u.publicKey);
+      const wrappedWsKey = await OE_CRYPTO.wrapWorkspaceKeyForUser(newWsKey, publicKey);
+      memberWraps.push({ userNo: u.userNo, wrappedWsKey: wrappedWsKey });
+      done++;
+      if (onProgress) onProgress(done, total);
+    }
+
+    const contentRewraps = [];
+    for (const row of rows) {
+      const dek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(row.wrappedContentKey, oldWsKey);
+      const wrappedContentKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(dek, newWsKey);
+      const rewrap = { hostsId: row.hostsId, wrappedContentKey: wrappedContentKey };
+      // Rows with a live public link also carry their link's own DEK, wrapped the same way
+      // (e2eEncryption design doc §6 "living link" redesign) - it must rotate in lockstep with
+      // wrappedContentKey or every live link would silently break on its next save.
+      if (row.wrappedLinkKey) {
+        const linkDek = await OE_CRYPTO.unwrapContentKeyWithWorkspaceKey(row.wrappedLinkKey, oldWsKey);
+        rewrap.wrappedLinkKey = await OE_CRYPTO.wrapContentKeyWithWorkspaceKey(linkDek, newWsKey);
+      }
+      contentRewraps.push(rewrap);
+      done++;
+      if (onProgress) onProgress(done, total);
+    }
+
+    const res = await fetch('/api/wsa/workspace/rotate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ memberWraps: memberWraps, contentRewraps: contentRewraps })
+    });
+    if (!res.ok) throw new Error('rotation failed');
+    await OE_SESSION_KEYS.saveWorkspaceKey(newWsKey);
+  }
+
+  var rotationProgressModalEl = document.getElementById('rotationProgressModal');
+  var rotationProgressModal = new bootstrap.Modal(rotationProgressModalEl);
+  var rotationProgressBar = document.getElementById('rotationProgressBar');
+  var rotationProgressCount = document.getElementById('rotationProgressCount');
+
+  function updateRotationProgress(done, total) {
+    var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    rotationProgressBar.style.width = pct + '%';
+    rotationProgressCount.textContent = done + ' / ' + total;
+  }
+
+  // Shared by both rotation entry points (delete-member, manual button - design doc §7.1): shows
+  // the non-dismissable progress modal for the duration of the rotation and always hides it again,
+  // success or failure, leaving the outcome toast to the caller.
+  async function runRotationWithProgress(excludeUserNo) {
+    updateRotationProgress(0, 0);
+    rotationProgressModal.show();
+    try {
+      await rotateWorkspaceKeyExcluding(excludeUserNo, updateRotationProgress);
+    } finally {
+      rotationProgressModal.hide();
+    }
+  }
+
+  async function onDelete() {
     var btn = this;
     var row = btn.closest('tr');
     var userNo = row.dataset.userNo;
     if (!confirm(MSG['confirm.delete.user'])) return;
     btn.disabled = true;
-    fetch('/api/admin/users/' + userNo, { method: 'DELETE' })
+
+    // Cheap client-side pre-check (cloudGroupService design doc §2.5 "안전장치"): the server
+    // rejects this outright anyway, but without this check the client-driven rotation dance above
+    // would still run first and leave the (not actually departing) sole wsa's own key wrap
+    // stale - everyone else's wrap and every shared content key would move to a new workspace key
+    // that this admin never receives. Skip rotation entirely when it's foredoomed. The server-side
+    // check in apiDeleteUser remains authoritative against a stale currentUsers snapshot.
+    if (row.dataset.role === ADMIN_ROLE) {
+      var adminCount = currentUsers.filter(function (u) { return u.role === ADMIN_ROLE; }).length;
+      if (adminCount <= 1) {
+        btn.disabled = false;
+        showToast(MSG['toast.last.ws.admin.blocked']);
+        return;
+      }
+    }
+
+    if (window.OE_WORKSPACE_MODE) {
+      try {
+        await runRotationWithProgress(userNo);
+      } catch (e) {
+        // Rotation failing must block the deletion (design doc §7.1 policy change): proceeding
+        // anyway would strand the departing member with continued access to the old workspace
+        // key's content. Surface it distinctly and let the wsa retry (delete again, or use the
+        // manual "Rotate Workspace Key" button).
+        btn.disabled = false;
+        showToast(MSG['toast.rotation.failed']);
+        return;
+      }
+    }
+
+    fetch('/api/wsa/users/' + userNo, { method: 'DELETE' })
       .then(function (r) {
         if (r.ok) {
           showToast(MSG['toast.user.deleted']);
@@ -315,7 +583,11 @@
           setTimeout(function () { row.remove(); }, 260);
         } else {
           btn.disabled = false;
-          showToast(MSG['toast.user.delete.failed']);
+          r.clone().json().then(function (data) {
+            showToast(data && data.error === 'last_ws_admin' ? MSG['toast.last.ws.admin.blocked'] : MSG['toast.user.delete.failed']);
+          }).catch(function () {
+            showToast(MSG['toast.user.delete.failed']);
+          });
         }
       }).catch(function () {
         btn.disabled = false;
@@ -323,8 +595,205 @@
       });
   }
 
+  var btnRotateWsKey = document.getElementById('btnRotateWsKey');
+  if (btnRotateWsKey) {
+    btnRotateWsKey.addEventListener('click', function () {
+      if (!confirm(MSG['confirm.rotate.ws.key'])) return;
+      btnRotateWsKey.disabled = true;
+      runRotationWithProgress(null)
+        .then(function () {
+          showToast(MSG['toast.rotation.done']);
+        })
+        .catch(function () {
+          showToast(MSG['toast.rotation.failed.manual']);
+        })
+        .finally(function () {
+          btnRotateWsKey.disabled = false;
+        });
+    });
+  }
+
+  // Invite codes and pending sign-ups: shared with the regular members' page (member-cards.js).
+  var inviteCard = OE_MEMBER_CARDS.initInvites({ listUrl: '/api/wsa/invites', createUrl: '/api/wsa/invites' });
+  OE_MEMBER_CARDS.initPending({
+    listUrl: '/api/wsa/users/pending',
+    approveUrl: function (userNo) { return '/api/wsa/users/' + userNo + '/approve'; },
+    rejectUrl: function (userNo) { return '/api/wsa/users/' + userNo + '/reject'; },
+    onApproved: function () { loadUsers(''); }
+  });
+
+  // Team management (cloudGroupService design doc §2.9) - list/create/rename/delete, plus keeping
+  // the invite modal's team dropdown and every member row's reassignment dropdown in sync.
+  function loadTeams() {
+    var tbody = document.getElementById('teamsTbody');
+    if (!tbody) return; // workspace mode only - section isn't rendered in self-hosted
+    fetch('/api/wsa/teams')
+      .then(function (r) { return r.json(); })
+      .then(function (teams) {
+        currentTeams = teams;
+        renderTeams(teams);
+        if (inviteCard) inviteCard.setTeams(teams);
+        renderTeamFilterOptions(teams);
+        renderUsers(filteredUsers());
+      })
+      .catch(function () {});
+  }
+
+  function renderTeamFilterOptions(teams) {
+    var select = document.getElementById('teamFilterSelect');
+    if (!select) return;
+    // A team the current filter pointed at may have just been deleted/renamed out from under it -
+    // fall back to "all" rather than silently keeping a selection that no longer resolves to anything.
+    if (teamFilter && teamFilter !== 'none' && !teams.some(function (t) { return String(t.teamNo) === teamFilter; })) {
+      teamFilter = '';
+    }
+    select.innerHTML = '<option value="">' + escHtml(MSG['teams.filter.all']) + '</option>' +
+      '<option value="none">' + escHtml(MSG['teams.select.none']) + '</option>' +
+      teams.map(function (t) { return '<option value="' + t.teamNo + '">' + escHtml(t.teamName) + '</option>'; }).join('');
+    select.value = teamFilter;
+  }
+
+  function renderTeams(teams) {
+    var tbody = document.getElementById('teamsTbody');
+    if (!teams || teams.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center py-3">' + escHtml(MSG['teams.empty']) + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = teams.map(function (t) {
+      return '<tr data-team-no="' + t.teamNo + '">' +
+        '<td><span class="team-name-text" tabindex="0" title="' + escHtml(MSG['tooltip.rename.team']) + '">' + escHtml(t.teamName) + '</span></td>' +
+        '<td class="text-end"><button class="oe-tbl-btn oe-tbl-btn-delete btn-delete-team" title="' + escHtml(MSG['tooltip.delete.team']) + '">' +
+        '<span class="oe-icon oe-icon-delete" style="width:13px;height:13px"></span></button></td></tr>';
+    }).join('');
+    tbody.querySelectorAll('.team-name-text').forEach(function (span) {
+      span.addEventListener('dblclick', function () { startTeamRename(span); });
+    });
+    tbody.querySelectorAll('.btn-delete-team').forEach(function (btn) {
+      btn.addEventListener('click', onDeleteTeam);
+    });
+  }
+
+  // Double-click-to-rename, same interaction as hosts.pebble's profile rename - contentEditable
+  // in place rather than a separate edit form, since a team is just a name.
+  function startTeamRename(span) {
+    var original = span.textContent;
+    span.contentEditable = 'true';
+    span.classList.add('editing');
+    span.focus();
+    var range = document.createRange();
+    range.selectNodeContents(span);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+
+    function finish(save) {
+      span.contentEditable = 'false';
+      span.classList.remove('editing');
+      span.removeEventListener('blur', onBlur);
+      span.removeEventListener('keydown', onKeydown);
+      var newName = span.textContent.trim();
+      if (!save || !newName || newName === original) {
+        span.textContent = original;
+        return;
+      }
+      var row = span.closest('tr');
+      var teamNo = row.dataset.teamNo;
+      fetch('/api/wsa/teams/' + teamNo, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamName: newName })
+      }).then(function (r) {
+        if (r.ok) {
+          showToast(MSG['toast.team.renamed']);
+          var t = currentTeams.find(function (t) { return String(t.teamNo) === String(teamNo); });
+          if (t) t.teamName = newName;
+          span.textContent = newName;
+          if (inviteCard) inviteCard.setTeams(currentTeams);
+          renderTeamFilterOptions(currentTeams);
+          renderUsers(filteredUsers());
+        } else if (r.status === 409) {
+          showToast(MSG['toast.team.name.exists']);
+          span.textContent = original;
+        } else {
+          showToast(MSG['toast.team.rename.failed']);
+          span.textContent = original;
+        }
+      }).catch(function () {
+        showToast(MSG['toast.team.rename.failed']);
+        span.textContent = original;
+      });
+    }
+
+    function onBlur() { finish(true); }
+    function onKeydown(e) {
+      if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+      else if (e.key === 'Escape') { finish(false); span.blur(); }
+    }
+    span.addEventListener('blur', onBlur);
+    span.addEventListener('keydown', onKeydown);
+  }
+
+  function onDeleteTeam() {
+    var btn = this;
+    var row = btn.closest('tr');
+    var teamNo = row.dataset.teamNo;
+    if (!confirm(MSG['confirm.delete.team'])) return;
+    btn.disabled = true;
+    fetch('/api/wsa/teams/' + teamNo, { method: 'DELETE' })
+      .then(function (r) {
+        if (r.ok) {
+          showToast(MSG['toast.team.deleted']);
+          currentTeams = currentTeams.filter(function (t) { return String(t.teamNo) !== String(teamNo); });
+          renderTeams(currentTeams);
+          if (inviteCard) inviteCard.setTeams(currentTeams);
+          renderTeamFilterOptions(currentTeams);
+          renderUsers(filteredUsers());
+        } else if (r.status === 409) {
+          btn.disabled = false;
+          showToast(MSG['toast.team.delete.in.use']);
+        } else {
+          btn.disabled = false;
+          showToast(MSG['toast.team.delete.failed']);
+        }
+      }).catch(function () {
+        btn.disabled = false;
+        showToast(MSG['toast.team.delete.failed']);
+      });
+  }
+
+  var btnCreateTeam = document.getElementById('btnCreateTeam');
+  if (btnCreateTeam) {
+    var newTeamNameInput = document.getElementById('newTeamName');
+    btnCreateTeam.addEventListener('click', function () {
+      var name = newTeamNameInput.value.trim();
+      if (!name) return;
+      btnCreateTeam.disabled = true;
+      fetch('/api/wsa/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamName: name })
+      }).then(function (r) {
+        btnCreateTeam.disabled = false;
+        if (r.ok) {
+          newTeamNameInput.value = '';
+          showToast(MSG['toast.team.created']);
+          loadTeams();
+          return;
+        }
+        if (r.status === 409) { showToast(MSG['toast.team.name.exists']); return; }
+        showToast(MSG['toast.team.create.failed']);
+      }).catch(function () {
+        btnCreateTeam.disabled = false;
+        showToast(MSG['toast.team.create.failed']);
+      });
+    });
+    newTeamNameInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); btnCreateTeam.click(); }
+    });
+  }
+
   loadUsers('');
+  loadTeams();
 })();
 </script>
-<script>initWidthToggle(document.getElementById('usersApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('usersApp'), document.getElementById('btnToggleWidth'));</script>
 {% endblock %}

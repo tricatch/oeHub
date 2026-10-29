@@ -29,7 +29,7 @@ function initPresetTable(prefix, opts) {
       const tr = document.createElement('tr');
       tr.className = prefix + '-row ' + prefix + '-row-readonly';
       tr.innerHTML = `
-        <td class="${prefix}-cell-name"><span class="${prefix}-view-name">${escHtml(p[nameKey])}</span><span class="oe-icon oe-icon-admin ${prefix}-admin-icon" style="width:12px;height:12px"></span></td>
+        <td class="${prefix}-cell-name"><span class="oe-icon oe-icon-drag-handle preset-drag-handle invisible"></span><span class="${prefix}-view-name">${escHtml(p[nameKey])}</span><span class="oe-icon oe-icon-admin ${prefix}-admin-icon" style="width:12px;height:12px"></span></td>
         <td class="${prefix}-cell-value"><span class="${prefix}-view-value" title="${escHtml(p[valueKey])}">${escHtml(p[valueKey])}</span></td>
         <td></td>`;
       tbody.insertBefore(tr, emptyRow);
@@ -41,6 +41,7 @@ function initPresetTable(prefix, opts) {
       tr.dataset[idKey] = p[idKey];
       tr.innerHTML = `
         <td class="${prefix}-cell-name">
+          <span class="oe-icon oe-icon-drag-handle preset-drag-handle" title="${escHtml(MSG['tooltip.' + prefix + '.drag'])}"></span>
           <span class="${prefix}-view-name">${escHtml(p[nameKey])}</span>
           <input type="text" class="form-control form-control-sm ${prefix}-edit-name d-none" value="${escHtml(p[nameKey])}">
         </td>
@@ -66,18 +67,62 @@ function initPresetTable(prefix, opts) {
       tr.querySelector('.' + prefix + '-btn-save').addEventListener('click', () => saveEdit(tr, p));
       tr.querySelector('.' + prefix + '-btn-cancel').addEventListener('click', () => cancelEdit(tr));
       tr.querySelector('.' + prefix + '-btn-delete').addEventListener('click', () => deletePreset(p[idKey]));
-      tr.draggable = true;
-      tr.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', p[idKey]); });
-      tr.addEventListener('dragover', e => { e.preventDefault(); tr.classList.add('drag-over'); });
-      tr.addEventListener('dragleave', () => tr.classList.remove('drag-over'));
-      tr.addEventListener('drop', e => {
-        e.preventDefault();
-        tr.classList.remove('drag-over');
-        const srcId = e.dataTransfer.getData('text/plain');
-        reorder(srcId, p[idKey]);
-      });
+      tr.querySelector('.preset-drag-handle').addEventListener('pointerdown', e => startRowDrag(e, tr));
       tbody.insertBefore(tr, emptyRow);
     });
+  }
+
+  // Reordering uses pointer events rather than native HTML5 drag-and-drop: only the handle starts
+  // a drag (the rest of the row stays text-selectable), and the browser's copy (+) drag cursor never
+  // appears.
+  function startRowDrag(e, srcTr) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    let overTr = null;
+    document.body.classList.add('preset-reordering');
+    srcTr.classList.add('drag-source');
+    // Translucent copy of the row that follows the pointer, like the native drag image did.
+    const table = srcTr.closest('table');
+    const rect = srcTr.getBoundingClientRect();
+    const ghost = document.createElement('table');
+    ghost.className = table.className + ' preset-drag-ghost';
+    ghost.style.width = rect.width + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    const colgroup = table.querySelector('colgroup');
+    if (colgroup) ghost.appendChild(colgroup.cloneNode(true));
+    const ghostBody = document.createElement('tbody');
+    const ghostRow = srcTr.cloneNode(true);
+    ghostRow.classList.remove('drag-source');
+    ghostBody.appendChild(ghostRow);
+    ghost.appendChild(ghostBody);
+    document.body.appendChild(ghost);
+    const startX = e.clientX, startY = e.clientY;
+    const onMove = ev => {
+      ghost.style.transform = 'translate(' + (ev.clientX - startX) + 'px,' + (ev.clientY - startY) + 'px)';
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const tr = el && el.closest('tr.' + prefix + '-row:not(.' + prefix + '-row-readonly)');
+      const next = tr && tbody.contains(tr) && tr !== srcTr ? tr : null;
+      if (next === overTr) return;
+      if (overTr) overTr.classList.remove('drag-over');
+      overTr = next;
+      if (overTr) overTr.classList.add('drag-over');
+    };
+    const finish = commit => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      document.body.classList.remove('preset-reordering');
+      ghost.remove();
+      srcTr.classList.remove('drag-source');
+      if (overTr) overTr.classList.remove('drag-over');
+      if (commit && overTr) reorder(srcTr.dataset[idKey], overTr.dataset[idKey]);
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
   }
 
   async function reorder(srcId, targetId) {
@@ -101,6 +146,7 @@ function initPresetTable(prefix, opts) {
   }
 
   function startEdit(tr) {
+    tr.querySelector('.preset-drag-handle').classList.add('d-none');
     tr.querySelector('.' + prefix + '-view-name').classList.add('d-none');
     tr.querySelector('.' + prefix + '-view-value').classList.add('d-none');
     tr.querySelector('.' + prefix + '-edit-name').classList.remove('d-none');
@@ -113,6 +159,7 @@ function initPresetTable(prefix, opts) {
   }
 
   function cancelEdit(tr) {
+    tr.querySelector('.preset-drag-handle').classList.remove('d-none');
     tr.querySelector('.' + prefix + '-view-name').classList.remove('d-none');
     tr.querySelector('.' + prefix + '-view-value').classList.remove('d-none');
     tr.querySelector('.' + prefix + '-edit-name').classList.add('d-none');

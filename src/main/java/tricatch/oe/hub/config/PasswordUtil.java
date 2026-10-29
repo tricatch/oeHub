@@ -18,4 +18,19 @@ public class PasswordUtil {
     public static boolean matches(String raw, String hashed) {
         return OpenBSDBCrypt.checkPassword(hashed, raw.toCharArray());
     }
+
+    /** Returns the JSON error code for the first failing check, or null when newPassword/
+     *  confirmPassword pass validation. */
+    public static String validateNewPassword(String newPassword, String confirmPassword) {
+        if (newPassword == null || newPassword.isBlank()) {
+            return "password_required";
+        }
+        if (newPassword.length() < 8) {
+            return "password_too_short";
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            return "password_mismatch";
+        }
+        return null;
+    }
 }

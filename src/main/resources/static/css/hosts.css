@@ -38,19 +38,8 @@
 #cmHostsEditor.readonly .ace_editor { background: #f8f9fa; }
 #cmHostsEditor.readonly .ace_gutter { background: #f0f0f0; }
 
-/* Save status overlay */
+/* Save status overlay positioning is shared — see oe-panel.css */
 .hosts-editor { position: relative; }
-.hosts-editor > .oe-save-status {
-  position: absolute;
-  top: 2.85rem;
-  right: 0.75rem;
-  font-size: 0.72rem;
-  z-index: 5;
-  pointer-events: none;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
 
 /* Right panel */
 .hosts-browser-panel {
@@ -377,3 +366,33 @@
 
 /* Toolbar */
 .hosts-toolbar { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+/* Direct Chrome launch command modal (_chrome-cmd-modal.pebble) */
+.chrome-cmd-os { font-weight: 400; color: #4a7a1e; margin-left: 0.3rem; }
+.chrome-cmd-block + .chrome-cmd-block { margin-top: 1.1rem; }
+.chrome-cmd-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem; }
+.chrome-cmd-label { font-size: 0.82rem; font-weight: 600; color: #2d6a2d; }
+.chrome-cmd-script {
+  margin: 0; padding: 0.55rem 0.7rem; max-height: 180px; overflow: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 0.76rem;
+  white-space: pre-wrap; word-break: break-all;
+  background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;
+}
+.chrome-cmd-warn {
+  margin-bottom: 0.45rem; padding: 0.5rem 0.7rem; font-size: 0.78rem; color: #842029;
+  background: #fdecee; border: 1px solid #f1aeb5; border-radius: 6px;
+}
+.chrome-cmd-warn-strong { margin-top: 0.25rem; font-weight: 600; }
+
+/* oelink install modal: one-line install command with an icon copy button on its right */
+.oelink-install-cmd { display: flex; align-items: stretch; gap: 0.4rem; }
+.oelink-install-cmd .chrome-cmd-script { flex: 1; min-width: 0; }
+.oelink-install-copy {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; flex-shrink: 0; padding: 0;
+  background: transparent; border: 1px solid #dee2e6; border-radius: 6px;
+  color: #6c757d; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.oelink-install-copy:hover { background: #f5fbec; border-color: #c4e89a; color: #4a7a1e; }
+.oelink-install-copy .oe-icon { width: 14px; height: 14px; }

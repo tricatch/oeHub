@@ -3,13 +3,13 @@
 {% block title %}{{ msg['my.info.title'] }} — oeHub{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 {% endblock %}
 
 {% block content %}
 <div class="settings-app" id="myInfoApp">
-<script>
+<script nonce="{{ cspNonce }}">
   (function() {
     if (localStorage.getItem('oeWidthExpanded') === 'true') {
       document.getElementById('myInfoApp').classList.add('expanded');
@@ -27,14 +27,131 @@
         <thead><tr><th colspan="2">{{ msg['my.info.section.account'] }}</th></tr></thead>
         <tbody>
           <tr><td class="oe-info-label">ID</td><td>{{ user.userId }}</td></tr>
+          {% if workspaceMode %}
+          <tr><td class="oe-info-label">{{ msg['my.info.workspace'] }}</td><td>{{ wsName }}</td></tr>
+          {% endif %}
+          {% if not workspaceMode %}
           <tr><td class="oe-info-label">OID</td><td>{{ user.oid }} <span class="text-muted">({{ msg['my.info.oid.desc'] }})</span></td></tr>
+          {% endif %}
           <tr><td class="oe-info-label">{{ msg['users.col.created'] }}</td><td>{{ createAt }}</td></tr>
           <tr><td class="oe-info-label">{{ msg['users.col.last.login'] }}</td><td>{{ lastLoginAt }}</td></tr>
         </tbody>
       </table>
     </div>
+
+    {% if workspaceMode and deleteAccountMode and deleteAccountMode != 'none' %}
+    {% set deleteDesc = deleteAccountMode == 'workspace' ? msg['my.delete.desc.workspace'] : (deleteAccountMode == 'blocked' ? msg['my.delete.desc.blocked'] : msg['my.delete.desc']) %}
+    {# Self-service withdrawal (workspace mode). The mode decides which description applies and whether the button works. #}
+    <div class="oe-info-section oe-danger-zone">
+      <table class="oe-info-table">
+        <thead><tr><th colspan="2">{{ msg['my.delete.title'] }}</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="oe-danger-desc">{{ deleteDesc }}</td>
+            <td class="oe-danger-action">
+              <button type="button" class="oe-modal-btn oe-danger-btn" id="btnDeleteAccount"{% if deleteAccountMode == 'blocked' %} disabled{% endif %}>{{ msg['my.delete.button'] }}</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 
 </div>
-<script>initWidthToggle(document.getElementById('myInfoApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('myInfoApp'), document.getElementById('btnToggleWidth'));</script>
+
+{% if workspaceMode and deleteAccountMode and deleteAccountMode != 'none' and deleteAccountMode != 'blocked' %}
+<!-- Delete account - password re-confirmation. Same modal look as the change-password / reissue dialogs; the
+     confirm button stays disabled until the password field is filled. -->
+<div class="modal fade" id="deleteAccountModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content oe-modal">
+      <div class="modal-header oe-modal-header"><h5 class="modal-title">{{ msg['my.delete.title'] }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">{{ deleteDesc }}</p>
+        <div class="mb-1">
+          <label class="form-label small mb-1" for="daCurrentPassword">{{ msg['my.delete.confirm.password'] }}</label>
+          <input type="password" class="form-control form-control-sm" id="daCurrentPassword" autocomplete="current-password">
+        </div>
+        <div class="small text-danger d-none" id="daError"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="oe-modal-btn oe-modal-btn-plain" data-bs-dismiss="modal">{{ msg['btn.cancel'] }}</button>
+        <button type="button" class="oe-modal-btn oe-danger-btn" id="btnDeleteAccountConfirm" disabled>{{ msg['my.delete.confirm'] }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ cspNonce }}">
+(function () {
+  var pwField = document.getElementById('daCurrentPassword');
+  var confirmBtn = document.getElementById('btnDeleteAccountConfirm');
+  var errEl = document.getElementById('daError');
+
+  function showError(text) {
+    errEl.textContent = text;
+    errEl.classList.remove('d-none');
+  }
+
+  document.getElementById('btnDeleteAccount').addEventListener('click', function () {
+    pwField.value = '';
+    errEl.classList.add('d-none');
+    confirmBtn.disabled = true;
+    new bootstrap.Modal(document.getElementById('deleteAccountModal')).show();
+  });
+
+  // Dialog rule: nothing can be submitted while the required field is empty.
+  pwField.addEventListener('input', function () { confirmBtn.disabled = pwField.value === ''; });
+
+  confirmBtn.addEventListener('click', async function () {
+    var password = pwField.value;
+    if (!password) return;
+    confirmBtn.disabled = true;
+    // The typed password never leaves the browser: the server verifies the authKey derived from it
+    // (auth-keys.js), same as change-password and recovery-code reissue.
+    var secrets;
+    try {
+      secrets = await OE_AUTH.currentSecrets(password);
+    } catch (err) {
+      console.error('Key derivation failed:', err);
+      showError(MSG['my.delete.error.failed']);
+      confirmBtn.disabled = pwField.value === '';
+      return;
+    }
+    var res = await fetch('/api/user/delete-account', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ currentPassword: secrets.authKey })
+    });
+    if (res.ok) {
+      // The session is already ended server-side; drop this browser's cached keys as logout does.
+      try { await OE_SESSION_KEYS.clearAll(); } catch (e) { /* nothing cached is fine */ }
+      location.href = '/login?deleted=1';
+      return;
+    }
+    var data = await res.json().catch(function () { return {}; });
+    if (data.error === 'too_many_attempts') {
+      // Same shared attempt budget as change-password - the server already killed every session.
+      alert(MSG['password.confirm.too.many.attempts']);
+      location.href = '/logout';
+      return;
+    }
+    if (data.error === 'current_password_invalid') {
+      var msg = MSG['change.password.error.current.invalid'];
+      if (typeof data.remainingAttempts === 'number') {
+        msg += ' ' + MSG['password.confirm.attempts.remaining'].replace('{0}', data.remainingAttempts);
+      }
+      showError(msg);
+    } else if (data.error === 'last_ws_admin') {
+      showError(MSG['my.delete.error.last.admin']);
+    } else if (data.error === 'instance_admin') {
+      showError(MSG['my.delete.error.instance.admin']);
+    } else {
+      showError(MSG['my.delete.error.failed']);
+    }
+    confirmBtn.disabled = pwField.value === '';
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -1,6 +1,30 @@
 <configuration>
 
+    <!-- -Doe.log.dir, or <oe.home>/log by default (see LogDirDefiner) -->
+    <define name="LOG_DIR" class="tricatch.oe.hub.config.LogDirDefiner"/>
+    <!-- TRACE with -Doe.dev=true or -Doe.log.console=true, OFF otherwise (see ConsoleLevelDefiner) -->
+    <define name="CONSOLE_LEVEL" class="tricatch.oe.hub.config.ConsoleLevelDefiner"/>
+
+    <!-- Off by default: the threshold drops every event unless -Doe.dev or -Doe.log.console is true -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${CONSOLE_LEVEL}</level>
+        </filter>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Today's log is oehub.log; at midnight it rolls to oehub.<date>.log, and rolled files
+         older than 30 days are deleted (also checked at startup, so a long-stopped instance
+         doesn't keep stale files). -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/oehub.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/oehub.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
@@ -8,6 +32,7 @@
 
     <root level="DEBUG">
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
     </root>
 
     <!-- Reduce noise from verbose libraries -->

@@ -3,14 +3,14 @@
 {% block title %}{{ msg['settings.title'] }}{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/oe-panel.css">
-<link rel="stylesheet" href="/css/settings.css">
-<link rel="stylesheet" href="/css/info-page.css">
+<link rel="stylesheet" href="{{ asset('/css/oe-panel.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/settings.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/info-page.css') }}">
 {% endblock %}
 
 {% block content %}
 <div class="settings-app" id="settingsApp">
-<script>
+<script nonce="{{ cspNonce }}">
   (function() {
     if (localStorage.getItem('oeWidthExpanded') === 'true') {
       document.getElementById('settingsApp').classList.add('expanded');
@@ -23,42 +23,130 @@
 
     <h5>{{ msg['settings.title'] }}</h5>
 
-    {# ── Default URL Presets ── #}
+    {# oeProxy-only sections (CA, forward proxy, identifier, upstream certificate): workspace mode never runs oeProxy #}
+    {% if not workspaceMode %}
+    {# ── oeHosts (PROXY_SVR address, forward proxy status, allowed domains) ── #}
     <div class="oe-info-section">
-      <table class="oe-info-table ua-preset-table mb-0" id="urlPresetTable">
-        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+      <table class="oe-info-table oe-info-table-fixed mb-0">
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
-            <th colspan="2">{{ msg['settings.url.title'] }}</th>
-            <th class="col-actions text-end">
-              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUrlPreset" type="button" title="{{ msg['settings.url.add'] }}">
-                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
-              </button>
-            </th>
+            <th colspan="2">{{ msg['settings.oehosts.title'] }}</th>
           </tr>
         </thead>
-        <tbody id="urlPresetBody">
-          <tr id="urlEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.url.empty'] }}</td></tr>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.proxysvr.title'] }}</td>
+            <td>
+              <input type="text" id="proxySvrAddress" class="form-control form-control-sm" style="max-width:260px;"
+                     value="{{ proxySvrAddress }}" placeholder="127.0.0.1">
+              <div class="form-text">{{ msg['settings.proxysvr.help'] }}</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.fwdproxy.status'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="fwdproxyEnabled" checked disabled>
+                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] | replace({'{0}': fwdproxyPort}) }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
+              <div class="form-check mt-2 mb-0">
+                <input class="form-check-input" type="checkbox" id="allowedDomainsModeAllowAll" {% if allowAllDomains %}checked{% endif %}>
+                <label class="form-check-label" for="allowedDomainsModeAllowAll">{{ msg['settings.allowed.allowAll'] }}</label>
+              </div>
+              <div class="form-check d-flex align-items-center gap-1 mb-1">
+                <input class="form-check-input" type="checkbox" id="allowedDomainsModeWhitelist" {% if not allowAllDomains %}checked{% endif %}>
+                <label class="form-check-label mb-0" for="allowedDomainsModeWhitelist">{{ msg['settings.allowed.title'] }}</label>
+                <button class="oe-nav-action-btn" id="btnSortAllowedDomains" type="button" title="{{ msg['btn.sort'] }}">
+                  <span class="oe-icon oe-icon-sort" style="width:12px;height:12px"></span>
+                </button>
+              </div>
+              <textarea id="allowedDomains" class="form-control form-control-sm allowed-domains-textarea" rows="6"
+                        spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+                        placeholder="*.example.com&#10;hub.example.com">{{ allowedDomains }}</textarea>
+              <div class="form-text">{{ msg['settings.allowed.help'] }}</div>
+              <div class="d-flex align-items-center gap-1 mt-2 mb-1">
+                <label class="form-label mb-0">{{ msg['settings.allowed.blocked.title'] }}</label>
+                <button class="oe-nav-action-btn" id="btnSortBlockedDomains" type="button" title="{{ msg['btn.sort'] }}">
+                  <span class="oe-icon oe-icon-sort" style="width:12px;height:12px"></span>
+                </button>
+                <button class="oe-nav-action-btn" id="btnRefreshBlockedDomains" type="button" title="{{ msg['btn.refresh'] }}">
+                  <span class="oe-icon oe-icon-refresh" style="width:12px;height:12px"></span>
+                </button>
+              </div>
+              <div id="blockedDomainsList" class="blocked-domains-panel">
+                {% if recentlyBlockedDomains is empty %}
+                <span class="text-muted small">{{ msg['settings.allowed.blocked.empty'] }}</span>
+                {% else %}
+                {% for host in recentlyBlockedDomains %}
+                <button type="button" class="blocked-domain-chip" data-domain="{{ host }}" title="{{ msg['settings.allowed.blocked.add'] }}">{{ host }}</button>
+                {% endfor %}
+                {% endif %}
+              </div>
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
+    {% endif %}
 
-    {# ── User-Agent Presets ── #}
+    {% include "templates/oehub/_preset-tables.pebble" %}
+
+    {% if not workspaceMode %}
+    {# ── oeProxy (identifier, upstream certificate, upstream address, oeOID domains) ── #}
     <div class="oe-info-section">
-      <table class="oe-info-table ua-preset-table mb-0" id="uaPresetTable">
-        <colgroup><col class="col-name"><col><col class="col-actions"></colgroup>
+      <table class="oe-info-table oe-info-table-fixed mb-0">
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
-            <th colspan="2">{{ msg['settings.ua.title'] }}</th>
-            <th class="col-actions text-end">
-              <button class="oe-nav-action-btn oe-nav-action-add" id="btnAddUaPreset" type="button" title="{{ msg['settings.ua.add'] }}">
-                <span class="oe-icon oe-icon-new" style="width:14px;height:14px"></span>
-              </button>
-            </th>
+            <th colspan="2">{{ msg['settings.oeproxy.title'] }}</th>
           </tr>
         </thead>
-        <tbody id="uaPresetBody">
-          <tr id="uaEmptyRow"><td colspan="3" class="text-muted text-center py-3">{{ msg['settings.ua.empty'] }}</td></tr>
+        <tbody>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.identifier.title'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="identifierOid" checked disabled>
+                <label class="form-check-label" for="identifierOid">{{ msg['settings.identifier.oid'] }}</label>
+                <span class="text-muted small">{{ msg['settings.identifier.oid.hint'] }}</span>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="identifierIp" {% if ipIdentifierEnabled %}checked{% endif %}>
+                <label class="form-check-label" for="identifierIp">{{ msg['settings.identifier.ip'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.identifier.help'] }}</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.oeproxy.oeoid.label'] }}</td>
+            <td>
+              <textarea id="oidDomainDefault" class="form-control form-control-sm" rows="2"
+                        placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
+              <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.trustcert.title'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="trustInternalCert" {% if trustInternalCertEnabled %}checked{% endif %}>
+                <label class="form-check-label" for="trustInternalCert">{{ msg['settings.trustcert.enable'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.trustcert.help'] }}</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="oe-info-label">{{ msg['settings.upstream.title'] }}</td>
+            <td>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="internalOnlyUpstream" {% if internalOnlyUpstream %}checked{% endif %}>
+                <label class="form-check-label" for="internalOnlyUpstream">{{ msg['settings.upstream.enable'] }}</label>
+              </div>
+              <div class="form-text">{{ msg['settings.upstream.help'] }}</div>
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -66,7 +154,7 @@
     {# ── CA Certificate ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
             <th colspan="2">
@@ -156,7 +244,7 @@
             {# Generate tab #}
             <div class="tab-pane fade {% if caActiveTab != "import" %}show active{% endif %}"
                  id="caGeneratePane" role="tabpanel">
-              <form method="post" action="/oehub/settings/ca/generate" autocomplete="off">
+              <form method="post" action="/adm/settings/ca/generate" autocomplete="off">
                 <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                 <div class="mb-3">
                   <label class="form-label">{{ msg['settings.ca.name.label'] }}</label>
@@ -173,7 +261,7 @@
             {# Import tab #}
             <div class="tab-pane fade {% if caActiveTab == "import" %}show active{% endif %}"
                  id="caImportPane" role="tabpanel">
-              <form method="post" action="/oehub/settings/ca/import"
+              <form method="post" action="/adm/settings/ca/import"
                     enctype="multipart/form-data" autocomplete="off">
                 <input type="hidden" name="_csrf" value="{{ csrfToken }}">
                 <div class="mb-3">
@@ -198,117 +286,32 @@
       </div>
     </div>
 
-    {# ── oeProxy Identifier ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
-          <tr>
-            <th colspan="2">{{ msg['settings.identifier.title'] }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.identifier.label'] }}</td>
-            <td>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="identifierOid" checked disabled>
-                <label class="form-check-label" for="identifierOid">{{ msg['settings.identifier.oid'] }}</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="identifierIp" {% if ipIdentifierEnabled %}checked{% endif %}>
-                <label class="form-check-label" for="identifierIp">{{ msg['settings.identifier.ip'] }}</label>
-              </div>
-              <div class="form-text">{{ msg['settings.identifier.help'] }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    {% endif %}
 
-    {# ── oeProxy Upstream Certificate ── #}
+    {# ── Backup ── #}
     <div class="oe-info-section">
       <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
+        <colgroup><col style="width:140px;"><col></colgroup>
         <thead>
           <tr>
-            <th colspan="2">{{ msg['settings.trustcert.title'] }}</th>
+            <th colspan="2">{{ msg['settings.backup.title'] }}</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td class="oe-info-label">{{ msg['settings.trustcert.label'] }}</td>
+            <td class="oe-info-label">{{ msg['settings.backup.interval.label'] }}</td>
             <td>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="trustInternalCert" {% if trustInternalCertEnabled %}checked{% endif %}>
-                <label class="form-check-label" for="trustInternalCert">{{ msg['settings.trustcert.enable'] }}</label>
-              </div>
-              <div class="form-text">{{ msg['settings.trustcert.help'] }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# ── Forward Proxy (LittleProxy) ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
-          <tr>
-            <th>{{ msg['settings.fwdproxy.title'] }}</th>
-            <th class="text-end">
-              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveFwdproxyWhitelist" type="button" title="{{ msg['btn.save'] }}">
-                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.fwdproxy.status'] }}</td>
-            <td>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="fwdproxyEnabled" checked disabled>
-                <label class="form-check-label" for="fwdproxyEnabled">{{ msg['settings.fwdproxy.label'] }}</label>
-              </div>
-              <div class="form-text">{{ msg['settings.fwdproxy.help'] }}</div>
+              <select id="backupIntervalHours" class="form-select form-select-sm" style="width:auto;display:inline-block;">
+                {% for h in 1..24 %}
+                <option value="{{ h }}"{% if h == backupIntervalHours %} selected{% endif %}>{{ h }}{{ msg[h == 1 ? 'settings.backup.interval.hour' : 'settings.backup.interval.hours'] }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">{{ msg['settings.backup.interval.help'] }}</div>
             </td>
           </tr>
           <tr>
-            <td class="oe-info-label">{{ msg['settings.fwdproxy.whitelist.label'] }}</td>
-            <td>
-              <textarea id="fwdproxyWhitelist" class="form-control form-control-sm" rows="4"
-                        placeholder="*.example.com&#10;api.example.com">{{ fwdproxyWhitelist }}</textarea>
-              <div class="form-text">{{ msg['settings.fwdproxy.whitelist.help'] }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# ── oeOID Domains ── #}
-    <div class="oe-info-section">
-      <table class="oe-info-table oe-info-table-fixed mb-0">
-        <colgroup><col style="width:110px;"><col></colgroup>
-        <thead>
-          <tr>
-            <th>{{ msg['settings.oeoid.title'] }}</th>
-            <th class="text-end">
-              <button class="oe-nav-action-btn oe-nav-action-save" id="btnSaveOidDomainDefault" type="button" title="{{ msg['btn.save'] }}">
-                <span class="oe-icon oe-icon-save" style="width:14px;height:14px"></span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="oe-info-label">{{ msg['settings.oeoid.label'] }}</td>
-            <td>
-              <textarea id="oidDomainDefault" class="form-control form-control-sm" rows="4"
-                        placeholder="*.foo.oe&#10;*.bar.oe">{{ oidDomainDefault }}</textarea>
-              <div class="form-text">{{ msg['settings.oeoid.help'] }}</div>
-            </td>
+            <td class="oe-info-label">{{ msg['settings.backup.last.label'] }}</td>
+            <td>{{ backupLastAt is not empty ? backupLastAt : msg['settings.backup.last.none'] }}</td>
           </tr>
         </tbody>
       </table>
@@ -318,47 +321,192 @@
 
 
 </div>
-<script>initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
+<script nonce="{{ cspNonce }}">initWidthToggle(document.getElementById('settingsApp'), document.getElementById('btnToggleWidth'));</script>
 
-<script src="/js/preset-table.js"></script>
-<script>
-  initUaPresetTable({
-    apiBase: '/api/admin/hosts/ua',
-    deleteTooltipKey: 'tooltip.ua.delete',
-    savedToastKey: 'toast.ua.saved',
-    deletedToastKey: 'toast.ua.deleted'
-  });
-</script>
+{% set presetApiBase = '/api/adm/hosts' %}
+{% include "templates/oehub/_preset-scripts.pebble" %}
 
-<script>
-  initUrlPresetTable({
-    apiBase: '/api/admin/hosts/url',
-    deleteTooltipKey: 'tooltip.url.delete',
-    savedToastKey: 'toast.url.saved',
-    deletedToastKey: 'toast.url.deleted'
-  });
+<script nonce="{{ cspNonce }}">
+  {% if not workspaceMode %}
+  (() => {
+    const proxySvrEl = document.getElementById('proxySvrAddress');
+    let lastProxySvrAddress = proxySvrEl.value;
+    proxySvrEl.addEventListener('blur', async () => {
+      const address = proxySvrEl.value;
+      if (address === lastProxySvrAddress) return;
+      const res = await fetch('/api/adm/settings/proxy-svr-address', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({address})
+      });
+      if (res.ok) {
+        var saved = await res.json();
+        proxySvrEl.value = saved.address;
+        lastProxySvrAddress = saved.address;
+        showToast(MSG['settings.saved']);
+      }
+    });
+  })();
+  {% endif %}
 
-  document.getElementById('btnSaveOidDomainDefault').addEventListener('click', async () => {
-    const domainList = document.getElementById('oidDomainDefault').value;
-    const res = await fetch('/api/admin/settings/oid-domain-default', {
+  {% if not workspaceMode %}
+  (() => {
+    const oidEl = document.getElementById('oidDomainDefault');
+    let lastOidDomainList = oidEl.value;
+    oidEl.addEventListener('blur', async () => {
+      const domainList = oidEl.value;
+      if (domainList === lastOidDomainList) return;
+      const res = await fetch('/api/adm/settings/oid-domain-default', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domainList})
+      });
+      if (res.ok) { lastOidDomainList = domainList; showToast(MSG['settings.saved']); }
+    });
+  })();
+  {% endif %}
+
+  {% if not workspaceMode %}
+  (() => {
+    const allowedEl = document.getElementById('allowedDomains');
+    const blockedListEl = document.getElementById('blockedDomainsList');
+    const allowAllCheckbox = document.getElementById('allowedDomainsModeAllowAll');
+    const whitelistCheckbox = document.getElementById('allowedDomainsModeWhitelist');
+    let lastAllowedDomains = allowedEl.value;
+
+    // Two checkboxes standing in for a radio pair - exactly one is checked at all times, enforced
+    // in JS below since plain checkboxes don't group themselves the way same-"name" radios would.
+    // Independent on/off override (see ForwardProxyServer.allowAllDestinations) that doesn't touch
+    // the list below at all, so it's still there exactly as typed once the mode is switched back
+    // to "도메인 화이트리스트".
+    function setDomainsSectionDisabled(disabled) {
+      allowedEl.disabled = disabled;
+      blockedListEl.querySelectorAll('.blocked-domain-chip').forEach(chip => chip.disabled = disabled);
+    }
+    setDomainsSectionDisabled(allowAllCheckbox.checked);
+
+    async function saveAllowedDomainsMode(enabled) {
+      allowAllCheckbox.checked = enabled;
+      whitelistCheckbox.checked = !enabled;
+      const res = await fetch('/api/adm/settings/allowed-domains/allow-all', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled})
+      });
+      if (res.ok) {
+        setDomainsSectionDisabled(enabled);
+        showToast(MSG['settings.saved']);
+      } else {
+        allowAllCheckbox.checked = !enabled;
+        whitelistCheckbox.checked = enabled;
+      }
+    }
+    // Turning the whitelist protection off (enabling allow-all) needs a confirm; going back to
+    // it doesn't.
+    function requestAllowedDomainsMode(enabled) {
+      if (enabled && !confirm(MSG['confirm.allow.all.domains'])) {
+        allowAllCheckbox.checked = false;
+        whitelistCheckbox.checked = true;
+        return;
+      }
+      saveAllowedDomainsMode(enabled);
+    }
+    // Clicking the checkbox that's already the active mode just unchecks it natively (there's no
+    // "neither" state) - snap it back to checked instead of treating that as "switch to the
+    // other mode". Only clicking the currently-inactive checkbox actually switches modes.
+    allowAllCheckbox.addEventListener('change', () => {
+      if (allowAllCheckbox.checked) requestAllowedDomainsMode(true);
+      else allowAllCheckbox.checked = true;
+    });
+    whitelistCheckbox.addEventListener('change', () => {
+      if (whitelistCheckbox.checked) requestAllowedDomainsMode(false);
+      else whitelistCheckbox.checked = true;
+    });
+
+    async function saveAllowedDomains() {
+      const domains = allowedEl.value;
+      if (domains === lastAllowedDomains) return;
+      const res = await fetch('/api/adm/settings/allowed-domains', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domains})
+      });
+      if (res.ok) { lastAllowedDomains = domains; showToast(MSG['settings.saved']); }
+    }
+
+    allowedEl.addEventListener('blur', saveAllowedDomains);
+
+    document.getElementById('btnSortAllowedDomains').addEventListener('click', () => {
+      const lines = allowedEl.value.split('\n').map(l => l.trim()).filter(Boolean);
+      lines.sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
+      allowedEl.value = lines.join('\n');
+      saveAllowedDomains();
+    });
+
+    // Tracks what's currently rendered so the sort button (client-side re-order) and the
+    // click-to-add handler (below) can update the list without a round trip to the server.
+    let currentBlockedHosts = Array.from(blockedListEl.querySelectorAll('.blocked-domain-chip'))
+      .map(chip => chip.dataset.domain);
+
+    function renderBlockedDomains(hosts) {
+      currentBlockedHosts = hosts;
+      blockedListEl.innerHTML = '';
+      if (!hosts.length) {
+        const empty = document.createElement('span');
+        empty.className = 'text-muted small';
+        empty.textContent = MSG['settings.allowed.blocked.empty'];
+        blockedListEl.appendChild(empty);
+        return;
+      }
+      hosts.forEach(host => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'blocked-domain-chip';
+        chip.dataset.domain = host;
+        chip.title = MSG['settings.allowed.blocked.add'];
+        chip.textContent = host;
+        blockedListEl.appendChild(chip);
+      });
+    }
+
+    // Click a blocked domain to add it to the whitelist immediately (no need to type/retype
+    // exact names) and drop it from the suggestion list; a fresh fetch would filter it out
+    // anyway once it's actually whitelisted, this just avoids the round trip. Added exactly as
+    // blocked (no "*." guess) - working out the right registrable domain to wildcard needs a
+    // public-suffix list to do correctly, so that edit is left to the admin.
+    blockedListEl.addEventListener('click', e => {
+      const chip = e.target.closest('.blocked-domain-chip');
+      if (!chip) return;
+      const domain = chip.dataset.domain;
+      const lines = allowedEl.value.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!lines.includes(domain)) {
+        allowedEl.value = lines.concat(domain).join('\n');
+        saveAllowedDomains();
+      }
+      chip.remove();
+      currentBlockedHosts = currentBlockedHosts.filter(h => h !== domain);
+    });
+
+    document.getElementById('btnSortBlockedDomains').addEventListener('click', () => {
+      renderBlockedDomains([...currentBlockedHosts].sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})));
+    });
+
+    document.getElementById('btnRefreshBlockedDomains').addEventListener('click', async () => {
+      const res = await fetch('/api/adm/settings/blocked-domains');
+      if (res.ok) renderBlockedDomains((await res.json()).hosts);
+    });
+  })();
+  {% endif %}
+
+  document.getElementById('backupIntervalHours').addEventListener('change', async e => {
+    const intervalHours = e.target.value;
+    const res = await fetch('/api/adm/settings/backup-interval', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({domainList})
+      body: JSON.stringify({intervalHours: parseInt(intervalHours, 10)})
     });
     if (res.ok) showToast(MSG['settings.saved']);
   });
 
-  document.getElementById('btnSaveFwdproxyWhitelist').addEventListener('click', async () => {
-    const whitelist = document.getElementById('fwdproxyWhitelist').value;
-    const res = await fetch('/api/admin/settings/fwdproxy-whitelist', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({whitelist})
-    });
-    if (res.ok) showToast(MSG['settings.saved']);
-  });
-
+  {% if not workspaceMode %}
   document.getElementById('identifierIp').addEventListener('change', async e => {
     const ipEnabled = e.target.checked;
-    const res = await fetch('/api/admin/settings/identifier', {
+    const res = await fetch('/api/adm/settings/identifier', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ipEnabled})
     });
@@ -368,12 +516,25 @@
 
   document.getElementById('trustInternalCert').addEventListener('change', async e => {
     const enabled = e.target.checked;
-    const res = await fetch('/api/admin/settings/trust-internal-cert', {
+    const res = await fetch('/api/adm/settings/trust-internal-cert', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({enabled})
     });
     if (res.ok) showToast(MSG['settings.saved']);
     else e.target.checked = !enabled;
   });
+  {% endif %}
+
+  {% if not workspaceMode %}
+  document.getElementById('internalOnlyUpstream').addEventListener('change', async e => {
+    const enabled = e.target.checked;
+    const res = await fetch('/api/adm/settings/internal-only-upstream', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled})
+    });
+    if (res.ok) showToast(MSG['settings.saved']);
+    else e.target.checked = !enabled;
+  });
+  {% endif %}
 </script>
 {% endblock %}

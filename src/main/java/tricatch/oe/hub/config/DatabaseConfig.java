@@ -7,14 +7,21 @@ import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
+import tricatch.oe.hub.folder.ListFolderMapper;
+import tricatch.oe.hub.mapper.HubApiTokenMapper;
+import tricatch.oe.hub.mapper.HubAuditLogMapper;
 import tricatch.oe.hub.mapper.HubConfMapper;
 import tricatch.oe.hub.mapper.HubUserMapper;
+import tricatch.oe.hub.mapper.TeamMapper;
+import tricatch.oe.hub.mapper.WorkspaceMapper;
+import tricatch.oe.hub.mapper.WsInviteMapper;
+import tricatch.oe.hub.mapper.WsKeyMapper;
 import tricatch.oe.hosts.mapper.HostsConfMapper;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
 import tricatch.oe.hosts.mapper.HostsUaMapper;
 import tricatch.oe.hosts.mapper.HostsUrlMapper;
-import tricatch.oe.proxy.mapper.ProxyConfMapper;
-import tricatch.oe.proxy.mapper.ProxyVhostMapper;
+import tricatch.oe.hub.proxy.mapper.ProxyConfMapper;
+import tricatch.oe.hub.proxy.mapper.ProxyVhostMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -34,8 +41,8 @@ public class DatabaseConfig {
     private static final int DB_POOL_MAX_SIZE = 10;
 
     public static SqlSessionFactory buildSqlSessionFactory() {
-        var dataDir = AppHome.oeHubDir().resolve("data");
-        var dbPath = dataDir.resolve("oeHub-h2");
+        var dataDir = AppHome.dbDataDir();
+        var dbPath = AppHome.dbFilePath();
 
         var hikariConfig = new HikariConfig();
         hikariConfig.setPoolName("oeHub-h2-pool");
@@ -51,13 +58,20 @@ public class DatabaseConfig {
         var config = new Configuration(env);
         config.setMapUnderscoreToCamelCase(true);
         config.addMapper(HubUserMapper.class);
+        config.addMapper(TeamMapper.class);
+        config.addMapper(WorkspaceMapper.class);
+        config.addMapper(WsInviteMapper.class);
+        config.addMapper(WsKeyMapper.class);
         config.addMapper(HubConfMapper.class);
+        config.addMapper(HubApiTokenMapper.class);
+        config.addMapper(HubAuditLogMapper.class);
         config.addMapper(HostsProfMapper.class);
         config.addMapper(HostsConfMapper.class);
         config.addMapper(HostsUaMapper.class);
         config.addMapper(HostsUrlMapper.class);
         config.addMapper(ProxyVhostMapper.class);
         config.addMapper(ProxyConfMapper.class);
+        config.addMapper(ListFolderMapper.class);
 
         var factory = new SqlSessionFactoryBuilder().build(config);
         initSchema(factory);
@@ -69,7 +83,7 @@ public class DatabaseConfig {
     // source or this class could connect and read the whole database, including password hashes,
     // bypassing oeHub's auth entirely. Generate one at first run instead and persist it next to
     // the database file, same trust boundary as the file itself.
-    private static String loadOrCreateDbPassword(Path dataDir) {
+    static String loadOrCreateDbPassword(Path dataDir) {
         var pwFile = dataDir.resolve(".h2-password");
         try {
             if (Files.exists(pwFile)) {
@@ -91,23 +105,161 @@ public class DatabaseConfig {
         try (var session = factory.openSession(true)) {
             var conn = session.getConnection();
 
+            // HUB_WS must exist before HUB_USR, which FK-references it via ws_no — see the
+            // cloudGroupService design doc §2.1 table-creation-order note.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_WS (
+                    ws_no      BIGINT       AUTO_INCREMENT PRIMARY KEY,
+                    ws_name    VARCHAR(128) NOT NULL UNIQUE,
+                    status     VARCHAR(16)  NOT NULL DEFAULT 'active',
+                    created_by BIGINT       NULL,
+                    updated_by BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
+                    updated_at TIMESTAMP    NOT NULL
+                )
+                """);
+            // HUB_TEAM must exist before HUB_USR, which FK-references it via team_no - see the
+            // cloudGroupService design doc §2.1/§2.9 table-creation-order note. Teams are a
+            // one-level, workspace-only org label/filter (no nesting, no search/sharing scope of
+            // their own - HOSTS_PFILE.share_scope is untouched by this table).
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_TEAM (
+                    team_no    BIGINT       AUTO_INCREMENT PRIMARY KEY,
+                    ws_no      BIGINT       NOT NULL,
+                    team_name  VARCHAR(128) NOT NULL,
+                    created_by BIGINT       NOT NULL,
+                    updated_by BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
+                    updated_at TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_hub_team_ws_name UNIQUE (ws_no, team_name),
+                    CONSTRAINT fk_hub_team_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
+                )
+                """);
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HUB_USR (
-                    user_no       BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_no       BIGINT GENERATED BY DEFAULT AS IDENTITY (START WITH 1000000000) PRIMARY KEY,
                     user_id       VARCHAR(64) NOT NULL UNIQUE,
                     password      VARCHAR(128) NOT NULL,
-                    role          VARCHAR(16) NOT NULL,
+                    role          VARCHAR(3) NOT NULL,
+                    ws_no         BIGINT NOT NULL,
+                    team_no       BIGINT NULL,
                     token_version INT NOT NULL DEFAULT 0,
+                    public_key                   CLOB NULL,
+                    wrapped_private_key          CLOB NULL,
+                    wrapped_private_key_recovery CLOB NULL,
+                    recovery_verifier VARCHAR(128) NULL,
+                    created_by    BIGINT NULL,
+                    updated_by    BIGINT NULL,
                     create_at     TIMESTAMP NOT NULL,
                     updated_at    TIMESTAMP NOT NULL,
-                    last_login_at TIMESTAMP NULL
+                    last_login_at TIMESTAMP NULL,
+                    CONSTRAINT fk_hub_usr_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no),
+                    CONSTRAINT fk_hub_usr_team FOREIGN KEY (team_no) REFERENCES HUB_TEAM(team_no)
+                )
+                """);
+            // 1-per-invitee, single-use codes (cloudGroupService design doc §2.8) - workspace mode
+            // only, used to join an existing workspace as role='pen'. team_no (nullable) lets
+            // an invite pre-assign the joiner to a team (§2.9) - NULL means no team, assigned
+            // manually later.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_WS_INVITE (
+                    invite_code VARCHAR(32) NOT NULL PRIMARY KEY,
+                    ws_no       BIGINT      NOT NULL,
+                    team_no     BIGINT      NULL,
+                    used        BOOLEAN     NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT      NOT NULL,
+                    updated_by  BIGINT      NULL,
+                    create_at   TIMESTAMP   NOT NULL,
+                    updated_at  TIMESTAMP   NOT NULL,
+                    expires_at  TIMESTAMP   NOT NULL,
+                    CONSTRAINT fk_hub_ws_invite_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no),
+                    CONSTRAINT fk_hub_ws_invite_team FOREIGN KEY (team_no) REFERENCES HUB_TEAM(team_no)
+                )
+                """);
+            // One wrap of the workspace's shared symmetric key per member, each wrapped with that
+            // member's own RSA public key (e2eEncryption design doc §3/§4) - must come after both
+            // HUB_WS and HUB_USR, which it FK-references.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_WS_KEY (
+                    ws_no           BIGINT    NOT NULL,
+                    user_no         BIGINT    NOT NULL,
+                    wrapped_ws_key  CLOB      NOT NULL,
+                    created_by      BIGINT    NOT NULL,
+                    updated_by      BIGINT    NULL,
+                    create_at       TIMESTAMP NOT NULL,
+                    updated_at      TIMESTAMP NOT NULL,
+                    PRIMARY KEY (ws_no, user_no),
+                    CONSTRAINT fk_hub_ws_key_ws   FOREIGN KEY (ws_no)   REFERENCES HUB_WS(ws_no),
+                    CONSTRAINT fk_hub_ws_key_user FOREIGN KEY (user_no) REFERENCES HUB_USR(user_no)
                 )
                 """);
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HUB_CONF (
                     conf_key   VARCHAR(128) PRIMARY KEY,
                     conf_val   CLOB         NOT NULL,
+                    created_by BIGINT       NULL,
+                    updated_by BIGINT       NULL,
+                    create_at  TIMESTAMP    NOT NULL,
                     updated_at TIMESTAMP    NOT NULL
+                )
+                """);
+            // Personal API tokens (a token authenticates as its owning user_no, same permissions
+            // as a browser session - see AuthController.resolveUserFromApiToken). No FK on user_no,
+            // same soft-reference convention as HOSTS_PFILE.user_no - AdminUserController.
+            // apiDeleteUser deletes this workspace member's tokens explicitly instead.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_API_TOKEN (
+                    token_id     VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no      BIGINT       NOT NULL,
+                    token_name   VARCHAR(128) NOT NULL,
+                    token_hash   VARCHAR(128) NOT NULL UNIQUE,
+                    created_by   BIGINT       NOT NULL,
+                    updated_by   BIGINT       NULL,
+                    create_at    TIMESTAMP    NOT NULL,
+                    updated_at   TIMESTAMP    NOT NULL,
+                    last_used_at TIMESTAMP    NULL,
+                    expires_at   TIMESTAMP    NULL
+                )
+                """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hub_api_token_user ON HUB_API_TOKEN(user_no)");
+            // Tier-1 (security/access-control) action trail - append-only, kept indefinitely (no
+            // retention cleanup like BackupService's backup files). ws_no is NOT NULL: self-hosted
+            // has exactly one workspace (design doc §2.7) and a workspace-mode instance admin's own
+            // actions on another workspace (e.g. status change) are logged under that TARGET
+            // workspace's ws_no, not the actor's - so its own wsa can see it in their own view,
+            // consistent with instance admin never getting a cross-workspace audit view of their
+            // own (isolation principle, same as elsewhere in this schema).
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HUB_AUDIT_LOG (
+                    audit_id    BIGINT       GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    ws_no       BIGINT       NOT NULL,
+                    action      VARCHAR(64)  NOT NULL,
+                    target_type VARCHAR(32)  NULL,
+                    target_id   VARCHAR(64)  NULL,
+                    detail      CLOB         NULL,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL
+                )
+                """);
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hub_audit_log_ws ON HUB_AUDIT_LOG(ws_no, create_at DESC)");
+            // One-level folders for the HOSTS_PFILE list (per user, like the list rows themselves).
+            // An item points at its folder via HOSTS_PFILE.folder_id; no folder = root.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS HOSTS_FOLDER (
+                    folder_id   VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no     BIGINT       NOT NULL,
+                    folder_name VARCHAR(128) NOT NULL,
+                    sort_order  INT          NOT NULL DEFAULT 0,
+                    collapsed   BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_hosts_folder_user_name UNIQUE (user_no, folder_name)
                 )
                 """);
             conn.createStatement().execute("""
@@ -118,23 +270,35 @@ public class DatabaseConfig {
                     hosts_content     CLOB           NOT NULL,
                     selected          BOOLEAN        NOT NULL DEFAULT FALSE,
                     sort_order        INT            NOT NULL DEFAULT 0,
-                    visibility        VARCHAR(16)    NOT NULL DEFAULT 'public',
+                    share_scope       VARCHAR(16)    NOT NULL DEFAULT 'workspace',
                     parent_id         VARCHAR(32)    NULL,
-                    last_edited_by    BIGINT         NULL,
+                    wrapped_content_key CLOB         NULL,
+                    link_content        CLOB         NULL,
+                    wrapped_link_key    CLOB         NULL,
+                    folder_id         VARCHAR(32)    NULL,
+                    created_by        BIGINT         NOT NULL,
+                    updated_by        BIGINT         NULL,
+                    create_at         TIMESTAMP      NOT NULL,
                     updated_at        TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_hosts_pfile_user_profile UNIQUE (user_no, hosts_profile),
-                    CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id)
+                    CONSTRAINT fk_hosts_pfile_parent FOREIGN KEY (parent_id) REFERENCES HOSTS_PFILE(hosts_id),
+                    CONSTRAINT fk_hosts_pfile_folder FOREIGN KEY (folder_id) REFERENCES HOSTS_FOLDER(folder_id) ON DELETE SET NULL
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_parent ON HOSTS_PFILE(parent_id)");
             conn.createStatement().execute(
-                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_last_edited_by ON HOSTS_PFILE(last_edited_by)");
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_folder ON HOSTS_PFILE(folder_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_pfile_updated_by ON HOSTS_PFILE(updated_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_CONF (
                     user_no     BIGINT,
                     conf_key    VARCHAR(128)   NOT NULL,
                     conf_val    CLOB,
+                    created_by  BIGINT         NOT NULL,
+                    updated_by  BIGINT         NULL,
+                    create_at   TIMESTAMP      NOT NULL,
                     updated_at  TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_hosts_conf UNIQUE (user_no, conf_key),
                     CONSTRAINT fk_hosts_conf_user FOREIGN KEY (user_no) REFERENCES HUB_USR(user_no)
@@ -147,12 +311,18 @@ public class DatabaseConfig {
                     ua_value    VARCHAR(512) NOT NULL,
                     sort_order  INT          NOT NULL DEFAULT 0,
                     user_no     BIGINT       NULL,
+                    ws_no       BIGINT       NOT NULL,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
                     create_at   TIMESTAMP    NOT NULL,
-                    updated_at  TIMESTAMP    NOT NULL
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT fk_hosts_ua_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_ua_user_no ON HOSTS_UA(user_no)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_ua_ws_no ON HOSTS_UA(ws_no)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS HOSTS_URL (
                     url_id      VARCHAR(32)  NOT NULL PRIMARY KEY,
@@ -160,12 +330,34 @@ public class DatabaseConfig {
                     url_value   VARCHAR(512) NOT NULL,
                     sort_order  INT          NOT NULL DEFAULT 0,
                     user_no     BIGINT       NULL,
+                    ws_no       BIGINT       NOT NULL,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
                     create_at   TIMESTAMP    NOT NULL,
-                    updated_at  TIMESTAMP    NOT NULL
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT fk_hosts_url_ws FOREIGN KEY (ws_no) REFERENCES HUB_WS(ws_no)
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_hosts_url_user_no ON HOSTS_URL(user_no)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_hosts_url_ws_no ON HOSTS_URL(ws_no)");
+            // One-level folders for the PROXY_VHOST list (per user, like the list rows themselves).
+            // An item points at its folder via PROXY_VHOST.folder_id; no folder = root.
+            conn.createStatement().execute("""
+                CREATE TABLE IF NOT EXISTS PROXY_FOLDER (
+                    folder_id   VARCHAR(32)  NOT NULL PRIMARY KEY,
+                    user_no     BIGINT       NOT NULL,
+                    folder_name VARCHAR(128) NOT NULL,
+                    sort_order  INT          NOT NULL DEFAULT 0,
+                    collapsed   BOOLEAN      NOT NULL DEFAULT FALSE,
+                    created_by  BIGINT       NOT NULL,
+                    updated_by  BIGINT       NULL,
+                    create_at   TIMESTAMP    NOT NULL,
+                    updated_at  TIMESTAMP    NOT NULL,
+                    CONSTRAINT uq_proxy_folder_user_name UNIQUE (user_no, folder_name)
+                )
+                """);
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_VHOST (
                     vhost_id          VARCHAR(32)    NOT NULL PRIMARY KEY,
@@ -174,30 +366,44 @@ public class DatabaseConfig {
                     vhost_content     CLOB           NOT NULL,
                     selected          BOOLEAN        NOT NULL DEFAULT FALSE,
                     sort_order        INT            NOT NULL DEFAULT 0,
-                    visibility        VARCHAR(16)    NOT NULL DEFAULT 'public',
+                    share_scope       VARCHAR(16)    NOT NULL DEFAULT 'workspace',
                     parent_id         VARCHAR(32)    NULL,
-                    last_edited_by    BIGINT         NULL,
+                    wrapped_content_key CLOB         NULL,
+                    link_content        CLOB         NULL,
+                    folder_id         VARCHAR(32)    NULL,
+                    created_by        BIGINT         NOT NULL,
+                    updated_by        BIGINT         NULL,
+                    create_at         TIMESTAMP      NOT NULL,
                     updated_at        TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_proxy_vhost_user_profile UNIQUE (user_no, vhost_profile),
-                    CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id)
+                    CONSTRAINT fk_proxy_vhost_parent FOREIGN KEY (parent_id) REFERENCES PROXY_VHOST(vhost_id),
+                    CONSTRAINT fk_proxy_vhost_folder FOREIGN KEY (folder_id) REFERENCES PROXY_FOLDER(folder_id) ON DELETE SET NULL
                 )
                 """);
             conn.createStatement().execute(
                 "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_parent ON PROXY_VHOST(parent_id)");
             conn.createStatement().execute(
-                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_last_edited_by ON PROXY_VHOST(last_edited_by)");
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_folder ON PROXY_VHOST(folder_id)");
+            conn.createStatement().execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_vhost_updated_by ON PROXY_VHOST(updated_by)");
             conn.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS PROXY_CONF (
                     user_no     BIGINT,
                     conf_key    VARCHAR(128)   NOT NULL,
                     conf_val    CLOB,
+                    created_by  BIGINT         NOT NULL,
+                    updated_by  BIGINT         NULL,
+                    create_at   TIMESTAMP      NOT NULL,
                     updated_at  TIMESTAMP      NOT NULL,
                     CONSTRAINT uq_proxy_conf UNIQUE (user_no, conf_key),
                     CONSTRAINT fk_proxy_conf_user FOREIGN KEY (user_no) REFERENCES HUB_USR(user_no)
                 )
                 """);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize database schema", e);
+            // An existing table is never altered here (CREATE ... IF NOT EXISTS only), so a build
+            // that changed one fails on a database created before it - point at the fix.
+            throw new RuntimeException("Failed to initialize database schema. If this build changed an existing table, "
+                    + "stop oeHub and run it once with -Doe.migrate=<name> (src/main/resources/db/migration, see README).", e);
         }
     }
 }

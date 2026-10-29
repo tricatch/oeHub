@@ -25,12 +25,12 @@ import org.slf4j.LoggerFactory;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.config.PasswordUtil;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.model.HubUser;
+import tricatch.oe.hub.proxy.PebbleErrorPageRenderer;
+import tricatch.oe.hub.proxy.service.ProxyConfService;
 import tricatch.oe.proxy.ReverseProxyServer;
-import tricatch.oe.proxy.service.ProxyConfService;
-import tricatch.oe.proxy.util.HtmlUtil;
-import tricatch.oe.proxy.util.LittleProxyInternals;
 import tricatch.oe.proxy.util.SelfLoopOwnerRegistry;
 
 import java.net.InetAddress;
@@ -63,7 +63,10 @@ public class ForwardProxyServer {
 
     private static final Logger logger = LoggerFactory.getLogger(ForwardProxyServer.class);
 
-    private static final int PORT = 36980;
+    private static final int DEFAULT_PORT = 36980;
+    // -Doe.fwdproxy.port lets a second instance on the same machine (e.g. an e2e server next to a
+    // running dev server) bind elsewhere instead of silently losing the port to the first one.
+    private static final int PORT = resolvePort();
     private static final String REALM = "oeHub";
     // Matches the ${PROXY_SVR} placeholder oeHosts profiles use (see static/js/util.js /
     // hosts.pebble) to mean "oeHub's own IP as seen by this client" — resolved here per
@@ -71,11 +74,12 @@ public class ForwardProxyServer {
     // substitution used for --host-resolver-rules never runs for this proxy path.
     private static final String PROXY_SVR_PLACEHOLDER = "${PROXY_SVR}";
 
-    // Relay whitelist: when non-empty, only destinations matching one of these patterns may be
-    // relayed through the forward proxy — everything else gets a 403. Empty (the default) means
-    // unrestricted, preserving prior behavior. A pattern may be a bare domain ("foo.com") or
-    // wildcard-prefixed ("*.foo.com"); either form matches the domain itself and all subdomains,
-    // mirroring the requestDomains semantics used by the oeOID Chrome extension (see background.js).
+    // Allowed domains (whitelist): only destinations matching one of these patterns may be relayed
+    // through the forward proxy — everything else gets a 403. Empty (the default) allows nothing:
+    // the forward proxy is meant for a known set of (typically internal) domains. A pattern may be
+    // a bare domain ("foo.com") or wildcard-prefixed ("*.foo.com"); either form matches the domain
+    // itself and all subdomains, mirroring the requestDomains semantics used by the oeOID Chrome
+    // extension (see background.js).
     private static final String KEY_WHITELIST = "fwdproxy.whitelist";
 
     // A client whose own connection to this proxy is itself loopback (127.0.0.1/::1) is exempted
@@ -84,7 +88,7 @@ public class ForwardProxyServer {
     // through the proxy grants it nothing new. Not persisted/exposed anywhere; a plain code toggle.
     private static final boolean EXEMPT_LOOPBACK_CLIENTS = true;
 
-    // Reason codes for the 403 page (HtmlUtil.renderFwdProxyForbidden picks its copy by this
+    // Reason codes for the 403 page (PebbleErrorPageRenderer.renderFwdProxyForbidden picks its copy by this
     // value); anything else (including missing/expired) falls back to the whitelist copy.
     static final String BLOCK_REASON_LOOPBACK = "loopback";
     static final String BLOCK_REASON_WHITELIST = "whitelist";
@@ -111,6 +115,34 @@ public class ForwardProxyServer {
         return host == null ? null : blockReasonByHost.remove(host.toLowerCase());
     }
 
+    // Destinations recently rejected for not being on the whitelist, shown next to the "허용 도메인"
+    // textarea in Settings so an admin doesn't have to guess/retype exact names while testing - just
+    // pick from what actually got blocked. In-memory only (never persisted, cleared on restart) and
+    // time-bounded like authAttemptsByUser below: this is purely an admin convenience surface, not a
+    // security control, so losing entries costs nothing. Loopback blocks are intentionally excluded
+    // (BLOCK_REASON_WHITELIST only) - adding a loopback target to the whitelist wouldn't unblock it,
+    // that's a separate SSRF guard.
+    private static final java.time.Duration RECENTLY_BLOCKED_TTL = java.time.Duration.ofHours(24);
+    private static final com.github.benmanes.caffeine.cache.Cache<String, java.time.Instant> recentlyBlockedHosts =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(RECENTLY_BLOCKED_TTL)
+                    .maximumSize(200)
+                    .build();
+
+    private static void recordBlockedByWhitelist(String host) {
+        if (host != null) recentlyBlockedHosts.put(host.toLowerCase(), java.time.Instant.now());
+    }
+
+    /** Recently whitelist-blocked hosts, most recent first, already-whitelisted ones filtered out
+     *  (nothing left for the admin to add). See recentlyBlockedHosts above. */
+    public static List<String> getRecentlyBlockedHosts() {
+        return recentlyBlockedHosts.asMap().entrySet().stream()
+                .filter(e -> !isWhitelisted(e.getKey()))
+                .sorted(Map.Entry.<String, java.time.Instant>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
     private static SqlSessionFactory sqlSessionFactory;
     private static HttpProxyServer server;
 
@@ -126,23 +158,36 @@ public class ForwardProxyServer {
 
     private static volatile String whitelistText = "";
     private static volatile List<String> whitelistPatterns = List.of();
+    // Independent on/off escape hatch out of the whitelist's default-deny policy - allows every
+    // destination without touching whitelistText, so a curated domain list stays intact underneath
+    // while this is on and takes effect again the moment it's switched back off.
+    private static final String KEY_ALLOW_ALL = "fwdproxy.allowAll";
+    private static volatile boolean allowAllDestinations = false;
 
     // Per-account auth throttle: this callback (org.littleshoot.proxy.ProxyAuthenticator) gets
     // only userName/password, no client IP, so — unlike AuthController's per-IP login lockout —
     // this is keyed by the attempted userId. Otherwise bcrypt cost is the only thing slowing an
     // online brute-force attempt against any HUB_USR account through this always-on, 0.0.0.0-bound
-    // proxy port. In-memory only, same trade-off as AuthController's lockout.
+    // proxy port. In-memory only, same trade-off as AuthController's lockout. Backed by a
+    // size-bounded, expiring cache (like AuthController's) so attempts against random userIds can't
+    // grow memory without limit; each write refreshes an entry's expiry, so it outlives its lockout.
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final java.time.Duration ATTEMPT_WINDOW = java.time.Duration.ofMinutes(15);
     private static final java.time.Duration LOCKOUT_DURATION = java.time.Duration.ofMinutes(15);
 
-    private static final class AuthAttempts {
-        int count;
-        java.time.Instant windowStart;
-        java.time.Instant lockedUntil;
-    }
+    private record AuthAttempts(int count, java.time.Instant windowStart, java.time.Instant lockedUntil) {}
 
-    private static final ConcurrentHashMap<String, AuthAttempts> authAttemptsByUser = new ConcurrentHashMap<>();
+    private static final com.github.benmanes.caffeine.cache.Cache<String, AuthAttempts> authAttemptsByUser =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(ATTEMPT_WINDOW.plus(LOCKOUT_DURATION))
+                    .maximumSize(10_000)
+                    .build();
+
+    // userId is attacker-controlled and unbounded; the key only needs to tell accounts apart.
+    private static String attemptKey(String userId) {
+        var key = userId.toLowerCase();
+        return key.length() > 64 ? key.substring(0, 64) : key;
+    }
 
     // Same timing-parity rationale as AuthController.DUMMY_PASSWORD_HASH: without this, a
     // non-existent userId short-circuits before any bcrypt comparison, making account existence
@@ -160,19 +205,30 @@ public class ForwardProxyServer {
         return PORT;
     }
 
+    private static int resolvePort() {
+        String prop = System.getProperty("oe.fwdproxy.port");
+        if (prop != null && !prop.isBlank()) {
+            try { return Integer.parseInt(prop.trim()); }
+            catch (NumberFormatException ignored) {}
+        }
+        return DEFAULT_PORT;
+    }
+
     public static void init(SqlSessionFactory factory) {
         sqlSessionFactory = factory;
         var stored = new ProxyConfService(factory).get(KEY_WHITELIST, null);
         applyWhitelist(stored != null ? stored : "");
+        var storedAllowAll = new ProxyConfService(factory).get(KEY_ALLOW_ALL, null);
+        allowAllDestinations = "true".equals(storedAllowAll);
     }
 
     public static String getWhitelist() {
         return whitelistText;
     }
 
-    public static void setWhitelist(String text) {
+    public static void setWhitelist(String text, Long actorUserNo) {
         applyWhitelist(text != null ? text : "");
-        new ProxyConfService(sqlSessionFactory).set(KEY_WHITELIST, null, whitelistText);
+        new ProxyConfService(sqlSessionFactory).set(KEY_WHITELIST, null, whitelistText, actorUserNo);
     }
 
     private static void applyWhitelist(String text) {
@@ -184,11 +240,22 @@ public class ForwardProxyServer {
                 .toList();
     }
 
-    /** True when the whitelist is empty (unrestricted) or host matches one of its patterns. */
-    static boolean isWhitelisted(String host) {
-        var patterns = whitelistPatterns;
-        if (patterns.isEmpty()) return true;
+    public static boolean isAllowAllDestinations() {
+        return allowAllDestinations;
+    }
+
+    public static void setAllowAllDestinations(boolean enabled, Long actorUserNo) {
+        allowAllDestinations = enabled;
+        new ProxyConfService(sqlSessionFactory).set(KEY_ALLOW_ALL, null, String.valueOf(enabled), actorUserNo);
+    }
+
+    /** True when host matches one of the whitelist's patterns, or the allow-all override is on
+     *  (see setAllowAllDestinations); an empty whitelist with the override off allows nothing. */
+    public static boolean isWhitelisted(String host) {
         if (host == null || host.isBlank()) return false;
+        if (allowAllDestinations) return true;
+        var patterns = whitelistPatterns;
+        if (patterns.isEmpty()) return false;
         var h = host.toLowerCase();
         for (var base : patterns) {
             if (h.equals(base) || h.endsWith("." + base)) return true;
@@ -310,6 +377,7 @@ public class ForwardProxyServer {
                                     logger.info("Forward proxy match: user={} method={} host={} whitelisted={} loopbackTarget={} clientIsLoopback={}",
                                             authenticatedUser(ctx), request.method(), host, whitelisted, loopback, clientIsLoopback);
                                     if (loopback || !whitelisted) {
+                                        if (!loopback) recordBlockedByWhitelist(host);
                                         // CONNECT (HTTPS): if the blocked-page server is up, let the tunnel
                                         // succeed here and redirect it there in overrideFor() below, so the
                                         // client completes a real TLS handshake and renders the 403 page
@@ -350,7 +418,7 @@ public class ForwardProxyServer {
     // pure/testable logic (isWhitelisted, isLoopbackTarget, mergeHosts, hostOnly, overrideFor).
     static boolean authenticate(String userId, String password) {
         if (userId == null || password == null) return false;
-        var key = userId.toLowerCase();
+        var key = attemptKey(userId);
         if (isAuthLocked(key)) {
             logger.debug("Forward proxy auth blocked (locked out) for userId={}", userId);
             return false;
@@ -360,7 +428,9 @@ public class ForwardProxyServer {
             // Always run exactly one bcrypt comparison, real user or not - see DUMMY_PASSWORD_HASH.
             var hashToCheck = user != null ? user.getPassword() : DUMMY_PASSWORD_HASH;
             var isCorrectPassword = PasswordUtil.matches(password, hashToCheck);
-            if (user == null || !isCorrectPassword) {
+            // An account that may not hold a session (awaiting approval, suspended) must not get
+            // through here either: this proxy is a second door to the same accounts as the login page.
+            if (user == null || !isCorrectPassword || !Role.canLogin(user.getRole())) {
                 recordAuthFailure(key);
                 logger.debug("Forward proxy auth failed for userId={}", userId);
                 return false;
@@ -375,30 +445,30 @@ public class ForwardProxyServer {
     }
 
     private static boolean isAuthLocked(String key) {
-        var a = authAttemptsByUser.get(key);
-        if (a == null) return false;
-        synchronized (a) {
-            return a.lockedUntil != null && java.time.Instant.now().isBefore(a.lockedUntil);
-        }
+        var a = authAttemptsByUser.getIfPresent(key);
+        return a != null && a.lockedUntil() != null && java.time.Instant.now().isBefore(a.lockedUntil());
     }
 
     private static void recordAuthFailure(String key) {
-        var a = authAttemptsByUser.computeIfAbsent(key, k -> new AuthAttempts());
-        synchronized (a) {
-            var now = java.time.Instant.now();
-            if (a.windowStart == null || java.time.Duration.between(a.windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
-                a.windowStart = now;
-                a.count = 0;
+        var now = java.time.Instant.now();
+        authAttemptsByUser.asMap().compute(key, (k, old) -> {
+            var windowStart = old == null ? null : old.windowStart();
+            var count = old == null ? 0 : old.count();
+            var lockedUntil = old == null ? null : old.lockedUntil();
+            if (windowStart == null || java.time.Duration.between(windowStart, now).compareTo(ATTEMPT_WINDOW) > 0) {
+                windowStart = now;
+                count = 0;
             }
-            a.count++;
-            if (a.count >= MAX_FAILED_ATTEMPTS) {
-                a.lockedUntil = now.plus(LOCKOUT_DURATION);
+            count++;
+            if (count >= MAX_FAILED_ATTEMPTS) {
+                lockedUntil = now.plus(LOCKOUT_DURATION);
             }
-        }
+            return new AuthAttempts(count, windowStart, lockedUntil);
+        });
     }
 
     private static void recordAuthSuccess(String key) {
-        authAttemptsByUser.remove(key);
+        authAttemptsByUser.invalidate(key);
     }
 
     /** Recomputes and caches the given user's merged host->ip map from their selected oeHosts profiles. */
@@ -515,10 +585,10 @@ public class ForwardProxyServer {
 
     /** Builds the 403 response for a blocked destination, styled like oeProxy's other error pages. */
     private static HttpResponse blockedResponse(HttpRequest request, String host, String reason) {
-        var locale = HtmlUtil.resolveLocale(
+        var locale = PebbleErrorPageRenderer.resolveLocale(
                 request.headers().get(HttpHeaderNames.COOKIE),
                 request.headers().get(HttpHeaderNames.ACCEPT_LANGUAGE));
-        var html = HtmlUtil.renderFwdProxyForbidden(host, reason, locale);
+        var html = PebbleErrorPageRenderer.renderFwdProxyForbidden(host, reason, locale);
         var body = Unpooled.copiedBuffer(html, StandardCharsets.UTF_8);
         var response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, body);
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=utf-8");
@@ -552,6 +622,7 @@ public class ForwardProxyServer {
             logger.info("Forward proxy override: user={} host={} clientIsLoopback={} blocked=true ({})",
                     userId, target, clientIsLoopback,
                     targetIsLoopback ? "target is loopback/any-local, second check" : "not whitelisted, second check");
+            if (!targetIsLoopback) recordBlockedByWhitelist(target);
             rememberBlockReason(target, targetIsLoopback ? BLOCK_REASON_LOOPBACK : BLOCK_REASON_WHITELIST);
             return new InetSocketAddress(InetAddress.getLoopbackAddress(), BlockedPageServer.getPort());
         }

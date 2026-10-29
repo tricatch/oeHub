@@ -1,16 +1,15 @@
 package tricatch.oe.hosts.model;
 
-import java.time.LocalDateTime;
+import tricatch.oe.hub.model.Auditable;
 
-public class HostsUa {
+public class HostsUa extends Auditable {
     private String uaId;
     private String uaName;
     private String uaValue;
     private int sortOrder;
     private Long userNo;
+    private Long wsNo;
     private boolean mine;
-    private LocalDateTime createAt;
-    private LocalDateTime updatedAt;
 
     public String getUaId() { return uaId; }
     public void setUaId(String uaId) { this.uaId = uaId; }
@@ -27,12 +26,9 @@ public class HostsUa {
     public Long getUserNo() { return userNo; }
     public void setUserNo(Long userNo) { this.userNo = userNo; }
 
+    public Long getWsNo() { return wsNo; }
+    public void setWsNo(Long wsNo) { this.wsNo = wsNo; }
+
     public boolean isMine() { return mine; }
     public void setMine(boolean mine) { this.mine = mine; }
-
-    public LocalDateTime getCreateAt() { return createAt; }
-    public void setCreateAt(LocalDateTime createAt) { this.createAt = createAt; }
-
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

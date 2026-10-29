@@ -1,109 +1,136 @@
 # oeHub
 
-A hub of tools for building development and test environments.
+개발·테스트 환경을 위한 도구 모음(허브)입니다.
 
-oeHub bundles two browser-facing tools behind a single login: **oeHosts**, which switches Chrome's host-resolver rules per profile and launches Chrome with them via the `oelink://` protocol handler, and **oeProxy**, which terminates HTTPS for local virtual hosts and reverse-proxies to local or remote dev servers, tagging requests with the oeOID header for per-user tracing. This lets a team point real-looking domains at whichever backend — local, staging, or production — they're working against, without touching the OS-level hosts file or juggling certificates by hand.
+하나의 로그인으로 두 도구를 씁니다. **oeHosts**는 프로필별 호스트 규칙으로 Chrome을 실행하고, **oeProxy**는 가상 호스트의 HTTPS를 받아 로컬 또는 원격 개발 서버로 프록시합니다. OS의 hosts 파일이나 인증서를 직접 관리하지 않고도 실제 도메인을 원하는 백엔드로 연결할 수 있습니다.
 
-## Screenshots
+**서비스:** [https://oehub.dpdns.org](https://oehub.dpdns.org) — `workspace` 모드로 운영 중이며, oeHosts를 사용할 수 있습니다.
+
+## 스크린샷
 
 <a href="https://velog.velcdn.com/images/tricatch/post/7f21857d-9ac5-439b-b371-35c92faac773/image.png"><img src="https://velog.velcdn.com/images/tricatch/post/7f21857d-9ac5-439b-b371-35c92faac773/image.png" width="200" alt="oeHub screenshot 1"></a>
 <a href="https://velog.velcdn.com/images/tricatch/post/7d645fc2-2625-48a9-9188-081cf4ab5ecf/image.png"><img src="https://velog.velcdn.com/images/tricatch/post/7d645fc2-2625-48a9-9188-081cf4ab5ecf/image.png" width="200" alt="oeHub screenshot 2"></a>
 <a href="https://velog.velcdn.com/images/tricatch/post/9f2edf4a-1e8b-471f-a0e2-16a41faf8cbc/image.png"><img src="https://velog.velcdn.com/images/tricatch/post/9f2edf4a-1e8b-471f-a0e2-16a41faf8cbc/image.png" width="200" alt="oeHub screenshot 3"></a>
 <a href="https://velog.velcdn.com/images/tricatch/post/ec606461-131d-4687-ad0f-41b442a08af0/image.png"><img src="https://velog.velcdn.com/images/tricatch/post/ec606461-131d-4687-ad0f-41b442a08af0/image.png" width="200" alt="oeHub screenshot 4"></a>
 
-## How It Works
+## 동작 방식
 
 <img src="https://velog.velcdn.com/images/tricatch/post/daaf1f0b-006c-4369-9e96-b7cff1551ead/image.png" alt="oeHub request flow: browser configures a domain mapping in oeHosts, launches Chrome via oelink with --host-resolver-rules, which routes the request to oeProxy for TLS termination and destination routing, forwarding to a local or remote dev server">
 
-## Tools
+## 도구
 
 ### oeHosts (+oelink)
 
-- Launch Chrome directly with a profile's rules and custom flags (`--user-agent`, `--user-data-dir`, incognito, extra args) through the `oelink://` protocol handler
-    - **oelink** is a custom protocol handler installed on the client machine; oeHosts calls out to it to launch Chrome with a profile's `--host-resolver-rules` and other flags
-    - Supports both Windows and macOS, with install/uninstall scripts under `oelink/win` and `oelink/mac`
-    - The installer files under `oelink/` (including the prebuilt Windows `oelink.exe`) are committed as-is rather than generated at build time, so the protocol handler works right after cloning without a full Gradle build
-- Switch between multiple hosts profiles in Chrome
-- Select multiple profiles at once and preview the merged host-resolver rules before launching
-- Share a hosts profile with your team via a share link
-- Quick-fill "Open URL" and "User-Agent" fields from admin-managed or personal presets
+- 프로필의 `--host-resolver-rules`와 플래그(User-Agent, `--user-data-dir`, 시크릿 모드 등)로 Chrome 실행
+- 여러 프로필을 동시에 선택하고 병합 결과 미리보기
+- 폴더로 프로필 정리, 공유 범위 지정, 공유 링크·공개 링크로 팀과 공유
+- 워크스페이스/개인 프리셋으로 URL·User-Agent 빠르게 입력
+- **oelink**: Chrome을 실행하는 `oelink://` 프로토콜 핸들러(Windows/macOS). 별도 저장소 [oeLink](https://github.com/tricatch/oeLink)에 있으며, oeHosts의 설치 안내에서 OS별 명령 한 줄을 복사해 설치합니다.
 
 ### oeProxy (+oeOID)
 
-- Auto-generates TLS certificates from a self-signed root CA (generate or import your own)
-- HTTPS reverse proxy for local virtual hosts, letting a local dev server and a remote/production server share a single domain
-- Real-time HTTP request monitor
-- Tags proxied requests with an `X-OeHub-Oid` header so origin services can identify the acting oeHub user
-    - **oeOID** is a Chrome extension that injects the `X-OeHub-Oid` header into requests passing through oeProxy, instead of relying on IP address (which breaks under DHCP)
+- 루트 인증서(직접 생성 또는 가져오기)로 가상 호스트의 TLS 인증서 자동 발급
+- 하나의 도메인에서 로컬 개발 서버와 원격 서버를 섞어 쓰는 HTTPS 리버스 프록시
+- 실시간 HTTP 요청 모니터
+- 요청에 `X-OeHub-Oid` 헤더를 붙여 백엔드가 요청한 사용자를 식별 — **oeOID**는 이 헤더를 넣어 주는 Chrome 확장 프로그램입니다
 
-### oeProxy Forward Proxy
+### 포워드 프록시
 
-- Always running (not admin-toggleable) on a fixed port, `36980`
-- Requires authenticating with your oeHub account credentials before it will relay any request
-- Once authenticated, requests for hosts in that user's currently-selected oeHosts profiles are routed to the recorded IP from an in-memory per-user map, instead of a per-request DB lookup
-- oeHosts can point Chrome's `--proxy-server` flag at this forward proxy as an alternative to `--host-resolver-rules` (enabling either one disables the other)
-- Admins can restrict relaying to a whitelist of domains (with `*.` wildcard subdomain matching); blocked destinations get a branded 403 error page, including for HTTPS via a dedicated loopback TLS responder on port `36981`
-- Since it's a standard HTTP(S) proxy, mobile devices can redirect their hosts by pointing the device's Wi-Fi proxy settings (iOS or Android) at it — no `oelink`/host-resolver-rules equivalent needed on mobile
-    - iOS's Wi-Fi proxy setting supports authentication, so it works for both browser and app traffic
-    - Android's Wi-Fi proxy setting does not support authentication, so only the browser (which can prompt for and submit credentials itself) can authenticate and use it; other apps' traffic is not proxied
+- 포트 `36980`(`-Doe.fwdproxy.port`)에서 항상 실행되며, oeHub 계정으로 인증해야 사용 가능
+- 선택한 oeHosts 프로필대로 요청을 라우팅 — Chrome의 `--proxy-server`로 `--host-resolver-rules` 대신 쓸 수 있음
+- 관리자가 등록한 허용 도메인으로만 중계(목록이 비면 전부 차단)
+- 모바일 기기의 Wi-Fi 프록시로 지정해 hosts 리다이렉션 가능(iOS는 앱까지, Android는 브라우저만)
 
 ## Best Practices
 
-- When using oeHosts, open the oeHub web UI itself in Edge (or another non-Chrome browser), and let `oelink` launch Chrome as the browser you actually test in. `oelink` launches Chrome with a profile-specific `--user-data-dir`; if the oeHub UI is also running in Chrome, the two can collide over the same user-data-dir and cause profile lock/launch conflicts. Keeping them in separate browsers also keeps your normal work environment (email, docs, regular browsing) cleanly separated from the test environment, where host-resolver rules are redirecting real-looking domains to local or staging servers.
+oeHub 화면은 Edge 등 Chrome이 아닌 브라우저에서 열고, 테스트용 Chrome은 oelink로 실행하세요. 같은 `--user-data-dir`을 두고 충돌하지 않고, 테스트 환경과 평소 브라우징도 분리됩니다.
 
-## Accounts
+## 계정
 
-- Multi-user, with `admin` and `user` roles
-- The first-run `/setup` wizard creates the initial admin account
-- Admins manage users (grant/revoke admin, delete accounts, reset a user's password to a randomly generated one) and the global URL/UA presets from the settings pages
-- Each user has a personal settings page for their own presets, oeOID domain list, account info, and self-service password change
-- Each user can back up and restore their own hosts profiles, hosts settings, and proxy vhosts as JSON
+- 최초 실행 시 `/setup` 마법사가 관리자 계정과 루트 인증서를 구성
+- 관리자: 사용자 관리, 워크스페이스 프리셋, 서버 설정, 감사 로그
+- 사용자: 개인 프리셋, oeOID 도메인, 비밀번호 변경, 계정 삭제, 데이터 JSON 백업/복원
 
-## Getting Started
+## 아키텍처 & 설계
 
-Requires JDK 21.
+설계 문서는 [docs/](docs/README.md)에 있습니다(배포 모드, 종단간 암호화, 보안 위협 모델, DB 스키마, API 레퍼런스 등).
+
+## 시작하기
+
+JDK 21이 필요합니다.
 
 ```bash
-# development mode (loads templates/static files directly from src, no jar build)
+# 개발 모드 (src의 템플릿/정적 파일을 직접 로드)
 ./gradlew run -Djava.net.preferIPv4Stack=true
 
-# production build
+# 프로덕션 빌드
 ./gradlew shadowJar
 java -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 ```
 
-The app listens on port `36912` by default (override with `-Dport=`), and starts an H2 web console on `port + 1`.
+최초 실행 시 설치 마법사(`/setup`)로 이동합니다.
 
-On first launch you're redirected to a setup wizard (`/setup`) to create the admin account and configure the root CA used by oeProxy. Application data (H2 database) is stored under `~/oeHub` by default (`~` is the OS user's home directory).
+### 실행 옵션
+
+oeHub 옵션은 모두 `-Doe.<이름>=<값>` 형식의 JVM 시스템 프로퍼티입니다.
+
+| 옵션 | 기본값 | 설명 |
+|---|---|---|
+| `-Doe.port` | `36912` | 애플리케이션 포트(H2 웹 콘솔은 `port + 1`) |
+| `-Doe.fwdproxy.port` | `36980` | 포워드 프록시 포트 |
+| `-Doe.home` | `~/oeHub` | 데이터 디렉터리(DB, CA 인증서 등) |
+| `-Doe.data.dir` | `<oe.home>/data` | H2 DB·백업 디렉터리 |
+| `-Doe.log.dir` | `<oe.home>/log` | 로그 디렉터리 |
+| `-Doe.log.console` | `false` | 로그를 콘솔에도 출력 |
+| `-Doe.mode` | `self-hosted` | 배포 모드(`self-hosted` / `workspace`) |
+| `-Doe.dev` | `false` | 개발 모드(`./gradlew run`이 자동 지정, jar 실행에는 사용 금지) |
+| `-Doe.secure.cookie` | `false` | 쿠키에 항상 `Secure` + HSTS. 앞단 프록시가 TLS를 처리할 때 사용 |
+| `-Doe.client.ip.header` | (없음) | 같은 머신의 프록시/터널 뒤에서 실제 클라이언트 IP 헤더(예: `CF-Connecting-IP`). loopback 요청에서만 신뢰 |
+| `-Doe.migrate` | (없음) | 앱을 시작하지 않고 스키마 마이그레이션 `<이름>`만 적용 후 종료 |
+| `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선(항상 켜기 권장) |
+| `-Dlogback.configurationFile` | 번들 `logback.xml` | 로깅 설정 재정의 |
 
 > [!IMPORTANT]
-> On Linux, oeProxy binding to port `443` requires running the JVM as `root`, which makes `~` resolve to `/root` instead of your normal user's home. Pass `-Dhome=/path/to/oeHub` to pin application data to the intended directory instead, e.g.:
+> Linux에서 `443` 포트를 쓰려고 `root`로 실행하면 `~`가 `/root`가 됩니다. `-Doe.home`으로 경로를 고정하세요.
 > ```bash
-> sudo java -Dhome=/home/youruser/oeHub -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
+> sudo java -Doe.home=/home/youruser/oeHub -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 > ```
-> `-Dhome` is the oeHub directory itself, not its parent (no `/oeHub` is appended to it).
 
-### Logging
+### 배포 모드
 
-Logging is configured via [Logback](https://logback.qos.ch/), with a default `logback.xml` bundled inside the jar. To override it without rebuilding, point Logback at an external file on the classpath at startup:
+- **`self-hosted`** (기본값) — 단일 인스턴스, 워크스페이스 하나. oeHosts와 oeProxy 모두 사용.
+- **`workspace`** — 여러 워크스페이스를 호스팅하는 멀티테넌트 서비스. oeHosts만 사용하며 콘텐츠는 종단간 암호화됩니다.
+
+자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
+
+### 스키마 마이그레이션
+
+새 버전이 기존 테이블을 바꾸면 시작 시 `-Doe.migrate=<name>` 안내와 함께 중단됩니다. oeHub를 중지하고, 평소 옵션 그대로 마이그레이션을 한 번 실행한 뒤 다시 시작하세요.
 
 ```bash
-java -Dlogback.configurationFile=/path/to/logback.xml -jar oeHub-<version>.jar
+java -Doe.home=/path/to/oeHub -Doe.migrate=<이름> -jar oeHub-<version>.jar
 ```
 
-Logback checks this system property before falling back to the config packaged in the jar.
+실행 전 `<data>/backups/`에 백업 zip을 자동으로 만들며, 여러 번 실행해도 안전합니다.
 
-## Tech Stack
+### 로깅
 
-- [Javalin](https://javalin.io/) + [Pebble](https://pebbletemplates.io/) templates
-- [MyBatis](https://mybatis.org/mybatis-3/) + [H2](https://www.h2database.com/) (embedded, file-based)
-- [BouncyCastle](https://www.bouncycastle.org/) for certificate generation/parsing
-- JWT-based session auth
+로그는 `<oe.home>/log/oehub.log`에 기록되고 날짜별로 넘어가며 30일 뒤 삭제됩니다. 콘솔에는 개발 모드나 `-Doe.log.console=true`일 때만 출력됩니다.
+
+### 스캔 차단
+
+로그인하지 않은 같은 IP에서 1분 안에 404가 10번 나면 10분간 `403`으로 차단합니다. 로그인 사용자와 loopback 주소는 제외되며, 재시작하면 풀립니다.
+
+## 기술 스택
+
+- [Javalin](https://javalin.io/) + [Pebble](https://pebbletemplates.io/)
+- [MyBatis](https://mybatis.org/mybatis-3/) + [H2](https://www.h2database.com/)
+- [BouncyCastle](https://www.bouncycastle.org/) (인증서), JWT 세션 인증
 
 ## i18n
 
-UI is available in English and Korean, switched via a `lang` cookie.
+영어/한국어 UI(`lang` 쿠키로 전환).
 
-## License
+## 라이선스
 
 [MIT](LICENSE) &copy; 2026 tricatch

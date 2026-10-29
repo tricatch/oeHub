@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ msg['auth.signin'] }}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-  <link rel="stylesheet" href="/css/brand.css">
-  <link rel="stylesheet" href="/css/app.css">
-  <link rel="stylesheet" href="/css/auth.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ asset('/css/brand.css') }}">
+  <link rel="stylesheet" href="{{ asset('/css/app.css') }}">
+  <link rel="stylesheet" href="{{ asset('/css/auth.css') }}">
 </head>
 <body class="bg-light">
 <div class="d-flex min-vh-100 auth-wrap">
@@ -29,8 +29,12 @@
             {% if error %}
             <div class="alert alert-danger py-2" role="alert">{{ msg[error] }}</div>
             {% endif %}
+            {% if info %}
+            <div class="alert alert-info py-2" role="alert">{{ msg[info] }}</div>
+            {% endif %}
+            <div class="alert alert-danger py-2 d-none" id="loginErrorBox" role="alert"></div>
 
-            <form method="post" action="/login" autocomplete="off">
+            <form method="post" action="/login" autocomplete="off" id="loginForm">
               <input type="hidden" name="_csrf" value="{{ csrfToken }}">
               <input type="hidden" name="redirect" value="{{ redirect }}">
 
@@ -46,13 +50,13 @@
 
               <div class="mb-3">
                 <div class="form-check form-switch">
-                  <input type="checkbox" name="rememberMe" class="form-check-input" id="rememberMe" role="switch" checked>
+                  <input type="checkbox" name="rememberMe" class="form-check-input" id="rememberMe" role="switch"{% if not workspaceMode %} checked{% endif %}>
                   <label class="form-check-label" for="rememberMe">{{ msg['auth.remember.me'] }}</label>
                 </div>
               </div>
 
               <div class="d-grid">
-                <button type="submit" class="oe-modal-btn justify-content-center">{{ msg['auth.signin'] }}</button>
+                <button type="submit" class="oe-modal-btn justify-content-center" id="btnLoginSubmit">{{ msg['auth.signin'] }}</button>
               </div>
             </form>
           </div>
@@ -61,11 +65,125 @@
         <div class="text-center text-muted mt-3 small">
           {{ msg['auth.no.account'] }} <a href="/register">{{ msg['auth.signup'] }}</a>
         </div>
+        <div class="text-center text-muted mt-1 small">
+          <a href="/recover">{{ msg['auth.forgot.password'] }}</a>
+        </div>
 
       </div>
     </div>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script nonce="{{ cspNonce }}">window.MSG = {{ msgJson | raw }};</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+<script nonce="{{ cspNonce }}">window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};</script>
+<script src="{{ asset('/js/crypto.js') }}"></script>
+<script src="{{ asset('/js/auth-keys.js') }}"></script>
+<script src="{{ asset('/js/session-keys.js') }}"></script>
+<script nonce="{{ cspNonce }}">
+(function () {
+  var form = document.getElementById('loginForm');
+  var submitBtn = document.getElementById('btnLoginSubmit');
+  var submitBtnDefaultText = submitBtn.textContent;
+  var errorBox = document.getElementById('loginErrorBox');
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.remove('d-none');
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (submitBtn.disabled) return;
+    errorBox.classList.add('d-none');
+
+    var password = form.password.value;
+    var userId = form.userId.value;
+    // Nothing is sent until both fields are filled; the first empty one (on-screen order) is
+    // named. Only "required" is checked here - format rules would tell a stranger how ids look.
+    if (!userId.trim()) {
+      showError(MSG['auth.error.userid.required']);
+      form.userId.focus();
+      return;
+    }
+    if (!password) {
+      showError(MSG['auth.error.password.required']);
+      form.password.focus();
+      return;
+    }
+    submitBtn.disabled = true;
+    var body = new URLSearchParams();
+    body.set('_csrf', form._csrf.value);
+    body.set('redirect', form.redirect.value);
+    body.set('userId', userId);
+    body.set('rememberMe', form.rememberMe.checked ? 'on' : '');
+
+    // Workspace mode never sends the password: the browser derives an authKey (and the KEK that
+    // unwraps the private key) from it, and the server only ever sees the authKey - see auth-keys.js.
+    var keysPromise = window.OE_WORKSPACE_MODE
+      ? OE_AUTH.keysForLogin(userId, password)
+      : Promise.resolve(null);
+
+    keysPromise.then(function (keys) {
+      body.set('password', keys ? keys.authKey : password);
+      return fetch('/login', { method: 'POST', body: body, redirect: 'follow' })
+        .then(function (response) { return { response: response, keys: keys }; });
+    })
+      .then(async function (result) {
+        var response = result.response;
+        if (!response.redirected) {
+          // processLogin re-renders login.pebble (200, no redirect) on any failure - pull the
+          // error message out of that response rather than replacing the whole document.
+          var doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+          var serverError = doc.querySelector('.alert-danger');
+          showError(serverError ? serverError.textContent.trim() : MSG['auth.error.invalid.credentials']);
+          submitBtn.disabled = false;
+          return;
+        }
+
+        var landingUrl = response.url;
+        try {
+          await unwrapAndCacheSessionKeys(result.keys);
+        } catch (err) {
+          // Login itself already succeeded server-side (the cookie is set) - a key-unwrap
+          // failure here shouldn't strand the user on the login page, just leave content
+          // encrypted for this session (pages that need it will re-prompt as appropriate, not
+          // yet wired - e2eEncryption design doc §9 follow-up).
+          console.error('Key unwrap failed after login:', err);
+        }
+        location.href = landingUrl;
+      })
+      .catch(function (err) {
+        console.error('Login request failed:', err);
+        submitBtn.disabled = false;
+        showError(MSG['auth.error.invalid.credentials']);
+      });
+  });
+
+  async function unwrapAndCacheSessionKeys(keys) {
+    // Self-hosted has no real key wrap (the account's wrapped key is a placeholder), so there is
+    // nothing to unwrap and no derived KEK.
+    if (!keys) return;
+    var res = await fetch('/api/user/crypto-keys');
+    if (!res.ok) return;
+    var data = await res.json();
+    if (!data.wrappedPrivateKey) return; // pre-e2e accounts with no keypair yet
+
+    var record = JSON.parse(data.wrappedPrivateKey);
+    var passwordKek = keys.kek;
+    // Not extractable: this copy stays in the browser for the session and is only ever used to unwrap
+    // other keys (re-wrapping the private key unwraps a fresh, extractable one - see OE_AUTH.currentSecrets).
+    var privateKey = await OE_CRYPTO.unwrapPrivateKey(record, passwordKek, false);
+    // Start from a clean cache: a session that ended without logout (expired cookie) may have left
+    // another account's keys or idle-time choice behind in this browser.
+    await OE_SESSION_KEYS.clearAll();
+    await OE_SESSION_KEYS.savePrivateKey(privateKey);
+
+    if (data.wrappedWsKey) {
+      var wsKey = await OE_CRYPTO.unwrapWorkspaceKeyForUser(data.wrappedWsKey, privateKey);
+      await OE_SESSION_KEYS.saveWorkspaceKey(wsKey);
+    }
+  }
+})();
+</script>
 </body>
 </html>

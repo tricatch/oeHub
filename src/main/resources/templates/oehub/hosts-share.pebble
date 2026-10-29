@@ -3,9 +3,9 @@
 {% block title %}{{ hosts.hostsProfile }} — oeHosts{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/css/app.css">
-<link rel="stylesheet" href="/css/hosts.css">
-<link rel="stylesheet" href="/css/share.css">
+<link rel="stylesheet" href="{{ asset('/css/app.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/hosts.css') }}">
+<link rel="stylesheet" href="{{ asset('/css/share.css') }}">
 <style>
 .share-page { height: 95vh; display: flex; flex-direction: column; }
 .share-section:last-child { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -37,7 +37,13 @@
   <div class="share-section">
     <div class="share-section-header-row">
       <div class="share-section-header">{{ msg['hosts.chrome.launcher'] }}</div>
-      <span class="oe-myip-badge">PROXY_SVR: {{ proxyIp }}</span>
+      <div class="d-flex align-items-center gap-2">
+        {# PROXY_SVR is oeProxy's address - meaningless in workspace mode, which has no oeProxy #}
+        {% if not workspaceMode %}<span class="oe-myip-badge">PROXY_SVR: {{ proxyIp }}</span>{% endif %}
+        <button class="oe-nav-action-btn" type="button" data-bs-toggle="modal" data-bs-target="#oelinkInstallModal" title="{{ msg['tooltip.install.guide'] }}">
+          <span class="oe-icon oe-icon-help" style="width:15px;height:15px"></span>
+        </button>
+      </div>
     </div>
 
     <div class="hosts-browser-options">
@@ -70,10 +76,10 @@
       </div>
       <div class="hosts-browser-option hosts-browser-option-url">
         <div class="form-check form-switch mb-0">
-          <input type="checkbox" class="form-check-input" id="toggleUserDataDir" role="switch" checked>
+          <input type="checkbox" class="form-check-input" id="toggleUserDataDir" role="switch">
         </div>
         <span>--user-data-dir</span>
-        <input type="text" class="form-control form-control-sm" id="userDataDir">
+        <input type="text" class="form-control form-control-sm" id="userDataDir" disabled>
       </div>
       <div class="hosts-browser-option hosts-browser-option-extra">
         <div class="form-check form-switch mb-0">
@@ -104,7 +110,7 @@
           <img src="/icon/chrome.svg" width="15" height="15" aria-hidden="true">
           oelink://chrome
         </button>
-        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.url'] }}">
+        <button class="hosts-chrome-cmd-btn" id="btnCopyScheme" type="button" title="{{ msg['tooltip.copy.oelink.cmd'] }}">
           <span class="oe-icon oe-icon-copy" style="width:13px;height:13px"></span>oelink
         </button>
         <button class="hosts-chrome-cmd-btn" id="btnCopyWinChrome" type="button" title="{{ msg['tooltip.copy.win.chrome'] }}">
@@ -140,6 +146,10 @@
   </div>
 
 </div>
+
+{% include "templates/oehub/_chrome-cmd-modal.pebble" %}
+{% include "templates/oehub/_oelink-cmd-modal.pebble" %}
+{% include "templates/oehub/_oelink-install-modal.pebble" %}
 
 <!-- User-data-dir warning modal -->
 <div class="modal fade" id="uddWarnModal" tabindex="-1">
@@ -178,9 +188,50 @@
   </div>
 </div>
 
-<script>
-(function() {
-  const content = {{ contentJson | raw }};
+<script src="{{ asset('/js/crypto.js') }}"></script>
+<script src="{{ asset('/js/session-keys.js') }}"></script>
+<script src="{{ asset('/js/content-crypto.js') }}"></script>
+<script src="{{ asset('/js/chrome-launch-args.js') }}"></script>
+<script src="{{ asset('/js/chrome-cmd-modal.js') }}"></script>
+<script src="{{ asset('/js/oelink-cmd-modal.js') }}"></script>
+<script src="{{ asset('/js/oelink-install-modal.js') }}"></script>
+<script nonce="{{ cspNonce }}">
+// A share/link visitor may never have installed oelink - same guide and "don't show again" key as the editor.
+wireOelinkInstallModal();
+initGuideModal('oelinkInstallModal', 'oelinkGuideNoShow', 'hostsGuideHidden');
+</script>
+<script nonce="{{ cspNonce }}">
+window.OE_WORKSPACE_MODE = {{ workspaceMode ? 'true' : 'false' }};
+(async function() {
+  let content;
+  try {
+    {% if linkMode %}
+    // Fully-public link (e2eEncryption design doc §6's last item): the raw (never-wrapped) DEK
+    // travels only in this URL's fragment - the server never saw it and never will, since
+    // fragments are never sent in any HTTP request. Missing/invalid key -> decrypt() throws below,
+    // same error path as every other failure mode here.
+    var rawKeyB64url = new URLSearchParams(location.hash.replace(/^#/, '')).get('key') || '';
+    // The key was base64url-encoded for the URL (base64's own '+'/'/' aren't URL-safe) - undo
+    // that back to standard base64 (incl. padding) before base64ToBuf, which expects atob()'s
+    // standard alphabet only (same conversion parseRecoveryDisplayCode does for the same reason).
+    var rawKeyB64 = rawKeyB64url.replace(/-/g, '+').replace(/_/g, '/');
+    rawKeyB64 += '='.repeat((4 - (rawKeyB64.length % 4)) % 4);
+    var linkKey = await crypto.subtle.importKey(
+      'raw', OE_CRYPTO.base64ToBuf(rawKeyB64), { name: 'AES-GCM' }, false, ['decrypt']);
+    content = await OE_CRYPTO.decryptContent(JSON.parse({{ contentJson | raw }}), linkKey);
+    {% else %}
+    // Encrypted rows (oe.mode=workspace, e2eEncryption design doc §1/§6/§9): decrypt() resolves the
+    // ciphertext with the viewer's own cached workspace key (apiShare already required them to be
+    // logged in to this same workspace) and passes plaintext straight through when the row isn't
+    // encrypted (self-hosted), so the rest of this script is unchanged either way.
+    content = await OE_CONTENT_CRYPTO.decrypt({{ wrappedContentKeyJson | raw }}, {{ contentJson | raw }}, '{{ hosts.shareScope }}');
+    {% endif %}
+  } catch (err) {
+    console.error('Failed to decrypt shared content:', err);
+    document.getElementById('rawContent').textContent = MSG['share.error.decrypt.failed'];
+    document.getElementById('schemePreview').textContent = MSG['share.error.decrypt.failed'];
+    return;
+  }
   const PROXY_SVR = '{{ proxyIp }}';
   const displayContent = content.split('${PROXY_SVR}').join(PROXY_SVR);
   let baseUdd = '${USERHOME}/oe-chrome';
@@ -200,62 +251,48 @@
   }
 
   function buildSchemeArgs() {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+    const oelinkEnabled = document.getElementById('toggleOelink').checked;
+    const urlEnabled    = document.getElementById('toggleOpenUrl').checked;
     const url         = document.getElementById('openUrl').value.trim();
+    const uddEnabled  = document.getElementById('toggleUserDataDir').checked;
     const userDataDir = document.getElementById('userDataDir').value.trim();
-    const userAgent   = document.getElementById('userAgent').value.trim();
-    const parts = [];
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    const rulesStr = buildResolverRulesStr();
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)     parts.unshift(`--oelink=${oelinkValue}`);
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr: buildResolverRulesStr(),
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: document.getElementById('userAgent').value.trim(),
+    });
+    const oelinkValue = chromeOelinkValue(uddEnabled, userDataDir);
+    if (oelinkEnabled) parts.unshift(`--oelink=${oelinkValue}`);
     if (urlEnabled && url) {
-      const wrapped = wrapDelayedUrl(url);
+      const wrapped = chromeOpenUrlArg(url);
       parts.push(isWin ? wrapped : macArgQuote(wrapped));
     }
     return parts.join(' ');
   }
 
   function buildArgsLines() {
-    const oelinkEnabled    = document.getElementById('toggleOelink').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
-    const url         = document.getElementById('openUrl').value.trim();
-    const userDataDir = document.getElementById('userDataDir').value.trim();
-    const userAgent   = document.getElementById('userAgent').value.trim();
-    const lines = [];
-    if (devTools)                  lines.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => lines.push(l));
-    const rulesStrPreview = buildResolverRulesStr();
-    if (hrrEnabled && rulesStrPreview) lines.push('--host-resolver-rules "MAP ..."');
-    if (incognito)                 lines.push('--incognito');
-    if (uddEnabled && userDataDir) lines.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    lines.push(`--user-agent="${userAgent}"`);
-    lines.sort();
-    const oelinkValue = (uddEnabled && userDataDir) ? crc32(userDataDir) : 0;
-    if (oelinkEnabled)             lines.unshift(`--oelink=${oelinkValue}`);
-    if (urlEnabled && url)         lines.push('  ' + url);
-    return lines;
+    return buildChromeArgLines({
+      oelinkEnabled: document.getElementById('toggleOelink').checked,
+      devTools: document.getElementById('toggleDevTools').checked,
+      incognito: document.getElementById('toggleIncognito').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      hasRules: !!buildResolverRulesStr(),
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      urlEnabled: document.getElementById('toggleOpenUrl').checked,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      url: document.getElementById('openUrl').value.trim(),
+      userDataDir: document.getElementById('userDataDir').value.trim(),
+      userAgent: document.getElementById('userAgent').value.trim(),
+    });
   }
 
   function updatePreview() {
@@ -305,32 +342,11 @@
     updatePreview();
   });
   document.getElementById('userAgent').addEventListener('input', updatePreview);
-  let _pendingUdd = false;
   function applyUserDataDir(enabled) {
     document.getElementById('userDataDir').disabled = !enabled;
     updatePreview();
   }
-  document.getElementById('toggleUserDataDir').addEventListener('change', e => {
-    if (e.target.checked) {
-      _pendingUdd = true;
-      new bootstrap.Modal(document.getElementById('uddWarnModal')).show();
-      return;
-    }
-    applyUserDataDir(false);
-  });
-  document.getElementById('btnUddConfirm').addEventListener('click', () => {
-    bootstrap.Modal.getInstance(document.getElementById('uddWarnModal')).hide();
-    if (_pendingUdd) {
-      _pendingUdd = false;
-      applyUserDataDir(true);
-    }
-  });
-  document.getElementById('uddWarnModal').addEventListener('hidden.bs.modal', () => {
-    if (_pendingUdd) {
-      document.getElementById('toggleUserDataDir').checked = false;
-      _pendingUdd = false;
-    }
-  });
+  wireConfirmToggle('toggleUserDataDir', 'uddWarnModal', 'btnUddConfirm', applyUserDataDir);
   document.getElementById('userDataDir').addEventListener('input', updatePreview);
   document.getElementById('toggleOpenUrl').addEventListener('change', e => {
     document.getElementById('openUrl').disabled = !e.target.checked;
@@ -375,38 +391,25 @@
 
   updatePreview();
 
-  function buildDirectChromeCmd(os) {
-    const incognito        = document.getElementById('toggleIncognito').checked;
-    const devTools         = document.getElementById('toggleDevTools').checked;
-    const extraArgsEnabled = document.getElementById('toggleExtraArgs').checked;
-    const extraArgsVal     = document.getElementById('extraArgs').value;
-    const hrrEnabled       = document.getElementById('toggleHostResolverRules').checked;
-    const uddEnabled       = document.getElementById('toggleUserDataDir').checked;
-    const urlEnabled       = document.getElementById('toggleOpenUrl').checked;
-    const uaEnabled        = document.getElementById('toggleUserAgent').checked;
+  function showDirectChromeCmd(os) {
+    const urlEnabled = document.getElementById('toggleOpenUrl').checked;
     const url         = document.getElementById('openUrl').value.trim();
     const userDataDir = resolveUDD(baseUdd, os);
-    const userAgent   = document.getElementById('userAgent').value.trim();
-    const rulesStr    = buildResolverRulesStr();
-    const parts = [];
-    if (devTools)                  parts.push('--auto-open-devtools-for-tabs');
-    if (extraArgsEnabled)          extraArgsVal.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//')).forEach(l => parts.push(l));
-    if (hrrEnabled && rulesStr)    parts.push(`--host-resolver-rules="${rulesStr}"`);
-    if (incognito)                 parts.push('--incognito');
-    if (uddEnabled && userDataDir) parts.push(`--user-data-dir="${userDataDir}"`);
-    if (uaEnabled && userAgent)    parts.push(`--user-agent="${userAgent}"`);
-    parts.sort();
-    if (urlEnabled && url)         parts.push(wrapDelayedUrl(url));
-    if (os === 'win') {
-      const argList = parts.map(winArgQuote).join(', ');
-      return parts.length > 0
-        ? `Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" -ArgumentList ${argList}`
-        : 'Start-Process "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"';
-    } else {
-      return parts.length > 0
-        ? 'open -na "Google Chrome" --args ' + parts.map(macArgQuote).join(' ')
-        : 'open -na "Google Chrome"';
-    }
+    const parts = buildChromeArgParts({
+      devTools: document.getElementById('toggleDevTools').checked,
+      extraArgsEnabled: document.getElementById('toggleExtraArgs').checked,
+      extraArgsVal: document.getElementById('extraArgs').value,
+      hrrEnabled: document.getElementById('toggleHostResolverRules').checked,
+      rulesStr: buildResolverRulesStr(),
+      incognito: document.getElementById('toggleIncognito').checked,
+      uddEnabled: document.getElementById('toggleUserDataDir').checked,
+      userDataDir,
+      uaEnabled: document.getElementById('toggleUserAgent').checked,
+      userAgent: document.getElementById('userAgent').value.trim(),
+    });
+    if (urlEnabled && url) parts.push(chromeOpenUrlArg(url));
+    const uddOn = document.getElementById('toggleUserDataDir').checked && userDataDir;
+    openChromeCmdModal(os, buildChromeCommandLine(os, parts), uddOn ? userDataDir : '');
   }
 
   document.getElementById('btnChrome').addEventListener('click', () => {
@@ -414,16 +417,11 @@
   });
 
   document.getElementById('btnCopyScheme').addEventListener('click', () => {
-    copyToClipboard('oelink://chrome?' + toBase64Url(buildSchemeArgs())).then(() => flashCopyFeedback(document.getElementById('btnCopyScheme'), 'oelink'));
+    openOelinkCmdModal('oelink://chrome?' + toBase64Url(buildSchemeArgs()));
   });
 
-  document.getElementById('btnCopyWinChrome').addEventListener('click', () => {
-    copyToClipboard(buildDirectChromeCmd('win')).then(() => flashCopyFeedback(document.getElementById('btnCopyWinChrome'), 'Win'));
-  });
-
-  document.getElementById('btnCopyMacChrome').addEventListener('click', () => {
-    copyToClipboard(buildDirectChromeCmd('mac')).then(() => flashCopyFeedback(document.getElementById('btnCopyMacChrome'), 'Mac'));
-  });
+  document.getElementById('btnCopyWinChrome').addEventListener('click', () => showDirectChromeCmd('win'));
+  document.getElementById('btnCopyMacChrome').addEventListener('click', () => showDirectChromeCmd('mac'));
 })();
 </script>
 {% endblock %}

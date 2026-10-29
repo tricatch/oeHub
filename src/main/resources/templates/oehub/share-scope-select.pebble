@@ -1,0 +1,26 @@
+{# Share-scope picker: a menu with an icon per entry over a hidden <select>, which stays the page
+   script's source of truth (value, disabled, 'change'). share-scope-menu.js keeps them in step. #}
+<span class="oe-share-scope-wrap d-none" id="shareScopeWrap">
+  <select class="d-none" id="shareScopeSelect" tabindex="-1" aria-hidden="true">
+    {% for s in ['workspace', 'private', 'collabo'] %}
+    <option value="{{ s }}">{{ msg['share.scope.' ~ s] }}</option>
+    {% endfor %}
+  </select>
+  <div class="dropdown">
+    <button type="button" class="oe-share-scope-btn" id="shareScopeBtn" data-bs-toggle="dropdown" aria-expanded="false">
+      <span class="oe-icon oe-share-scope-icon oe-icon-scope-default" id="shareScopeIcon"></span>
+      <span id="shareScopeLabel">{{ msg['share.scope.workspace'] }}</span>
+      <span class="oe-icon oe-icon-chevron-down oe-share-scope-caret"></span>
+    </button>
+    <ul class="dropdown-menu oe-share-scope-menu" id="shareScopeMenu">
+      {% for s in ['workspace', 'private', 'collabo'] %}
+      <li>
+        <button type="button" class="dropdown-item" data-value="{{ s }}">
+          <span class="oe-icon oe-share-scope-icon oe-icon-scope-{{ s == 'workspace' ? 'default' : s }}"></span>
+          <span>{{ msg['share.scope.' ~ s] }}</span>
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</span>

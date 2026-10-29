@@ -14,6 +14,9 @@ class HubConfMapperTest extends MapperTestBase {
         var c = new HubConf();
         c.setConfKey(key);
         c.setConfVal(val);
+        c.setCreatedBy(0L);
+        c.setUpdatedBy(0L);
+        c.setCreateAt(LocalDateTime.now());
         c.setUpdatedAt(LocalDateTime.now());
         return c;
     }

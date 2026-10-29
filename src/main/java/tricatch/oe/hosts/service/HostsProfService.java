@@ -1,10 +1,15 @@
 package tricatch.oe.hosts.service;
 
+import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
 import tricatch.oe.hosts.model.HostsProf;
 import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.mapper.HubUserMapper;
+import tricatch.oe.hub.folder.FolderKind;
+import tricatch.oe.hub.folder.ListFolderMapper;
+import tricatch.oe.hub.folder.ListFolderService;
+import tricatch.oe.hub.util.NameTakenException;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -28,7 +33,15 @@ public class HostsProfService {
     }
 
     private static String exampleContent() {
-        return "ko".equals(LocaleContext.get()) ? EXAMPLE_KO : EXAMPLE_EN;
+        var example = "ko".equals(LocaleContext.get()) ? EXAMPLE_KO : EXAMPLE_EN;
+        // The sample shows the ${PROXY_SVR} placeholder (oeProxy's address), which means nothing in
+        // workspace mode - it has no oeProxy - so that line is left out there.
+        if (tricatch.oe.hub.config.AppHome.isWorkspaceMode()) {
+            return example.lines()
+                .filter(line -> !line.contains("${PROXY_SVR}"))
+                .collect(Collectors.joining("\n", "", "\n"));
+        }
+        return example;
     }
 
     private final SqlSessionFactory sqlSessionFactory;
@@ -50,23 +63,42 @@ public class HostsProfService {
     }
 
     public HostsProf create(Long userNo) {
+        return create(userNo, null, null);
+    }
+
+    // encryptedContent/wrappedContentKey come from the client (workspace mode only - e2eEncryption
+    // design doc §1): it generates a DEK, encrypts the example content with it, and wraps the DEK
+    // with the workspace key (new profiles default to 'workspace' share scope, same as below).
+    // Both null means self-hosted/plaintext, unchanged from before this wiring.
+    public HostsProf create(Long userNo, String encryptedContent, String wrappedContentKey) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = new HostsProf();
             hosts.setHostsId(newId());
             hosts.setUserNo(userNo);
             hosts.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), "new hosts"));
-            hosts.setHostsContent(exampleContent());
+            hosts.setHostsContent(encryptedContent != null ? encryptedContent : exampleContent());
+            hosts.setWrappedContentKey(wrappedContentKey);
             hosts.setSelected(false);
-            hosts.setUpdatedAt(LocalDateTime.now());
-            hosts.setVisibility("public");
+            var now = LocalDateTime.now();
+            hosts.setCreatedBy(userNo);
+            hosts.setUpdatedBy(userNo);
+            hosts.setCreateAt(now);
+            hosts.setUpdatedAt(now);
+            hosts.setShareScope("workspace");
             mapper.insertWithAutoSortOrder(hosts);
             session.commit();
             return mapper.findByHostsId(hosts.getHostsId());
         }
     }
 
-    public HostsProf updateContent(String hostId, Long userNo, String content) {
+    // linkContent (workspace mode only) is the caller's fresh re-encryption of the same content with
+    // the row's existing link DEK (unwrapped client-side via wrappedLinkKey) - the "living link"
+    // sync (e2eEncryption design doc §6). Null means either self-hosted or no live link to refresh;
+    // never mints a new link (syncLinkContent's own wrapped_link_key IS NOT NULL guard enforces
+    // that server-side too). Collabo reference rows (parentId != null) never carry a link of their
+    // own, so linkContent is simply ignored on that branch.
+    public HostsProf updateContent(String hostId, Long userNo, String content, String linkContent) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var record = mapper.findByHostsId(hostId);
@@ -76,7 +108,28 @@ public class HostsProfService {
                 mapper.updateContentByParentId(record.getParentId(), userNo, content, now);
             } else {
                 mapper.updateContent(hostId, userNo, content, now);
+                if (linkContent != null) {
+                    var caller = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+                    if (caller != null) {
+                        mapper.syncLinkContent(hostId, caller.getWsNo(), linkContent);
+                    }
+                }
             }
+            session.commit();
+            return mapper.findByHostsId(hostId);
+        }
+    }
+
+    // Only used right after create()/copyProfile() when the client couldn't produce the
+    // encrypted content in the same request (e.g. create()'s server-generated example content -
+    // the client doesn't know that text in advance to encrypt it before asking for the row to
+    // exist). Always the simple, non-parent case - a brand-new row never has a parent yet.
+    public HostsProf updateContentAndKey(String hostId, Long userNo, String content, String wrappedContentKey) {
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var record = mapper.findByHostsId(hostId);
+            if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0 || record.getParentId() != null) return null;
+            mapper.updateContentAndKey(hostId, userNo, content, wrappedContentKey, LocalDateTime.now());
             session.commit();
             return mapper.findByHostsId(hostId);
         }
@@ -87,6 +140,7 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var record = mapper.findByHostsId(hostId);
             if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0 || record.getParentId() != null) return null;
+            if (nameTaken(mapper.findProfileNamesByUserNo(userNo), record.getHostsProfile(), newName)) throw new NameTakenException();
             mapper.updateProfile(hostId, userNo, newName, LocalDateTime.now());
             session.commit();
             return mapper.findByHostsId(hostId);
@@ -128,35 +182,101 @@ public class HostsProfService {
         }
     }
 
+    /**
+     * Removes everything the user owns because they asked for it ("delete all my profiles"): every
+     * profile goes, 'workspace' scoped ones included - the same as deleting each one by hand, or a
+     * replace-import. Account removal is different, see {@link #deleteAllForAccountRemoval}.
+     */
     public void deleteAll(Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
-            var mapper = session.getMapper(HostsProfMapper.class);
-            var refs = mapper.findReferencesByUserNo(userNo);
-            mapper.deleteByUserNo(userNo);
-            for (var ref : refs) {
-                if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
-                    mapper.deleteByHostsId(ref.getParentId());
-                }
-            }
-            mapper.deleteOrphanedParentsByCreator(userNo);
+            removeAllRows(session, userNo);
             session.commit();
         }
     }
 
+    /**
+     * Removes a user's profiles because their ACCOUNT is being deleted. 'workspace' scoped profiles
+     * are reassigned to the workspace's wss account rather than deleted with the account -
+     * 'private'/'collabo' still go away (cloudGroupService design doc §2.5 orphan handling), so
+     * shared resources the team depends on outlive whoever made them. Must not be used for a
+     * user-requested "delete all": that must really delete.
+     */
+    public void deleteAllForAccountRemoval(Long userNo) {
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+
+            // Must run before removeAllRows, which would otherwise delete these too.
+            var deletedUser = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+            if (deletedUser != null) {
+                var wsSystem = session.getMapper(HubUserMapper.class).findWsSystemByWsNo(deletedUser.getWsNo());
+                if (wsSystem != null) {
+                    var publicProfiles = mapper.findPublicByUserNo(userNo);
+                    var takenNames = existingNames(mapper, wsSystem.getUserNo());
+                    var now = LocalDateTime.now();
+                    for (var p : publicProfiles) {
+                        var name = nextUniqueName(takenNames, p.getHostsProfile());
+                        takenNames.add(name.toLowerCase());
+                        mapper.reassignOwner(p.getHostsId(), wsSystem.getUserNo(), name, now);
+                    }
+                }
+            }
+
+            removeAllRows(session, userNo);
+            session.commit();
+        }
+    }
+
+    // Deletes every row the user owns, then any shared (collabo) parent left with no references,
+    // then the user's folders (rows reassigned elsewhere just before, e.g. to wss on account
+    // removal, drop back to the root through the folder FK's ON DELETE SET NULL).
+    private void removeAllRows(SqlSession session, Long userNo) {
+        var mapper = session.getMapper(HostsProfMapper.class);
+        var refs = mapper.findReferencesByUserNo(userNo);
+        mapper.deleteByUserNo(userNo);
+        for (var ref : refs) {
+            if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
+                mapper.deleteByHostsId(ref.getParentId());
+            }
+        }
+        mapper.deleteOrphanedParentsByCreator(userNo);
+        session.getMapper(ListFolderMapper.class).deleteByUserNo(FolderKind.HOSTS, userNo);
+    }
+
     public HostsProf copyProfile(Long userNo, String sourceHostId) {
+        return copyProfile(userNo, sourceHostId, null, null);
+    }
+
+    // encryptedContent/wrappedContentKey (workspace mode only): the copy always becomes 'workspace'
+    // scoped, so if the source was 'private' the client must unwrap-then-rewrap for the workspace key
+    // itself (a plain copy of source's wrap would be wrong) - simplest for the client to just
+    // generate a fresh DEK for the copy either way, same as a new create().
+    public HostsProf copyProfile(Long userNo, String sourceHostId, String encryptedContent, String wrappedContentKey) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var source = mapper.findByHostsId(sourceHostId);
             if (source == null) return null;
-            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getVisibility())) return null;
+            if (!userNo.equals(source.getUserNo()) && "private".equals(source.getShareScope())) return null;
+            // Refuse rather than silently create an undecryptable row: if the source is
+            // encrypted (has its own key) and the caller didn't provide a fresh wrap, copying
+            // source's ciphertext verbatim with no key would permanently strand that content.
+            // hosts.pebble's search-copy button now always supplies one for an encrypted source
+            // (unwraps+decrypts via GET /api/hosts/{id}/view, then re-encrypts with a fresh DEK
+            // - e2eEncryption design doc §9), so this guard is now purely defense in depth.
+            // Plaintext sources (self-hosted) are unaffected and still copy exactly as before.
+            if (source.getWrappedContentKey() != null && wrappedContentKey == null) return null;
             var copy = new HostsProf();
             copy.setHostsId(newId());
             copy.setUserNo(userNo);
             copy.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), source.getHostsProfile()));
-            copy.setHostsContent(source.getHostsContent());
+            copy.setHostsContent(encryptedContent != null ? encryptedContent : source.getHostsContent());
+            copy.setWrappedContentKey(wrappedContentKey);
             copy.setSelected(false);
-            copy.setUpdatedAt(LocalDateTime.now());
-            copy.setVisibility("public");
+            var now = LocalDateTime.now();
+            copy.setCreatedBy(userNo);
+            copy.setUpdatedBy(userNo);
+            copy.setCreateAt(now);
+            copy.setUpdatedAt(now);
+            copy.setShareScope("workspace");
             mapper.insertWithAutoSortOrder(copy);
             session.commit();
             return mapper.findByHostsId(copy.getHostsId());
@@ -167,7 +287,15 @@ public class HostsProfService {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var parent = mapper.findByHostsId(parentId);
-            if (parent == null || parent.getUserNo() >= 0 || !"collabo".equals(parent.getVisibility())) return null;
+            if (parent == null || parent.getUserNo() >= 0 || !"collabo".equals(parent.getShareScope())) return null;
+            // A collabo target must be in the same workspace as its owner - searchOthers() already
+            // won't surface a cross-workspace item, but this call takes parentId directly, so a
+            // guessed/leaked hosts_id must still be rejected here (cloudGroupService design doc
+            // §2.4 "collabo 대상 검증"). No-op check in self-hosted (exactly one workspace).
+            var userMapper = session.getMapper(HubUserMapper.class);
+            var registrant = userMapper.findByUserNo(userNo);
+            var owner = userMapper.findByUserNo(-parent.getUserNo());
+            if (registrant == null || owner == null || !registrant.getWsNo().equals(owner.getWsNo())) return null;
             var existing = mapper.findReferencesByUserNo(userNo);
             if (existing.stream().anyMatch(r -> parentId.equals(r.getParentId()))) return null;
             var ref = new HostsProf();
@@ -176,8 +304,12 @@ public class HostsProfService {
             ref.setHostsProfile(nextUniqueName(existingNames(mapper, userNo), parent.getHostsProfile()));
             ref.setHostsContent("");
             ref.setSelected(false);
-            ref.setUpdatedAt(LocalDateTime.now());
-            ref.setVisibility("collabo");
+            var now = LocalDateTime.now();
+            ref.setCreatedBy(userNo);
+            ref.setUpdatedBy(userNo);
+            ref.setCreateAt(now);
+            ref.setUpdatedAt(now);
+            ref.setShareScope("collabo");
             ref.setParentId(parentId);
             mapper.insertWithAutoSortOrder(ref);
             session.commit();
@@ -185,39 +317,66 @@ public class HostsProfService {
         }
     }
 
-    public HostsProf updateVisibility(String hostId, Long userNo, String visibility) {
-        if ("collabo".equals(visibility)) {
-            return convertToCollabo(hostId, userNo);
+    // wrappedContentKey is the client's re-wrap of the row's existing DEK for the KEK that the
+    // target share scope implies (personal key for 'private', workspace key for 'collabo'/
+    // 'workspace') - the DEK itself never changes on a share-scope flip (e2eEncryption design doc
+    // §7). Null in self-hosted, where content/keys are never encrypted (design doc §1).
+    public HostsProf updateShareScope(String hostId, Long userNo, String shareScope, String wrappedContentKey) {
+        if ("collabo".equals(shareScope)) {
+            return convertToCollabo(hostId, userNo, wrappedContentKey);
         }
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = mapper.findByHostsId(hostId);
             if (hosts == null || !hosts.getUserNo().equals(userNo) || hosts.getUserNo() < 0) return null;
-            if ("collabo".equals(hosts.getVisibility())) return null;
-            mapper.updateVisibility(hostId, userNo, visibility, LocalDateTime.now());
+            if ("collabo".equals(hosts.getShareScope())) return null;
+            // Refuse rather than silently strand ciphertext with a stale/missing key - see the
+            // identical guard in copyProfile.
+            if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
+            mapper.updateShareScope(hostId, userNo, shareScope, wrappedContentKey, LocalDateTime.now());
+            // Auto-revoke any live public link the moment share scope leaves 'workspace'
+            // (e2eEncryption design doc §6) - previously the "Generate"/"Revoke" button was merely
+            // disabled here while an already-issued link stayed live and reachable at its URL.
+            if (!"workspace".equals(shareScope)) {
+                mapper.clearLink(hostId);
+            }
             session.commit();
             return mapper.findByHostsId(hostId);
         }
     }
 
-    private HostsProf convertToCollabo(String hostId, Long userNo) {
+    private HostsProf convertToCollabo(String hostId, Long userNo, String wrappedContentKey) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = mapper.findByHostsId(hostId);
             if (hosts == null || !hosts.getUserNo().equals(userNo) || hosts.getUserNo() < 0) return null;
             if (hosts.getParentId() != null) return null;
+            // Same guard as updateShareScope/copyProfile - never move ciphertext to the new
+            // parent row without a key to go with it.
+            if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
             var now = LocalDateTime.now();
             var parent = new HostsProf();
             parent.setHostsId(newId());
             parent.setUserNo(-userNo);
             parent.setHostsProfile(hosts.getHostsProfile());
             parent.setHostsContent(hosts.getHostsContent());
+            parent.setWrappedContentKey(wrappedContentKey);
             parent.setSelected(false);
             parent.setSortOrder(0);
+            // The real actor is always the positive userNo, even though ownership (user_no) is
+            // stored negative for this row — created_by/updated_by must never carry that sign
+            // convention, or resolving them back to a HUB_USR row would fail.
+            parent.setCreatedBy(userNo);
+            parent.setUpdatedBy(userNo);
+            parent.setCreateAt(now);
             parent.setUpdatedAt(now);
-            parent.setVisibility("collabo");
+            parent.setShareScope("collabo");
             mapper.insert(parent);
             mapper.setAsCollaboRef(hostId, userNo, parent.getHostsId(), now);
+            // Auto-revoke (design doc §6): 'collabo' is a restricted audience, defeating the whole
+            // point of a fully-public no-login link - same reasoning as updateShareScope's
+            // downgrade to 'private' above.
+            mapper.clearLink(hostId);
             session.commit();
             return mapper.findByHostsId(hostId);
         }
@@ -225,32 +384,31 @@ public class HostsProfService {
 
     public List<HostsProf> searchOthers(Long userNo, String keyword) {
         try (var session = sqlSessionFactory.openSession()) {
-            return session.getMapper(HostsProfMapper.class).searchOthers(userNo, keyword);
+            var wsNo = session.getMapper(HubUserMapper.class).findByUserNo(userNo).getWsNo();
+            return session.getMapper(HostsProfMapper.class).searchOthers(userNo, wsNo, keyword);
         }
     }
 
     public List<HostsProf> importProfiles(Long userNo, List<HostsProf> entries, boolean merge) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
-            if (!merge) {
-                var refs = mapper.findReferencesByUserNo(userNo);
-                mapper.deleteByUserNo(userNo);
-                for (var ref : refs) {
-                    if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
-                        mapper.deleteByHostsId(ref.getParentId());
-                    }
-                }
-                mapper.deleteOrphanedParentsByCreator(userNo);
-            }
+            if (!merge) removeAllRows(session, userNo);
             var existingNames = existingNames(mapper, userNo);
+            var folderMapper = session.getMapper(ListFolderMapper.class);
+            var folderIds = ListFolderService.folderIdsByLowerName(folderMapper, FolderKind.HOSTS, userNo);
             for (var entry : entries) {
                 entry.setHostsId(newId());
                 entry.setUserNo(userNo);
                 var name = nextUniqueName(existingNames, entry.getHostsProfile());
                 entry.setHostsProfile(name);
                 existingNames.add(name.toLowerCase());
-                entry.setUpdatedAt(LocalDateTime.now());
-                if (entry.getVisibility() == null) entry.setVisibility("public");
+                var now = LocalDateTime.now();
+                entry.setCreatedBy(userNo);
+                entry.setUpdatedBy(userNo);
+                entry.setCreateAt(now);
+                entry.setUpdatedAt(now);
+                if (entry.getShareScope() == null) entry.setShareScope("private");
+                entry.setFolderId(ListFolderService.folderIdForImport(folderMapper, FolderKind.HOSTS, userNo, entry.getFolderName(), entry.getSortOrder(), folderIds));
                 mapper.insert(entry);
             }
             session.commit();
@@ -258,13 +416,102 @@ public class HostsProfService {
         }
     }
 
+    /**
+     * The rows described by an import/restore file's list of profiles. The whole list is validated
+     * before anything is written, so a bad entry can't leave a replace-import half applied.
+     *
+     * @throws IllegalArgumentException (message safe to show) if the list or an entry is malformed
+     */
+    public static List<HostsProf> entriesFromImport(Object raw) {
+        var entries = new java.util.ArrayList<HostsProf>();
+        for (var m : tricatch.oe.hub.util.ImportFields.maps(raw, "hosts")) {
+            var h = new HostsProf();
+            h.setHostsProfile(tricatch.oe.hub.util.ImportFields.requiredText(m, "hostsProfile"));
+            h.setHostsContent(tricatch.oe.hub.util.ImportFields.text(m, "hostsContent", ""));
+            // Round-tripping the same account's own export/backup back in: it serializes the row's
+            // wrapped_content_key verbatim, and it stays valid here unchanged - re-import never touches
+            // the DEK or which key wraps it (collabo/public share the identical workspace-key wrap,
+            // e2eEncryption design doc §6/§9). Without this, an encrypted row's hostsContent
+            // (ciphertext) would land with no key at all and be shown as if it were plaintext.
+            h.setWrappedContentKey(tricatch.oe.hub.util.ImportFields.text(m, "wrappedContentKey", null));
+            h.setSelected(Boolean.TRUE.equals(m.get("selected")));
+            h.setSortOrder(tricatch.oe.hub.util.ImportFields.intValue(m, "sortOrder", 0));
+            // Import creates standalone entries, never collabo refs, and a file that doesn't say
+            // "workspace" must not make the row workspace-scoped - see ShareScopeUtil.forImport.
+            h.setShareScope(tricatch.oe.hub.util.ShareScopeUtil.forImport(m.get("shareScope")));
+            // Folders travel by name (ids are per database); importProfiles/importVhosts finds or
+            // creates the folder.
+            h.setFolderName(tricatch.oe.hub.util.ImportFields.text(m, "folderName", null));
+            entries.add(h);
+        }
+        return entries;
+    }
+
+    // A collabo parent row is stored under the negated creator's user_no (see convertToCollabo), so
+    // resolving its owner as a HUB_USR row means un-negating it first.
+    private static Long realOwnerNo(HostsProf row) {
+        return Math.abs(row.getUserNo());
+    }
+
     public String getOwnerUserId(String hostId) {
         try (var session = sqlSessionFactory.openSession()) {
             var hostsProf = session.getMapper(HostsProfMapper.class).findByHostsId(hostId);
             if (hostsProf == null) return null;
-            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(hostsProf.getUserNo());
+            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(realOwnerNo(hostsProf));
             return hubUser != null ? hubUser.getUserId() : null;
         }
+    }
+
+    // Used by the /share viewer's workspace-mode workspace gate (e2eEncryption design doc §9's
+    // reinterpretation of cloudGroupService doc §2.4: a shared link is only viewable by someone
+    // already logged into the SAME workspace, since that's what lets their browser use its
+    // cached workspace key to decrypt). Mirrors getOwnerUserId's exact lookup. A raw collabo parent
+    // id (what search results and /view pass) is stored under a negated user_no, hence realOwnerNo.
+    public Long getOwnerWsNo(String hostId) {
+        try (var session = sqlSessionFactory.openSession()) {
+            var hostsProf = session.getMapper(HostsProfMapper.class).findByHostsId(hostId);
+            if (hostsProf == null) return null;
+            var hubUser = session.getMapper(HubUserMapper.class).findByUserNo(realOwnerNo(hostsProf));
+            return hubUser != null ? hubUser.getWsNo() : null;
+        }
+    }
+
+    // Fully-public, no-login link (e2eEncryption design doc §6 "living link" redesign): linkContent
+    // is already-encrypted ciphertext and wrappedLinkKey is that same DEK wrapped with the caller's
+    // workspace key, so any workspace member's browser can re-encrypt on later saves - the raw key
+    // itself still only ever appears in the share URL's fragment. Both null revokes; exactly one
+    // null is rejected (a link is issued/revoked as a pair, never half-updated) by returning null,
+    // same signal as "not found"/"not workspace-scoped" below - the controller maps either to an
+    // error response. 'workspace' scope only - private is pointless here and collabo's restricted
+    // audience defeats the point of "anyone, no login".
+    public HostsProf setPublicLink(String hostId, Long callerUserNo, String linkContent, String wrappedLinkKey) {
+        if ((linkContent == null) != (wrappedLinkKey == null)) return null;
+        try (var session = sqlSessionFactory.openSession()) {
+            var hostsMapper = session.getMapper(HostsProfMapper.class);
+            var hosts = hostsMapper.findByHostsId(hostId);
+            if (hosts == null || !"workspace".equals(hosts.getShareScope())) return null;
+            var caller = session.getMapper(HubUserMapper.class).findByUserNo(callerUserNo);
+            if (caller == null) return null;
+            hostsMapper.updateLinkContent(hostId, caller.getWsNo(), linkContent, wrappedLinkKey);
+            session.commit();
+            return hostsMapper.findByHostsId(hostId);
+        }
+    }
+
+    // Public, unauthenticated read for the /link viewer - share_scope='workspace' and a non-null
+    // link_content (an issued, not-yet-revoked link) are the only gates; no workspace/login check
+    // at all, since that's the entire point of this sharing mode (§6).
+    public HostsProf getForPublicLink(String hostId) {
+        var hosts = get(hostId);
+        if (hosts == null || !"workspace".equals(hosts.getShareScope()) || hosts.getLinkContent() == null) return null;
+        return hosts;
+    }
+
+    // Another of the user's entries already has newName (case-insensitive, like existingNames).
+    // The entry's own current name doesn't count, so a case-only rename of itself is allowed.
+    private static boolean nameTaken(List<String> names, String currentName, String newName) {
+        var same = names.stream().filter(n -> n.equalsIgnoreCase(newName)).count();
+        return same > (currentName.equalsIgnoreCase(newName) ? 1 : 0);
     }
 
     // Case-insensitive, matching countByUserNoAndProfile's LOWER() comparison this replaces.
