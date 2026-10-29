@@ -1,8 +1,10 @@
 # oeHub
 
-개발 및 테스트 환경을 구축하기 위한 도구 모음(허브)입니다.
+개발·테스트 환경을 위한 도구 모음(허브)입니다.
 
-oeHub는 하나의 로그인 아래 두 가지 브라우저용 도구를 묶어 제공합니다. **oeHosts**는 프로필별로 Chrome의 호스트 리졸버 규칙을 전환하고 `oelink://` 프로토콜 핸들러로 Chrome을 실행합니다. **oeProxy**는 로컬 가상 호스트를 위해 HTTPS를 종료하고 로컬 또는 원격 개발 서버로 리버스 프록시하며, 사용자별 추적을 위해 요청에 oeOID 헤더를 태깅합니다. 덕분에 팀은 OS 수준의 hosts 파일을 건드리거나 인증서를 수작업으로 관리하지 않고도, 실제와 똑같이 생긴 도메인을 로컬·스테이징·프로덕션 중 원하는 백엔드로 자유롭게 연결할 수 있습니다.
+하나의 로그인으로 두 도구를 씁니다. **oeHosts**는 프로필별 호스트 규칙으로 Chrome을 실행하고, **oeProxy**는 가상 호스트의 HTTPS를 받아 로컬 또는 원격 개발 서버로 프록시합니다. OS의 hosts 파일이나 인증서를 직접 관리하지 않고도 실제 도메인을 원하는 백엔드로 연결할 수 있습니다.
+
+**서비스:** [https://oehub.dpdns.org](https://oehub.dpdns.org) — `workspace` 모드로 운영 중이며, oeHosts를 사용할 수 있습니다.
 
 ## 스크린샷
 
@@ -19,56 +21,46 @@ oeHub는 하나의 로그인 아래 두 가지 브라우저용 도구를 묶어 
 
 ### oeHosts (+oelink)
 
-- `oelink://` 프로토콜 핸들러를 통해 프로필의 규칙과 커스텀 플래그(`--user-agent`, `--user-data-dir`, 시크릿 모드, 추가 인수)를 적용해 Chrome을 바로 실행
-    - **oelink**는 클라이언트 머신에 설치되는 커스텀 프로토콜 핸들러로, oeHosts는 이를 호출하여 프로필의 `--host-resolver-rules`와 기타 플래그로 Chrome을 실행합니다
-    - Windows와 macOS를 모두 지원하며, 핸들러는 별도 저장소 [oeLink](https://github.com/tricatch/oeLink)에 있습니다
-    - 설치는 OS별 명령 한 줄(Windows는 PowerShell `irm ... | iex`, macOS는 `curl ... | bash`)이며, oeHosts의 설치 안내 팝업에서 복사할 수 있습니다
-- Chrome에서 여러 hosts 프로필 간 전환
-- 여러 프로필을 동시에 선택하고, 실행 전에 병합된 호스트 리졸버 규칙을 미리보기
-- 공유 링크로 팀과 hosts 프로필 공유
-- 워크스페이스 프리셋(워크스페이스 관리자가 관리) 또는 개인 프리셋으로 "Open URL"과 "User-Agent" 필드를 빠르게 채우기
+- 프로필의 `--host-resolver-rules`와 플래그(User-Agent, `--user-data-dir`, 시크릿 모드 등)로 Chrome 실행
+- 여러 프로필을 동시에 선택하고 병합 결과 미리보기
+- 폴더로 프로필 정리, 공유 범위 지정, 공유 링크·공개 링크로 팀과 공유
+- 워크스페이스/개인 프리셋으로 URL·User-Agent 빠르게 입력
+- **oelink**: Chrome을 실행하는 `oelink://` 프로토콜 핸들러(Windows/macOS). 별도 저장소 [oeLink](https://github.com/tricatch/oeLink)에 있으며, oeHosts의 설치 안내에서 OS별 명령 한 줄을 복사해 설치합니다.
 
 ### oeProxy (+oeOID)
 
-- 자체 서명된 루트 인증서로부터 TLS 인증서를 자동 생성 (직접 생성하거나 기존 것을 가져오기 가능)
-- 로컬 가상 호스트를 위한 HTTPS 리버스 프록시로, 로컬 개발 서버와 원격/프로덕션 서버가 하나의 도메인을 공유할 수 있게 함
-- HTTP 요청 실시간 모니터
-- 프록시를 거치는 요청에 `X-OeHub-Oid` 헤더를 태깅하여 오리진 서비스가 요청을 보낸 oeHub 사용자를 식별할 수 있게 함
-    - **oeOID**는 (DHCP 환경에서 신뢰할 수 없는) IP 주소 대신, oeProxy를 거치는 요청에 `X-OeHub-Oid` 헤더를 주입하는 Chrome 확장 프로그램입니다
+- 루트 인증서(직접 생성 또는 가져오기)로 가상 호스트의 TLS 인증서 자동 발급
+- 하나의 도메인에서 로컬 개발 서버와 원격 서버를 섞어 쓰는 HTTPS 리버스 프록시
+- 실시간 HTTP 요청 모니터
+- 요청에 `X-OeHub-Oid` 헤더를 붙여 백엔드가 요청한 사용자를 식별 — **oeOID**는 이 헤더를 넣어 주는 Chrome 확장 프로그램입니다
 
-### oeProxy 포워드 프록시
+### 포워드 프록시
 
-- 포트 `36980`(`-Doe.fwdproxy.port`로 변경 가능)에서 항상 실행됨 (관리자가 켜고 끌 수 없음)
-- 어떤 요청이든 중계하기 전에 oeHub 계정 자격 증명으로 인증이 필요함
-- 인증되면, 해당 사용자가 현재 선택한 oeHosts 프로필에 있는 호스트로의 요청은 요청마다 DB를 조회하는 대신 사용자별 인메모리 맵에 기록된 IP로 라우팅됨
-- oeHosts는 `--host-resolver-rules`의 대안으로 Chrome의 `--proxy-server` 플래그를 이 포워드 프록시로 향하게 할 수 있음 (둘 중 하나를 켜면 다른 하나는 자동으로 꺼짐)
-- 관리자가 "허용 도메인" 화이트리스트(`*.` 와일드카드 하위 도메인 매칭 지원)에 등록한 도메인으로만 중계하며(목록이 비어 있으면 아무것도 중계하지 않음), 차단된 목적지에는 브랜드가 적용된 403 오류 페이지가 표시됨(포트 `36981`의 전용 루프백 TLS 응답기를 통해 HTTPS도 포함)
-- 표준 HTTP(S) 프록시이므로, 모바일 기기의 Wi-Fi 프록시 설정(iOS 또는 Android)을 이곳으로 지정하는 방식으로 hosts를 리다이렉션할 수 있음 — 모바일에는 `oelink`/host-resolver-rules에 해당하는 것이 필요 없음
-    - iOS의 Wi-Fi 프록시 설정은 인증을 지원하므로, 브라우저 트래픽과 앱 트래픽 모두에 사용 가능
-    - Android의 Wi-Fi 프록시 설정은 인증을 지원하지 않으므로, (자체적으로 자격 증명을 요청하고 제출할 수 있는) 브라우저만 인증하여 사용할 수 있으며 그 외 앱의 트래픽은 프록시를 거치지 않음
+- 포트 `36980`(`-Doe.fwdproxy.port`)에서 항상 실행되며, oeHub 계정으로 인증해야 사용 가능
+- 선택한 oeHosts 프로필대로 요청을 라우팅 — Chrome의 `--proxy-server`로 `--host-resolver-rules` 대신 쓸 수 있음
+- 관리자가 등록한 허용 도메인으로만 중계(목록이 비면 전부 차단)
+- 모바일 기기의 Wi-Fi 프록시로 지정해 hosts 리다이렉션 가능(iOS는 앱까지, Android는 브라우저만)
 
-## 모범 사례
+## Best Practices
 
-- oeHosts를 사용할 때는 oeHub 웹 UI 자체는 Edge(또는 다른 비-Chrome 브라우저)에서 열고, 실제 테스트에 사용할 Chrome은 `oelink`이 실행하도록 두세요. `oelink`은 프로필 전용 `--user-data-dir`로 Chrome을 실행하는데, oeHub UI도 Chrome에서 실행 중이라면 두 인스턴스가 동일한 user-data-dir을 두고 충돌해 프로필 잠금이나 실행 충돌이 발생할 수 있습니다. 두 브라우저를 분리해 두면, 호스트 리졸버 규칙이 실제와 똑같이 생긴 도메인을 로컬 또는 스테이징 서버로 리다이렉션하는 테스트 환경과, 평소 작업 환경(이메일, 문서, 일반 브라우징)을 깔끔하게 분리할 수 있습니다.
+oeHub 화면은 Edge 등 Chrome이 아닌 브라우저에서 열고, 테스트용 Chrome은 oelink로 실행하세요. 같은 `--user-data-dir`을 두고 충돌하지 않고, 테스트 환경과 평소 브라우징도 분리됩니다.
 
 ## 계정
 
-- `admin`과 `user` 역할을 가진 다중 사용자 지원
-- 최초 실행 시 `/setup` 마법사가 초기 관리자 계정을 생성함
-- 관리자는 설정 페이지에서 사용자 관리(관리자 권한 부여/해제, 계정 삭제, 사용자 비밀번호를 무작위로 재설정)와 자기 워크스페이스의 URL/UA 프리셋을 관리함(`workspace` 모드에서는 워크스페이스 관리자가 워크스페이스 설정 페이지에서, 워크스페이스마다 독립적으로)
-- 각 사용자는 자신의 프리셋, oeOID 도메인 목록, 계정 정보, 셀프 서비스 비밀번호 변경을 위한 개인 설정 페이지를 가짐
-- 각 사용자는 자신의 hosts 프로필, hosts 설정, 프록시 가상 호스트를 JSON으로 백업하고 복원할 수 있음
+- 최초 실행 시 `/setup` 마법사가 관리자 계정과 루트 인증서를 구성
+- 관리자: 사용자 관리, 워크스페이스 프리셋, 서버 설정, 감사 로그
+- 사용자: 개인 프리셋, oeOID 도메인, 비밀번호 변경, 계정 삭제, 데이터 JSON 백업/복원
 
 ## 아키텍처 & 설계
 
-시스템이 어떻게 설계되었는지는 [docs/](docs/README.md)를 참고하세요: 번들된 두 도구, `self-hosted`/`workspace` 배포 모델, 그리고 `workspace` 모드에서 사용되는 종단간 암호화(무엇을 보호하고 무엇을 보호하지 않는지에 대한 솔직한 요약 포함)를 다룹니다.
+설계 문서는 [docs/](docs/README.md)에 있습니다(배포 모드, 종단간 암호화, 보안 위협 모델, DB 스키마, API 레퍼런스 등).
 
 ## 시작하기
 
 JDK 21이 필요합니다.
 
 ```bash
-# 개발 모드 (jar 빌드 없이 src에서 템플릿/정적 파일을 직접 로드)
+# 개발 모드 (src의 템플릿/정적 파일을 직접 로드)
 ./gradlew run -Djava.net.preferIPv4Stack=true
 
 # 프로덕션 빌드
@@ -76,90 +68,68 @@ JDK 21이 필요합니다.
 java -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 ```
 
-최초 실행 시 관리자 계정을 만들고 oeProxy가 사용할 루트 인증서를 구성하는 설치 마법사(`/setup`)로 리다이렉션됩니다.
+최초 실행 시 설치 마법사(`/setup`)로 이동합니다.
 
 ### 실행 옵션
 
-모든 옵션은 `-D<이름>=<값>` 형태의 JVM 시스템 프로퍼티이며, `java -D... -jar oeHub-<version>.jar`처럼 조합해서 사용합니다.
-
-oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습니다(`-Doe.mode`, `-Doe.home` 등). `-Djava.net.preferIPv4Stack`, `-Dlogback.configurationFile`처럼 JVM/라이브러리 표준 프로퍼티만 예외입니다.
+oeHub 옵션은 모두 `-Doe.<이름>=<값>` 형식의 JVM 시스템 프로퍼티입니다.
 
 | 옵션 | 기본값 | 설명 |
 |---|---|---|
-| `-Doe.port` | `36912` | 애플리케이션 포트. H2 웹 콘솔은 자동으로 `port + 1`에서 시작됩니다. |
-| `-Doe.fwdproxy.port` | `36980` | 포워드 프록시 포트. 같은 PC에서 oeHub를 두 개 이상 띄울 때(예: 개발 서버를 켜 둔 채 e2e 테스트 실행) 겹치지 않게 바꾸세요. oeHosts의 Chrome 실행 명령과 설정 화면의 포트 표시도 이 값을 따릅니다. |
-| `-Doe.home` | `~/oeHub` (`~`는 OS 사용자 홈) | 애플리케이션 데이터(H2 데이터베이스, CA 인증서 등) 디렉터리. oeHub 디렉터리 자체를 가리키며, 그 상위 디렉터리가 아닙니다(`/oeHub`가 추가로 붙지 않습니다). |
-| `-Doe.data.dir` | `<oe.home>/data` | H2 데이터베이스 파일, 생성되는 비밀번호 파일(`.h2-password`), 예약 백업(`backups/`)이 저장되는 디렉터리. 지정하면 이 디렉터리를 그대로 사용하며, `-Doe.home`과 별개로 DB 데이터만 다른 볼륨에 두고 싶을 때 사용하세요. 파일명 자체(`oeHub-h2` / workspace 모드의 `oeHub-h2-ws`)는 이 옵션으로 바꿀 수 없습니다. |
-| `-Doe.log.dir` | `<oe.home>/log` | 로그 파일 디렉터리. 지정하면 이 디렉터리를 그대로 사용합니다. 아래 [로깅](#로깅) 참고. |
-| `-Doe.log.console` | `false` | `true`이면 로그 파일과 함께 콘솔에도 로그를 출력합니다. jar를 직접 실행하면서 터미널로 로그를 보고 싶을 때 사용하세요(`-Doe.dev`는 소스 폴더가 필요해서 jar 실행에는 쓸 수 없습니다). |
-| `-Doe.mode` | `self-hosted` | 배포 모드 — `self-hosted` 또는 `workspace`. 아래 [배포 모드](#배포-모드) 참고. |
-| `-Doe.dev` | `false` | 개발 모드. `true`이면 정적 파일과 Pebble 템플릿을 jar에 번들된 classpath 리소스 대신 `src/main/resources`의 실제 파일에서 직접 읽고 템플릿 캐시를 꺼서, 서버 재시작 없이 수정 내용이 바로 반영됩니다. `./gradlew run`이 자동으로 켜서 실행하며, 배포용 jar 실행 시에는 지정하지 마세요. |
-| `-Doe.secure.cookie` | `false` | `true`이면 인증·CSRF 쿠키에 항상 `Secure`를 붙이고 응답에 `Strict-Transport-Security`를 보냅니다. 앞단 프록시가 TLS를 끝내서 oeHub가 요청을 항상 HTTP로 보는 배포(예: `workspace` 모드 클라우드 배포)에서 켜세요. 기본값에서는 HTTPS로 들어온 요청에만 붙습니다. |
-| `-Doe.client.ip.header` | (없음) | 같은 머신의 리버스 프록시나 터널(예: cloudflared) 뒤에서 실행할 때, 실제 클라이언트 IP가 담긴 헤더 이름(예: `CF-Connecting-IP`, `X-Forwarded-For`). 요청이 loopback에서 왔을 때만 이 헤더를 믿습니다. 지정하지 않으면 모든 요청이 프록시의 loopback 주소로 보여서, IP별 가입 횟수 제한과 [스캔 차단](#스캔-차단)이 클라이언트를 구분하지 못합니다. |
-| `-Doe.migrate` | (없음) | 지정하면 앱을 시작하지 않고, jar에 번들된 스키마 마이그레이션 `<이름>`(`src/main/resources/db/migration/<이름>.sql`)을 기존 데이터베이스에 한 번 적용한 뒤 종료합니다. 아래 [스키마 마이그레이션](#스키마-마이그레이션) 참고. |
-| `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선 사용. 위 실행 예시처럼 항상 켜서 실행하기를 권장합니다. |
-| `-Dlogback.configurationFile` | jar에 번들된 `logback.xml` | 재빌드 없이 로깅 설정을 재정의합니다. 자세한 내용은 아래 [로깅](#로깅) 참고. |
+| `-Doe.port` | `36912` | 애플리케이션 포트(H2 웹 콘솔은 `port + 1`) |
+| `-Doe.fwdproxy.port` | `36980` | 포워드 프록시 포트 |
+| `-Doe.home` | `~/oeHub` | 데이터 디렉터리(DB, CA 인증서 등) |
+| `-Doe.data.dir` | `<oe.home>/data` | H2 DB·백업 디렉터리 |
+| `-Doe.log.dir` | `<oe.home>/log` | 로그 디렉터리 |
+| `-Doe.log.console` | `false` | 로그를 콘솔에도 출력 |
+| `-Doe.mode` | `self-hosted` | 배포 모드(`self-hosted` / `workspace`) |
+| `-Doe.dev` | `false` | 개발 모드(`./gradlew run`이 자동 지정, jar 실행에는 사용 금지) |
+| `-Doe.secure.cookie` | `false` | 쿠키에 항상 `Secure` + HSTS. 앞단 프록시가 TLS를 처리할 때 사용 |
+| `-Doe.client.ip.header` | (없음) | 같은 머신의 프록시/터널 뒤에서 실제 클라이언트 IP 헤더(예: `CF-Connecting-IP`). loopback 요청에서만 신뢰 |
+| `-Doe.migrate` | (없음) | 앱을 시작하지 않고 스키마 마이그레이션 `<이름>`만 적용 후 종료 |
+| `-Djava.net.preferIPv4Stack` | JVM 기본값 | IPv4 우선(항상 켜기 권장) |
+| `-Dlogback.configurationFile` | 번들 `logback.xml` | 로깅 설정 재정의 |
 
 > [!IMPORTANT]
-> Linux에서 oeProxy가 `443` 포트에 바인딩하려면 JVM을 `root`로 실행해야 하는데, 이 경우 `~`가 일반 사용자의 홈이 아니라 `/root`로 해석됩니다. 애플리케이션 데이터를 원하는 디렉터리에 고정하려면 `-Doe.home=/path/to/oeHub`를 전달하세요. 예:
+> Linux에서 `443` 포트를 쓰려고 `root`로 실행하면 `~`가 `/root`가 됩니다. `-Doe.home`으로 경로를 고정하세요.
 > ```bash
 > sudo java -Doe.home=/home/youruser/oeHub -Djava.net.preferIPv4Stack=true -jar oeHub-<version>.jar
 > ```
 
 ### 배포 모드
 
-`-Doe.mode`로 선택하는 두 가지 모드 중 하나로 실행됩니다(기본값 `self-hosted`). 둘은 같은 코드베이스와 스키마를 공유하며, 서버 시작 시 한 번 정해져 프로세스 수명 동안 정적으로 유지됩니다.
+- **`self-hosted`** (기본값) — 단일 인스턴스, 워크스페이스 하나. oeHosts와 oeProxy 모두 사용.
+- **`workspace`** — 여러 워크스페이스를 호스팅하는 멀티테넌트 서비스. oeHosts만 사용하며 콘텐츠는 종단간 암호화됩니다.
 
-- **`self-hosted`** (기본값) — 단일 셀프 호스팅 인스턴스. oeHosts와 oeProxy가 모두 사용 가능하며, 워크스페이스가 정확히 하나 존재합니다.
-- **`workspace`** — 하나의 실행 중인 인스턴스 뒤에서 여러 독립적인 워크스페이스(회사 또는 팀)를 호스팅하는 멀티테넌트 클라우드 서비스. oeHosts만 사용 가능하며 oeProxy는 아예 비활성화되고, 워크스페이스 콘텐츠에는 종단간 암호화가 적용됩니다.
-
-역할(`adm`/`wsa`/`usr` 등), 가입·승인 흐름, 모드별로 달라지는 동작에 대한 자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
+자세한 내용은 [docs/04-deployment-modes.md](docs/04-deployment-modes.md)를 참고하세요.
 
 ### 스키마 마이그레이션
 
-oeHub는 시작할 때 `CREATE TABLE IF NOT EXISTS`로만 스키마를 만들기 때문에, 새 버전이 **이미 있는 테이블**에 컬럼을 추가한 경우 기존 데이터베이스에는 그 변경이 반영되지 않습니다. 이 상태로 새 jar를 시작하면 `Failed to initialize database schema ... -Doe.migrate=<name>` 오류와 함께 중단됩니다. 이때는 새 jar로 마이그레이션을 한 번 실행한 뒤 다시 시작하세요.
+새 버전이 기존 테이블을 바꾸면 시작 시 `-Doe.migrate=<name>` 안내와 함께 중단됩니다. oeHub를 중지하고, 평소 옵션 그대로 마이그레이션을 한 번 실행한 뒤 다시 시작하세요.
 
 ```bash
-# 1. 실행 중인 oeHub를 중지 (실행 중이면 마이그레이션이 "database is in use"로 거부됩니다)
-# 2. 평소와 같은 -Doe.home / -Doe.mode / -Doe.data.dir 로 마이그레이션 실행
 java -Doe.home=/path/to/oeHub -Doe.migrate=<이름> -jar oeHub-<version>.jar
-# 3. 평소처럼 다시 시작
 ```
 
-- 실행 전에 H2 `BACKUP`으로 `<data>/backups/oeHub-premigrate-<이름>-<시각>.zip`을 자동으로 만듭니다. 문제가 생기면 이 zip을 풀어 데이터 디렉터리의 DB 파일을 되돌리면 됩니다.
-- 마이그레이션 스크립트는 모두 `IF NOT EXISTS`로 작성되어 있어 두 번 실행해도 아무것도 바뀌지 않습니다. 새로 설치한 데이터베이스에는 실행할 필요가 없습니다.
-- 성공하면 종료 코드 0, 실패하면 1로 끝납니다.
+실행 전 `<data>/backups/`에 백업 zip을 자동으로 만들며, 여러 번 실행해도 안전합니다.
 
 ### 로깅
 
-로그는 `<oe.home>/log/oehub.log`(`-Doe.log.dir`로 변경 가능)에 기록되며, 콘솔에는 개발 모드(`-Doe.dev=true`, `./gradlew run`)이거나 `-Doe.log.console=true`일 때만 함께 출력됩니다. 자정마다 전날 로그가 `oehub.<yyyy-MM-dd>.log`로 넘어가고, 30일이 지난 파일은 자동으로 삭제됩니다(시작할 때도 한 번 정리). 콘솔(stdout/stderr)에는 로깅 설정을 거치지 않는 JVM 자체 오류만 나옵니다.
-
-로깅은 [Logback](https://logback.qos.ch/)으로 구성되며, 기본 `logback.xml`이 jar 안에 번들되어 있습니다. 재빌드 없이 이를 재정의하려면, 시작 시 클래스패스에 있는 외부 파일을 Logback이 가리키도록 지정하세요.
-
-```bash
-java -Dlogback.configurationFile=/path/to/logback.xml -jar oeHub-<version>.jar
-```
-
-Logback은 jar에 포함된 설정으로 넘어가기 전에 이 시스템 프로퍼티를 먼저 확인합니다.
+로그는 `<oe.home>/log/oehub.log`에 기록되고 날짜별로 넘어가며 30일 뒤 삭제됩니다. 콘솔에는 개발 모드나 `-Doe.log.console=true`일 때만 출력됩니다.
 
 ### 스캔 차단
 
-로그인하지 않은 같은 IP에서 1분 안에 404가 10번 나면, 그 IP의 모든 요청을 10분간 `403`으로 거절합니다. 경로를 훑는 자동 스캐너를 막기 위한 것으로, 차단을 시작할 때 WARN 로그 한 줄을 남깁니다.
-
-- 로그인한 사용자의 404는 세지 않습니다(지워진 공유 프로필 열기, 저장 재시도 등 정상적인 404가 있을 수 있음).
-- loopback 주소는 차단하지 않습니다. 같은 머신의 프록시 뒤에서 실행한다면 `-Doe.client.ip.header`를 지정해야 클라이언트별로 동작합니다.
-- 차단 상태는 메모리에만 있어서 재시작하면 풀립니다.
+로그인하지 않은 같은 IP에서 1분 안에 404가 10번 나면 10분간 `403`으로 차단합니다. 로그인 사용자와 loopback 주소는 제외되며, 재시작하면 풀립니다.
 
 ## 기술 스택
 
-- [Javalin](https://javalin.io/) + [Pebble](https://pebbletemplates.io/) 템플릿
-- [MyBatis](https://mybatis.org/mybatis-3/) + [H2](https://www.h2database.com/) (내장, 파일 기반)
-- 인증서 생성/파싱을 위한 [BouncyCastle](https://www.bouncycastle.org/)
-- JWT 기반 세션 인증
+- [Javalin](https://javalin.io/) + [Pebble](https://pebbletemplates.io/)
+- [MyBatis](https://mybatis.org/mybatis-3/) + [H2](https://www.h2database.com/)
+- [BouncyCastle](https://www.bouncycastle.org/) (인증서), JWT 세션 인증
 
 ## i18n
 
-UI는 `lang` 쿠키로 전환되는 영어와 한국어를 지원합니다.
+영어/한국어 UI(`lang` 쿠키로 전환).
 
 ## 라이선스
 
