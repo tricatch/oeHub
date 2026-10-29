@@ -47,6 +47,7 @@
             <li>{{ msg['index.proxy.desc3'] }}</li>
             <li>{{ msg['index.proxy.desc4'] }}</li>
             <li>{{ msg['index.proxy.desc5'] }}</li>
+            <li>{{ msg['index.proxy.desc6'] }}</li>
           </ul>
         </div>
       </a>
