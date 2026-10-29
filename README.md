@@ -91,6 +91,7 @@ oeHub 고유 옵션은 모두 `-Doe.<이름>` 형식으로 통일되어 있습�
 | `-Doe.home` | `~/oeHub` (`~`는 OS 사용자 홈) | 애플리케이션 데이터(H2 데이터베이스, CA 인증서 등) 디렉터리. oeHub 디렉터리 자체를 가리키며, 그 상위 디렉터리가 아닙니다(`/oeHub`가 추가로 붙지 않습니다). |
 | `-Doe.data.dir` | `<oe.home>/data` | H2 데이터베이스 파일, 생성되는 비밀번호 파일(`.h2-password`), 예약 백업(`backups/`)이 저장되는 디렉터리. 지정하면 이 디렉터리를 그대로 사용하며, `-Doe.home`과 별개로 DB 데이터만 다른 볼륨에 두고 싶을 때 사용하세요. 파일명 자체(`oeHub-h2` / workspace 모드의 `oeHub-h2-ws`)는 이 옵션으로 바꿀 수 없습니다. |
 | `-Doe.log.dir` | `<oe.home>/log` | 로그 파일 디렉터리. 지정하면 이 디렉터리를 그대로 사용합니다. 아래 [로깅](#로깅) 참고. |
+| `-Doe.log.console` | `false` | `true`이면 로그 파일과 함께 콘솔에도 로그를 출력합니다. jar를 직접 실행하면서 터미널로 로그를 보고 싶을 때 사용하세요(`-Doe.dev`는 소스 폴더가 필요해서 jar 실행에는 쓸 수 없습니다). |
 | `-Doe.mode` | `self-hosted` | 배포 모드 — `self-hosted` 또는 `workspace`. 아래 [배포 모드](#배포-모드) 참고. |
 | `-Doe.dev` | `false` | 개발 모드. `true`이면 정적 파일과 Pebble 템플릿을 jar에 번들된 classpath 리소스 대신 `src/main/resources`의 실제 파일에서 직접 읽고 템플릿 캐시를 꺼서, 서버 재시작 없이 수정 내용이 바로 반영됩니다. `./gradlew run`이 자동으로 켜서 실행하며, 배포용 jar 실행 시에는 지정하지 마세요. |
 | `-Doe.secure.cookie` | `false` | `true`이면 인증·CSRF 쿠키에 항상 `Secure`를 붙이고 응답에 `Strict-Transport-Security`를 보냅니다. 앞단 프록시가 TLS를 끝내서 oeHub가 요청을 항상 HTTP로 보는 배포(예: `workspace` 모드 클라우드 배포)에서 켜세요. 기본값에서는 HTTPS로 들어온 요청에만 붙습니다. |
@@ -131,7 +132,7 @@ java -Doe.home=/path/to/oeHub -Doe.migrate=<이름> -jar oeHub-<version>.jar
 
 ### 로깅
 
-로그는 `<oe.home>/log/oehub.log`(`-Doe.log.dir`로 변경 가능)에 기록되며, 콘솔에는 개발 모드(`-Doe.dev=true`, `./gradlew run`)에서만 함께 출력됩니다. 자정마다 전날 로그가 `oehub.<yyyy-MM-dd>.log`로 넘어가고, 30일이 지난 파일은 자동으로 삭제됩니다(시작할 때도 한 번 정리). 콘솔(stdout/stderr)에는 로깅 설정을 거치지 않는 JVM 자체 오류만 나옵니다.
+로그는 `<oe.home>/log/oehub.log`(`-Doe.log.dir`로 변경 가능)에 기록되며, 콘솔에는 개발 모드(`-Doe.dev=true`, `./gradlew run`)이거나 `-Doe.log.console=true`일 때만 함께 출력됩니다. 자정마다 전날 로그가 `oehub.<yyyy-MM-dd>.log`로 넘어가고, 30일이 지난 파일은 자동으로 삭제됩니다(시작할 때도 한 번 정리). 콘솔(stdout/stderr)에는 로깅 설정을 거치지 않는 JVM 자체 오류만 나옵니다.
 
 로깅은 [Logback](https://logback.qos.ch/)으로 구성되며, 기본 `logback.xml`이 jar 안에 번들되어 있습니다. 재빌드 없이 이를 재정의하려면, 시작 시 클래스패스에 있는 외부 파일을 Logback이 가리키도록 지정하세요.
 
