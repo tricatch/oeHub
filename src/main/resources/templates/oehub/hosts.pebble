@@ -239,11 +239,11 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content oe-modal">
       <div class="modal-header oe-modal-header">
-        <h5 class="modal-title">{{ msg['modal.collabo.confirm.title'] }}</h5>
+        <h5 class="modal-title" id="collaboConfirmTitle">{{ msg['modal.collabo.confirm.title'] }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted mb-0">{{ msg['modal.collabo.confirm.body'] }}</p>
+        <p class="small text-muted mb-0" id="collaboConfirmBody">{{ msg['modal.collabo.confirm.body'] }}</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="oe-modal-btn oe-modal-btn-primary" id="btnCollaboConfirm">{{ msg['btn.confirm'] }}</button>
@@ -329,6 +329,8 @@
 <script nonce="{{ cspNonce }}">
 const PROXY_SVR = '{{ proxyIp }}';
 const FWDPROXY_PORT = {{ fwdproxyPort }};
+// Workspace admin: may publish a profile to every member ('managed') and edit or delete one.
+window.OE_CAN_MANAGE_SCOPE = {{ canManageScope ? 'true' : 'false' }};
 // Workspace mode has no forward proxy, so the --proxy-server option does not exist there and can
 // never end up in a launch command - even if an earlier self-hosted setting was stored as enabled.
 const PROXY_SERVER_OPTION = {{ workspaceMode ? 'false' : 'true' }};
@@ -533,18 +535,23 @@ function proxyServerOn() {
   document.getElementById('btnAddFolder').addEventListener('click', () => folderList.createFolder());
 
 
+  // A managed profile (published by a workspace admin to every member) is read-only for members.
+  function isManagedLocked(p) {
+    return !!p && p.shareScope === 'managed' && !window.OE_CAN_MANAGE_SCOPE;
+  }
+
   // ── Activate profile ───────────────────────────────────────
   function activateProfile(hostsId, readonly) {
     const p = profiles.find(x => x.hostsId === hostsId);
-    const shown = autosave.activate(p && !readonly ? hostsId : null, p ? p.hostsContent : '');
+    const shown = autosave.activate(p && !readonly && !isManagedLocked(p) ? hostsId : null, p ? p.hostsContent : '');
     activeHostId = hostsId;
     isReadonly = readonly;
     if (!p) return;
     editorTitle.textContent = p.hostsProfile;
     editor.setValue(shown, -1);
-    editor.setReadOnly(readonly);
-    document.getElementById('cmHostsEditor').classList.toggle('readonly', readonly);
-    btnDelete.disabled = readonly;
+    editor.setReadOnly(readonly || isManagedLocked(p));
+    document.getElementById('cmHostsEditor').classList.toggle('readonly', readonly || isManagedLocked(p));
+    btnDelete.disabled = readonly || isManagedLocked(p);
     shareScopeWrap.classList.toggle('d-none', readonly);
     shareScopeSelect.value = p.shareScope || 'workspace';
     shareScopeSelect.disabled = !!p.parentId;
@@ -651,9 +658,13 @@ function proxyServerOn() {
 
   // ── Delete profile ─────────────────────────────────────────
   document.getElementById('btnDelete').addEventListener('click', async () => {
-    if (!activeHostId || !confirm(MSG['confirm.delete.profile'])) return;
+    if (!activeHostId) return;
+    // Deleting a managed profile removes it from every member of the workspace.
+    const managed = profiles.find(x => x.hostsId === activeHostId)?.shareScope === 'managed';
+    if (!confirm(MSG[managed ? 'confirm.delete.profile.managed' : 'confirm.delete.profile'])) return;
     autosave.discard(activeHostId);
-    await fetch('/api/hosts/' + activeHostId, {method: 'DELETE'});
+    const res = await fetch(managed ? '/api/wsa/hosts/' + activeHostId + '/managed' : '/api/hosts/' + activeHostId, {method: 'DELETE'});
+    if (!res.ok) { showToast(MSG['toast.delete.failed']); return; }
     profiles = profiles.filter(p => p.hostsId !== activeHostId);
     activeHostId = null;
     editorTitle.textContent = MSG['editor.select.profile'];
@@ -1265,10 +1276,16 @@ function proxyServerOn() {
 
   async function doUpdateShareScope(shareScope) {
     const wrappedContentKey = await computeRewrapForShareScope(activeHostId, shareScope).catch(() => null);
-    const res = await fetch('/api/hosts/' + activeHostId + '/share-scope', {
-      method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({shareScope, wrappedContentKey})
-    });
+    // Publishing to every member has its own workspace-admin endpoint.
+    const res = shareScope === 'managed'
+      ? await fetch('/api/wsa/hosts/' + activeHostId + '/managed', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({wrappedContentKey})
+        })
+      : await fetch('/api/hosts/' + activeHostId + '/share-scope', {
+          method: 'PATCH', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({shareScope, wrappedContentKey})
+        });
     if (res.ok) {
       const updated = await res.json();
       const p = profiles.find(x => x.hostsId === activeHostId);
@@ -1290,11 +1307,15 @@ function proxyServerOn() {
     }
   }
 
+  // Both one-way conversions (collabo, managed) are confirmed first in the same modal;
+  // _pendingCollabo holds the scope waiting for that confirmation.
   shareScopeSelect.addEventListener('change', e => {
     if (!activeHostId) return;
-    if (e.target.value === 'collabo') {
+    if (e.target.value === 'collabo' || e.target.value === 'managed') {
       _prevShareScope = profiles.find(x => x.hostsId === activeHostId)?.shareScope || 'workspace';
-      _pendingCollabo = true;
+      _pendingCollabo = e.target.value;
+      document.getElementById('collaboConfirmTitle').textContent = MSG['modal.' + e.target.value + '.confirm.title'];
+      document.getElementById('collaboConfirmBody').textContent = MSG['modal.' + e.target.value + '.confirm.body'];
       new bootstrap.Modal(document.getElementById('collaboConfirmModal')).show();
       return;
     }
@@ -1304,8 +1325,9 @@ function proxyServerOn() {
   document.getElementById('btnCollaboConfirm').addEventListener('click', async () => {
     bootstrap.Modal.getInstance(document.getElementById('collaboConfirmModal')).hide();
     if (_pendingCollabo && activeHostId) {
+      const scope = _pendingCollabo;
       _pendingCollabo = false;
-      await doUpdateShareScope('collabo');
+      await doUpdateShareScope(scope);
     }
   });
 

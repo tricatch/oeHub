@@ -11,12 +11,15 @@ public interface HostsProfMapper {
     // Shared by findByUserNo/findByHostsId: resolves a collabo/workspace reference row's real owner
     // (CASE WHEN ... ELSE -p.user_no, since a reference row's own user_no is stored negative) and
     // whichever of the row itself or its parent was updated more recently, for display. f is the
-    // row's own sidebar folder (never the parent's - folders are per user).
+    // row's own sidebar folder (never the parent's - folders are per user). A 'managed' parent is
+    // owned by the workspace's wss account, so the admin who made it (created_by) is shown instead.
     String JOIN_FOR_DISPLAY = """
         FROM HOSTS_PFILE h
         LEFT JOIN HOSTS_PFILE p ON p.hosts_id = h.parent_id
         LEFT JOIN HOSTS_FOLDER f ON f.folder_id = h.folder_id
-        LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no ELSE -p.user_no END
+        LEFT JOIN HUB_USR u ON u.user_no = CASE WHEN h.parent_id IS NULL THEN h.user_no
+                                                 WHEN p.share_scope = 'managed' THEN p.created_by
+                                                 ELSE -p.user_no END
         LEFT JOIN HUB_USR e ON e.user_no = COALESCE(p.updated_by, h.updated_by)
         """;
 
@@ -167,6 +170,41 @@ public interface HostsProfMapper {
     @Update("UPDATE HOSTS_PFILE SET user_no = #{newOwnerUserNo}, hosts_profile = #{newProfileName}, updated_by = #{newOwnerUserNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId}")
     void reassignOwner(@Param("hostsId") String hostsId, @Param("newOwnerUserNo") Long newOwnerUserNo, @Param("newProfileName") String newProfileName, @Param("updatedAt") java.time.LocalDateTime updatedAt);
 
+    // 'managed' parents of the caller's workspace that the caller has no reference row for yet -
+    // HostsProfService.list() creates the missing ones, so a member who joins later (or whose rows
+    // were all removed) still ends up with every managed profile.
+    @Select("""
+        SELECT p.hosts_id, p.user_no, p.hosts_profile, p.share_scope, p.create_at
+        FROM HOSTS_PFILE p
+        JOIN HUB_USR o ON o.user_no = -p.user_no
+        WHERE p.share_scope = 'managed'
+          AND p.parent_id IS NULL
+          AND p.user_no < 0
+          AND o.ws_no = #{wsNo}
+          AND NOT EXISTS (
+            SELECT 1 FROM HOSTS_PFILE r WHERE r.parent_id = p.hosts_id AND r.user_no = #{userNo}
+          )
+        ORDER BY p.create_at ASC, p.hosts_id ASC
+        """)
+    List<HostsProf> findManagedParentsMissingForUser(@Param("userNo") Long userNo, @Param("wsNo") Long wsNo);
+
+    // Turns the admin's own row into a reference to the new 'managed' parent - the same shape as
+    // setAsCollaboRef, only the share scope differs.
+    @Update("UPDATE HOSTS_PFILE SET parent_id = #{parentId}, hosts_content = '', wrapped_content_key = NULL, share_scope = 'managed', updated_by = #{userNo}, updated_at = #{updatedAt} WHERE hosts_id = #{hostsId} AND user_no = #{userNo}")
+    void setAsManagedRef(@Param("hostsId") String hostsId, @Param("userNo") Long userNo, @Param("parentId") String parentId, @Param("updatedAt") LocalDateTime updatedAt);
+
+    // Members whose forward-proxy host map includes this shared parent right now.
+    @Select("SELECT user_no FROM HOSTS_PFILE WHERE parent_id = #{parentId} AND selected = TRUE")
+    List<Long> findSelectedUserNosByParentId(@Param("parentId") String parentId);
+
+    @Delete("DELETE FROM HOSTS_PFILE WHERE parent_id = #{parentId}")
+    void deleteByParentId(@Param("parentId") String parentId);
+
+    // Every member's reference to the managed parents owned by this (wss) account - only removed
+    // together with the workspace itself; deleteOrphanedParentsByCreator then drops the parents.
+    @Delete("DELETE FROM HOSTS_PFILE WHERE parent_id IN (SELECT hosts_id FROM HOSTS_PFILE WHERE user_no = -#{userNo} AND share_scope = 'managed')")
+    void deleteManagedReferencesByOwner(Long userNo);
+
     @Delete("DELETE FROM HOSTS_PFILE WHERE user_no = -#{userNo} AND hosts_id NOT IN (SELECT DISTINCT parent_id FROM HOSTS_PFILE WHERE parent_id IS NOT NULL)")
     void deleteOrphanedParentsByCreator(Long userNo);
 
@@ -189,7 +227,7 @@ public interface HostsProfMapper {
         JOIN HUB_USR u ON u.user_no = CASE WHEN h.user_no < 0 THEN -h.user_no ELSE h.user_no END
         WHERE u.ws_no = #{wsNo}
           AND h.wrapped_content_key IS NOT NULL
-          AND h.share_scope IN ('workspace', 'collabo')
+          AND h.share_scope IN ('workspace', 'collabo', 'managed')
         """)
     List<HostsProf> findEncryptedRowsByWsNo(Long wsNo);
 

@@ -113,7 +113,7 @@ function createListFolders(opts) {
     el.className = 'oe-list-item' + (inFolder ? ' in-folder' : '') + (opts.isActive(it) ? ' active' : '');
     el.dataset[idKey] = it[idKey];
     el.draggable = true;
-    const scopeIcon = 'oe-icon-scope-' + (it.shareScope === 'private' || it.shareScope === 'collabo' ? it.shareScope : 'default');
+    const scopeIcon = 'oe-icon-scope-' + (['private', 'collabo', 'managed'].includes(it.shareScope) ? it.shareScope : 'default');
     const linkTitle = opts.publicLinkTitle(it);
     const name = it[nameKey];
     el.innerHTML = `

@@ -300,11 +300,17 @@ class WorkspaceAdminConsoleTest {
         assertThat(status(instAdminPage, "/api/adm/hosts/ua")).isEqualTo(200);
         assertThat(status(instAdminPage, "/wsa/users")).isEqualTo(403);
         assertThat(status(instAdminPage, "/api/wsa/users")).isEqualTo(403);
+        // Publishing / removing a managed hosts profile is a workspace-admin action too.
+        assertThat((Integer) apiCall(instAdminPage, "POST", "/api/wsa/hosts/none/managed", "{}").get(0)).isEqualTo(403);
+        assertThat((Integer) apiCall(instAdminPage, "DELETE", "/api/wsa/hosts/none/managed", null).get(0)).isEqualTo(403);
+        assertThat((Integer) apiCall(alphaPage, "DELETE", "/api/wsa/hosts/none/managed", null).get(0)).isEqualTo(404);
 
         var anon = playwright.request().newContext();
         try {
             assertThat(anon.get(server.baseUrl() + "/api/adm/hosts/ua").status()).isEqualTo(401);
             assertThat(anon.get(server.baseUrl() + "/api/wsa/users").status()).isEqualTo(401);
+            // GET, since an anonymous POST is already turned away (403) by the cross-site request check.
+            assertThat(anon.get(server.baseUrl() + "/api/wsa/hosts/none/managed").status()).isEqualTo(401);
             var redirect = anon.get(server.baseUrl() + "/adm/settings",
                 com.microsoft.playwright.options.RequestOptions.create().setMaxRedirects(0));
             assertThat(redirect.status()).isEqualTo(302);

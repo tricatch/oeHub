@@ -186,8 +186,8 @@ erDiagram
 | `hosts_content` | hosts 파일 내용 |
 | `selected` | 현재 선택된 프로필 여부 |
 | `sort_order` | 정렬 순서 |
-| `share_scope` | `private` / `collabo` / `workspace` |
-| `parent_id` | `collabo` 공유의 참조 행 (자기참조 FK) |
+| `share_scope` | `private` / `collabo` / `workspace` / `managed` |
+| `parent_id` | `collabo`/`managed` 공유의 참조 행 (자기참조 FK) |
 | `wrapped_content_key` | 콘텐츠 키(DEK)를 감싼 것 |
 | `link_content` | "살아있는 공개 링크"용 암호문 |
 | `wrapped_link_key` | 공개 링크 전용 키를 감싼 것 |
@@ -196,9 +196,9 @@ erDiagram
 | `create_at` | 생성 일시 |
 | `updated_at` | 마지막 수정 일시 |
 
-- `share_scope` — `private`/`collabo`/`workspace`. `workspace`의 의미가 배포 모드에 따라 달라진다([04-deployment-modes.md](04-deployment-modes.md) "share_scope의 재해석" 참고).
-- `parent_id` — `collabo` 공유의 참조 행. `HOSTS_PFILE` 자기 자신을 가리키는 자기참조 FK.
-- `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`workspace`는 워크스페이스키로 감싼다. `workspace` 모드가 아닌 `self-hosted`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
+- `share_scope` — `private`/`collabo`/`workspace`/`managed`. `managed`는 워크스페이스 관리자가 전체 사용자에게 배포한 프로필로, 원본 행은 `wss` 계정의 음수 `user_no`로 저장되고 사용자마다 참조 행을 가진다([02-oehosts-and-oelink.md](02-oehosts-and-oelink.md) "전체 공유 프로필" 참고). `workspace`의 의미가 배포 모드에 따라 달라진다([04-deployment-modes.md](04-deployment-modes.md) "share_scope의 재해석" 참고).
+- `parent_id` — `collabo`/`managed` 공유의 참조 행. `HOSTS_PFILE` 자기 자신을 가리키는 자기참조 FK.
+- `wrapped_content_key` — 이 행의 콘텐츠 키(DEK)를 감싼 것. `private`는 소유자 개인키로, `collabo`/`workspace`/`managed`는 워크스페이스키로 감싼다. `workspace` 모드가 아닌 `self-hosted`에서는 콘텐츠 자체가 평문이라 이 컬럼이 쓰이지 않는다.
 - `link_content`/`wrapped_link_key` — "살아있는 공개 링크" 기능 전용([05-end-to-end-encryption.md](05-end-to-end-encryption.md) "공개 링크 공유" 참고). 링크 발급 여부와 무관하게 `hosts_content`/`wrapped_content_key`는 전혀 건드리지 않는다 — 완전히 별개의 암호문 계열이다.
 - `uq_hosts_pfile_user_profile` — 같은 소유자 안에서 프로필 이름 중복 방지. 소유자가 `wss`으로 바뀌는 재할당 시 이름이 충돌하면 자동으로 뒤에 번호를 붙여 회피한다.
 

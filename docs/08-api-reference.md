@@ -69,7 +69,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET | `/api/hosts` | 내 hosts 프로필 목록 |
 | POST | `/api/hosts` | 새 프로필 생성 |
 | DELETE | `/api/hosts` | 내 프로필 전체 삭제 |
-| PATCH | `/api/hosts/{hostsId}/content` | 프로필 내용 수정 |
+| PATCH | `/api/hosts/{hostsId}/content` | 프로필 내용 수정. `managed` 프로필은 워크스페이스 관리자만 가능(그 외 `404`) |
 | PATCH | `/api/hosts/{hostsId}/name` | 프로필 이름 변경 (내 다른 프로필과 이름이 겹치면 대소문자 무시로 409) |
 | PATCH | `/api/hosts/{hostsId}/selected` | 선택(활성) 상태 토글 |
 | PATCH | `/api/hosts/{hostsId}/share-scope` | 공개 범위 변경 (`private`/`collabo`/`workspace`) |
@@ -77,7 +77,7 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | POST | `/api/hosts/{hostsId}/link` | "살아있는 공개 링크" 생성/갱신 |
 | POST | `/api/hosts/{hostsId}/copy` | 프로필 복사 |
 | POST | `/api/hosts/{hostsId}/register` | `collabo` 공유 프로필을 내 것으로 등록 |
-| DELETE | `/api/hosts/{hostsId}` | 프로필 삭제 |
+| DELETE | `/api/hosts/{hostsId}` | 프로필 삭제. `managed`(전체 공유) 프로필은 `403` — 관리자는 `/api/wsa/hosts/{hostsId}/managed`로 삭제 |
 | GET | `/api/hosts/search` | 이름으로 프로필 검색 |
 | PUT | `/api/hosts/order` | 정렬 순서 저장 |
 | GET | `/api/hosts/folders` | 내 사이드바 폴더 목록 (1단계, 사용자별) |
@@ -134,6 +134,8 @@ oeHosts는 그대로 사용 가능 — oeProxy만 꺼짐).
 | GET/POST | `/api/wsa/invites` | 초대 코드 목록/발급 (`workspace` 전용) |
 | GET/POST/PATCH/DELETE | `/api/wsa/teams` (`+/{teamNo}`) | 팀 CRUD (`workspace` 전용) |
 | GET/POST/PATCH/DELETE | `/api/wsa/hosts/ua`, `/api/wsa/hosts/url` (`+/{id}`, `+/order`) | 내 워크스페이스의 공유 UA/URL 프리셋 CRUD. 다른 워크스페이스의 프리셋 id는 `404`. 페이지는 `/wsa/settings` |
+| POST | `/api/wsa/hosts/{hostsId}/managed` | 내 hosts 프로필을 워크스페이스 전체 사용자에게 배포(`managed`로 전환, 되돌릴 수 없음). 본문 `{"wrappedContentKey": ...}`(`workspace` 모드: 워크스페이스키로 감싼 DEK). 내 프로필이 아니거나 이미 참조 행이면 `404` |
+| DELETE | `/api/wsa/hosts/{hostsId}/managed` | `managed` 프로필을 모든 사용자의 목록에서 삭제. `hostsId`는 호출자 자신의 참조 행. 아니면 `404` |
 
 ## 사용자 — 초대·승인 (`/api/members/*`, `workspace` 전용)
 

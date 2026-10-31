@@ -677,6 +677,10 @@ public class OeHubApplication {
             config.routes.patch("/api/wsa/hosts/url/{urlId}",   adminUrl::apiUpdate);
             config.routes.delete("/api/wsa/hosts/url/{urlId}",  adminUrl::apiDelete);
             config.routes.put("/api/wsa/hosts/url/order",       adminUrl::apiReorder);
+            // Workspace admin: publish one of their own hosts profiles to every member ('managed'
+            // share scope), or remove a managed profile from everyone.
+            config.routes.post("/api/wsa/hosts/{hostsId}/managed",   hosts::apiConvertToManaged);
+            config.routes.delete("/api/wsa/hosts/{hostsId}/managed", hosts::apiDeleteManaged);
 
             // Admin: hosts user-agent presets
             config.routes.get("/api/adm/hosts/ua",              adminUa::apiList);

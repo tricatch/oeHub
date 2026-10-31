@@ -95,8 +95,8 @@ oeHub는 초대 코드가 있는지 여부로 분기하는 단일 가입 화면�
 
 ### `share_scope`의 재해석
 
-`HOSTS_PFILE.share_scope`는 두 모드 모두 같은 세 가지 값(`private`, `collabo`, `workspace`)을 그대로
-씁니다. `workspace` 모드라고 새 값이 추가되지는 않습니다. 다만 `workspace` 값의 의미가 모드에 따라
+`HOSTS_PFILE.share_scope`는 두 모드 모두 같은 네 가지 값(`private`, `collabo`, `workspace`,
+`managed`)을 그대로 씁니다. `workspace` 모드라고 새 값이 추가되지는 않습니다. 다만 `workspace` 값의 의미가 모드에 따라
 달라집니다.
 
 - `self-hosted`에서 `workspace` 값은 늘 그래왔던 의미입니다: 로그인 없이 링크를 가진 누구에게나 보임.
