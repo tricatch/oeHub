@@ -775,6 +775,14 @@ public class OeHubApplication {
 
         Security.addProvider(new BouncyCastleProvider());
 
+        // Bind every H2 server socket (the web console and the AUTO_SERVER TCP port) to loopback
+        // only. H2's web server has no bind-address option of its own; it reads this property once,
+        // when its SysProperties class initializes, so it must be set before any H2 class is used.
+        // An explicit -Dh2.bindAddress on the command line still wins.
+        if (System.getProperty("h2.bindAddress") == null) {
+            System.setProperty("h2.bindAddress", "127.0.0.1");
+        }
+
         // -Doe.migrate=<name>: apply one bundled schema migration to the existing database and exit,
         // before anything (H2 console, schema init, servers) opens the database - see DbMigration.
         var migration = System.getProperty("oe.migrate");
