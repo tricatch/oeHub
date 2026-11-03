@@ -2,6 +2,8 @@ package tricatch.oe.hub.controller;
 
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
+import tricatch.oe.hub.config.AppHome;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubAuditLogMapper;
 
 import java.time.format.DateTimeFormatter;
@@ -48,10 +50,16 @@ public class AuditLogController {
                 m.put("targetType", r.getTargetType());
                 m.put("targetId", r.getTargetId());
                 m.put("detail", r.getDetail());
-                // "System" would be wrong here (0 is never used for a Tier-1 action - it's always
-                // an authenticated admin) but the same departed-user fallback as elsewhere in the
-                // app still applies: show the raw member number instead of a generic placeholder.
-                m.put("actor", r.getActorUserId() != null ? r.getActorUserId() : "#" + r.getCreatedBy());
+                // Shown as "System" (actorSystem=true, label resolved client-side): the reserved 0
+                // sentinel, and in workspace mode an instance admin acting on this workspace from
+                // outside it (e.g. workspace.status_change) - the tenant sees the operator, not a
+                // personal account ID. Otherwise the departed-user fallback applies: show the raw
+                // member number instead of a generic placeholder.
+                boolean system = Long.valueOf(0L).equals(r.getCreatedBy())
+                    || (AppHome.isWorkspaceMode() && Role.ADM.equals(r.getActorRole()));
+                m.put("actorSystem", system);
+                m.put("actor", system ? null
+                    : r.getActorUserId() != null ? r.getActorUserId() : "#" + r.getCreatedBy());
                 m.put("createAt", r.getCreateAt() != null ? r.getCreateAt().format(FMT) : "");
                 result.add(m);
             }
