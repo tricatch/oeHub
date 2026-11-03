@@ -15,6 +15,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.regex.Pattern;
+import tricatch.oe.hub.config.AuditLogger;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -147,13 +148,14 @@ class AuditLogTest {
         assertThat(tbody).containsText("Approved sign-up");
         assertThat(tbody).containsText("Changed role");
         assertThat(tbody).containsText("Reset password");
-        assertThat(tbody).containsText("Deleted account");
+        assertThat(tbody).containsText("Account deleted by admin");
         // Every one of these was performed by the admin - never the departed user, who by now has
         // no way to be confused with the actor column.
         assertThat(tbody).containsText(ADMIN_ID);
-        // The deleted user's ID string was stripped from every row about them (pseudonymized) and
-        // only the member number remains as the target.
+        // The deleted user's full ID is gone from every row about them (pseudonymized): only the
+        // masked form remains in the detail, with the member number as the target.
         assertThat(tbody).not().containsText(USER_ID);
+        assertThat(tbody).containsText("userId=" + AuditLogger.maskUserId(USER_ID));
         assertThat(tbody).containsText("user #");
     }
 

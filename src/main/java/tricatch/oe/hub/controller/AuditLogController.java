@@ -1,10 +1,13 @@
 package tricatch.oe.hub.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.http.Context;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hub.config.AppHome;
 import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.mapper.HubAuditLogMapper;
+import tricatch.oe.hub.model.HubAuditLog;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -21,6 +24,7 @@ public class AuditLogController {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final int PAGE_SIZE = 50;
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final SqlSessionFactory sqlSessionFactory;
 
@@ -53,13 +57,14 @@ public class AuditLogController {
                 // Shown as "System" (actorSystem=true, label resolved client-side): the reserved 0
                 // sentinel, and in workspace mode an instance admin acting on this workspace from
                 // outside it (e.g. workspace.status_change) - the tenant sees the operator, not a
-                // personal account ID. Otherwise the departed-user fallback applies: show the raw
-                // member number instead of a generic placeholder.
+                // personal account ID. A departed actor shows the masked ID that their own removal
+                // entry carries (self-withdrawal), else the raw member number instead of a generic
+                // placeholder.
                 boolean system = Long.valueOf(0L).equals(r.getCreatedBy())
                     || (AppHome.isWorkspaceMode() && Role.ADM.equals(r.getActorRole()));
                 m.put("actorSystem", system);
                 m.put("actor", system ? null
-                    : r.getActorUserId() != null ? r.getActorUserId() : "#" + r.getCreatedBy());
+                    : r.getActorUserId() != null ? r.getActorUserId() : departedActor(r));
                 m.put("createAt", r.getCreateAt() != null ? r.getCreateAt().format(FMT) : "");
                 result.add(m);
             }
@@ -70,6 +75,22 @@ public class AuditLogController {
             body.put("page", page);
             body.put("pageSize", PAGE_SIZE);
             ctx.json(body);
+        }
+    }
+
+    // The removal entry of a self-withdrawal targets the actor itself and stores the masked ID in
+    // detail.userId (AccountRemovalService); any other departed actor falls back to "#<user_no>".
+    private static String departedActor(HubAuditLog r) {
+        var fallback = "#" + r.getCreatedBy();
+        if (!"user".equals(r.getTargetType()) || r.getDetail() == null
+                || !String.valueOf(r.getCreatedBy()).equals(r.getTargetId())) {
+            return fallback;
+        }
+        try {
+            var node = JSON.readTree(r.getDetail()).get("userId");
+            return node != null && node.isTextual() ? node.asText() : fallback;
+        } catch (JsonProcessingException e) {
+            return fallback;
         }
     }
 

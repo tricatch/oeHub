@@ -59,11 +59,12 @@ public class AccountRemovalService {
             // fail the constraint outright rather than leaving an orphaned row.
             session.getMapper(WsKeyMapper.class).deleteByUserNo(userNo);
             session.getMapper(HubUserMapper.class).deleteByUserNo(userNo);
-            // Pseudonymize: earlier rows about this account lose their user ID string, and the
-            // removal entry itself is written without one, leaving only the member number.
-            stripUserId(session, target.getWsNo(), userNo, actorUserNo);
+            // Pseudonymize: earlier rows about this account keep only a masked user ID, and the
+            // removal entry itself carries the masked ID next to the member number.
+            var maskedId = AuditLogger.maskUserId(target.getUserId());
+            maskUserId(session, target.getWsNo(), userNo, maskedId, actorUserNo);
             AuditLogger.record(session, target.getWsNo(), auditAction, "user", String.valueOf(userNo),
-                null, actorUserNo);
+                AuditLogger.detail("userId", maskedId), actorUserNo);
             session.commit();
         }
         // Their live oeProxy routing table and IP claim live in memory, not in the rows deleted
@@ -104,18 +105,18 @@ public class AccountRemovalService {
         logger.info("Workspace deleted: ws_no={} ({} account(s))", wsNo, users.size());
     }
 
-    // Removes the "userId" key from the detail of every audit row targeting the account; a detail
-    // left empty becomes NULL. Rows where the account was only the actor carry no ID string.
-    private void stripUserId(org.apache.ibatis.session.SqlSession session, Long wsNo, Long userNo, Long actorUserNo) {
+    // Replaces the "userId" value in the detail of every audit row targeting the account with its
+    // masked form. Rows where the account was only the actor carry no ID string.
+    private void maskUserId(org.apache.ibatis.session.SqlSession session, Long wsNo, Long userNo,
+                            String maskedId, Long actorUserNo) {
         var mapper = session.getMapper(HubAuditLogMapper.class);
         var now = java.time.LocalDateTime.now();
         for (var row : mapper.findUserTargetRows(wsNo, String.valueOf(userNo))) {
             try {
                 var node = JSON.readTree(row.getDetail());
                 if (!(node instanceof ObjectNode obj) || !obj.has("userId")) continue;
-                obj.remove("userId");
-                mapper.updateDetail(row.getAuditId(), obj.isEmpty() ? null : JSON.writeValueAsString(obj),
-                    actorUserNo, now);
+                obj.put("userId", maskedId);
+                mapper.updateDetail(row.getAuditId(), JSON.writeValueAsString(obj), actorUserNo, now);
             } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
                 // Unparseable detail cannot be trusted to be free of the ID; drop it entirely.
                 mapper.updateDetail(row.getAuditId(), null, actorUserNo, now);
