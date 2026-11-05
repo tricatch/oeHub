@@ -146,5 +146,5 @@ HTTP 요청에 포함되지 않으므로 서버 접근 로그에도 남지 않�
 공개 범위 변경은 콘텐츠는 그대로 둔 채 콘텐츠 키만 다시 wrap한다.
 
 - `private`로 옮기면 → 소유자 개인 키로 다시 wrap한다.
-- `workspace`/`collabo`로 옮기면 → 워크스페이스키로 다시 wrap한다.
+- `workspace`/`collabo`/`managed`로 옮기면 → 워크스페이스키로 다시 wrap한다.
 - `workspace`를 벗어나면 → 살아있는 공개 링크는 자동 폐기된다.

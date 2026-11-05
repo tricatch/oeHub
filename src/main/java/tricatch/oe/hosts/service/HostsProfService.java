@@ -4,6 +4,7 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import tricatch.oe.hosts.mapper.HostsProfMapper;
 import tricatch.oe.hosts.model.HostsProf;
+import tricatch.oe.hub.config.Role;
 import tricatch.oe.hub.i18n.LocaleContext;
 import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.folder.FolderKind;
@@ -44,15 +45,66 @@ public class HostsProfService {
         return example;
     }
 
+    /**
+     * Share scope of a profile a workspace admin publishes to every member: one parent row owned by
+     * the workspace's wss account (stored under its negated user_no, like a collabo parent) plus a
+     * reference row per member, so each member keeps their own order, folder and selection. Only a
+     * workspace admin may edit or delete it; members can neither edit nor delete their reference.
+     */
+    public static final String MANAGED = "managed";
+
+    // Serializes syncManaged, so two concurrent list() calls for one user can't both add the same
+    // missing reference row (there is no unique key on (user_no, parent_id) to catch it).
+    private static final Object MANAGED_SYNC_LOCK = new Object();
+
     private final SqlSessionFactory sqlSessionFactory;
 
     public HostsProfService(SqlSessionFactory sqlSessionFactory) {
         this.sqlSessionFactory = sqlSessionFactory;
     }
 
+    public static boolean isManaged(HostsProf p) {
+        return p != null && MANAGED.equals(p.getShareScope());
+    }
+
     public List<HostsProf> list(Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
+            syncManaged(session, userNo);
             return session.getMapper(HostsProfMapper.class).findByUserNo(userNo);
+        }
+    }
+
+    // Gives the user a reference row for every managed profile of their workspace they don't have
+    // yet - a member who joined after it was published, or whose rows were all removed. New rows go
+    // after everything the user has, unselected.
+    private void syncManaged(SqlSession session, Long userNo) {
+        var user = session.getMapper(HubUserMapper.class).findByUserNo(userNo);
+        if (user == null || !Role.canLogin(user.getRole())) return;
+        synchronized (MANAGED_SYNC_LOCK) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var missing = mapper.findManagedParentsMissingForUser(userNo, user.getWsNo());
+            if (missing.isEmpty()) return;
+            var names = existingNames(mapper, userNo);
+            var now = LocalDateTime.now();
+            for (var parent : missing) {
+                var ref = new HostsProf();
+                ref.setHostsId(newId());
+                ref.setUserNo(userNo);
+                var name = nextUniqueName(names, parent.getHostsProfile());
+                names.add(name.toLowerCase());
+                ref.setHostsProfile(name);
+                ref.setHostsContent("");
+                ref.setSelected(false);
+                // Added on the member's behalf without them doing anything - the system actor.
+                ref.setCreatedBy(0L);
+                ref.setUpdatedBy(0L);
+                ref.setCreateAt(now);
+                ref.setUpdatedAt(now);
+                ref.setShareScope(MANAGED);
+                ref.setParentId(parent.getHostsId());
+                mapper.insertWithAutoSortOrder(ref);
+            }
+            session.commit();
         }
     }
 
@@ -103,6 +155,7 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var record = mapper.findByHostsId(hostId);
             if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0) return null;
+            if (isManaged(record) && !Role.isWorkspaceAdmin(session.getMapper(HubUserMapper.class).findByUserNo(userNo))) return null;
             var now = LocalDateTime.now();
             if (record.getParentId() != null) {
                 mapper.updateContentByParentId(record.getParentId(), userNo, content, now);
@@ -168,17 +221,21 @@ public class HostsProfService {
         }
     }
 
-    public void delete(String hostId, Long userNo) {
+    // False when the row is a managed profile - a member can't remove it from their list, and an
+    // admin removes it for everyone through deleteManaged instead.
+    public boolean delete(String hostId, Long userNo) {
         try (var session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(HostsProfMapper.class);
             var record = mapper.findByHostsId(hostId);
-            if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0) return;
+            if (record == null || !record.getUserNo().equals(userNo) || record.getUserNo() < 0) return true;
+            if (isManaged(record)) return false;
             var parentId = record.getParentId();
             mapper.delete(hostId, userNo);
             if (parentId != null && mapper.countReferencesByParentId(parentId) == 0) {
                 mapper.deleteByHostsId(parentId);
             }
             session.commit();
+            return true;
         }
     }
 
@@ -234,10 +291,14 @@ public class HostsProfService {
         var refs = mapper.findReferencesByUserNo(userNo);
         mapper.deleteByUserNo(userNo);
         for (var ref : refs) {
+            // A managed parent outlives every reference to it; only deleteManaged removes it.
+            if (isManaged(ref)) continue;
             if (mapper.countReferencesByParentId(ref.getParentId()) == 0) {
                 mapper.deleteByHostsId(ref.getParentId());
             }
         }
+        // Only a wss account owns managed parents, and it is removed only with its workspace.
+        mapper.deleteManagedReferencesByOwner(userNo);
         mapper.deleteOrphanedParentsByCreator(userNo);
         session.getMapper(ListFolderMapper.class).deleteByUserNo(FolderKind.HOSTS, userNo);
     }
@@ -329,7 +390,7 @@ public class HostsProfService {
             var mapper = session.getMapper(HostsProfMapper.class);
             var hosts = mapper.findByHostsId(hostId);
             if (hosts == null || !hosts.getUserNo().equals(userNo) || hosts.getUserNo() < 0) return null;
-            if ("collabo".equals(hosts.getShareScope())) return null;
+            if ("collabo".equals(hosts.getShareScope()) || isManaged(hosts)) return null;
             // Refuse rather than silently strand ciphertext with a stale/missing key - see the
             // identical guard in copyProfile.
             if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
@@ -382,6 +443,79 @@ public class HostsProfService {
         }
     }
 
+    /**
+     * Publishes one of the admin's own profiles to the whole workspace: the content moves to a new
+     * parent row owned by the workspace's wss account, and the admin's row becomes their reference
+     * to it. Every other member gets their reference on their next list(). The caller must be a
+     * workspace admin (the /api/wsa/* filter); wrappedContentKey is the DEK wrapped with the
+     * workspace key (null in self-hosted).
+     */
+    public HostsProf convertToManaged(String hostId, Long userNo, String wrappedContentKey) {
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var hosts = mapper.findByHostsId(hostId);
+            if (hosts == null || !hosts.getUserNo().equals(userNo) || hosts.getParentId() != null) return null;
+            if ("collabo".equals(hosts.getShareScope())) return null;
+            // Same guard as updateShareScope/copyProfile - never move ciphertext without its key.
+            if (hosts.getWrappedContentKey() != null && wrappedContentKey == null) return null;
+            var userMapper = session.getMapper(HubUserMapper.class);
+            var caller = userMapper.findByUserNo(userNo);
+            if (caller == null) return null;
+            var wsSystem = userMapper.findWsSystemByWsNo(caller.getWsNo());
+            if (wsSystem == null) return null;
+            var now = LocalDateTime.now();
+            var parent = new HostsProf();
+            parent.setHostsId(newId());
+            parent.setUserNo(-wsSystem.getUserNo());
+            parent.setHostsProfile(nextUniqueName(existingNames(mapper, -wsSystem.getUserNo()), hosts.getHostsProfile()));
+            parent.setHostsContent(hosts.getHostsContent());
+            parent.setWrappedContentKey(wrappedContentKey);
+            parent.setSelected(false);
+            parent.setSortOrder(0);
+            parent.setCreatedBy(userNo);
+            parent.setUpdatedBy(userNo);
+            parent.setCreateAt(now);
+            parent.setUpdatedAt(now);
+            parent.setShareScope(MANAGED);
+            mapper.insert(parent);
+            mapper.setAsManagedRef(hostId, userNo, parent.getHostsId(), now);
+            // A managed profile is for the workspace's members, not an anonymous link audience.
+            mapper.clearLink(hostId);
+            session.commit();
+            return mapper.findByHostsId(hostId);
+        }
+    }
+
+    /**
+     * Removes a managed profile from every member of the workspace. hostId is the caller's own
+     * reference row; the caller must be a workspace admin (the /api/wsa/* filter). Returns the
+     * members who had it selected, whose forward-proxy host map must be refreshed, or null if
+     * hostId isn't the caller's managed reference.
+     */
+    public List<Long> deleteManaged(String hostId, Long userNo) {
+        try (var session = sqlSessionFactory.openSession()) {
+            var mapper = session.getMapper(HostsProfMapper.class);
+            var record = mapper.findByHostsId(hostId);
+            if (record == null || !record.getUserNo().equals(userNo) || !isManaged(record) || record.getParentId() == null) return null;
+            var parentId = record.getParentId();
+            var selected = mapper.findSelectedUserNosByParentId(parentId);
+            mapper.deleteByParentId(parentId);
+            mapper.deleteByHostsId(parentId);
+            session.commit();
+            return selected;
+        }
+    }
+
+    // Members (other than the editor) who have this managed profile selected, so their
+    // forward-proxy host map can be refreshed after an admin edits the shared content.
+    public List<Long> selectedReferenceUserNos(String parentId, Long exceptUserNo) {
+        try (var session = sqlSessionFactory.openSession()) {
+            return session.getMapper(HostsProfMapper.class).findSelectedUserNosByParentId(parentId).stream()
+                .filter(n -> !n.equals(exceptUserNo))
+                .toList();
+        }
+    }
+
     public List<HostsProf> searchOthers(Long userNo, String keyword) {
         try (var session = sqlSessionFactory.openSession()) {
             var wsNo = session.getMapper(HubUserMapper.class).findByUserNo(userNo).getWsNo();
@@ -412,6 +546,8 @@ public class HostsProfService {
                 mapper.insert(entry);
             }
             session.commit();
+            // A replace-import also removed the user's managed references; give them back.
+            syncManaged(session, userNo);
             return mapper.findByUserNo(userNo);
         }
     }

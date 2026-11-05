@@ -19,6 +19,7 @@
 .oe-icon-scope-default { -webkit-mask-image: url('/icon/lucide/file.svg');     mask-image: url('/icon/lucide/file.svg'); }
 .oe-icon-scope-private { -webkit-mask-image: url('/icon/lucide/lock.svg');     mask-image: url('/icon/lucide/lock.svg'); }
 .oe-icon-scope-collabo { -webkit-mask-image: url('/icon/lucide/puzzle.svg');   mask-image: url('/icon/lucide/puzzle.svg'); }
+.oe-icon-scope-managed { -webkit-mask-image: url('/icon/lucide/file-symlink.svg'); mask-image: url('/icon/lucide/file-symlink.svg'); }
 .oe-icon-import       { -webkit-mask-image: url('/icon/lucide/circle-fading-plus.svg'); mask-image: url('/icon/lucide/circle-fading-plus.svg'); }
 .oe-icon-download     { -webkit-mask-image: url('/icon/lucide/file-down.svg');   mask-image: url('/icon/lucide/file-down.svg'); }
 .oe-icon-copy         { -webkit-mask-image: url('/icon/lucide/copy.svg');          mask-image: url('/icon/lucide/copy.svg'); }

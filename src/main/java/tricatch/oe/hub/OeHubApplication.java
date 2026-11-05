@@ -677,6 +677,10 @@ public class OeHubApplication {
             config.routes.patch("/api/wsa/hosts/url/{urlId}",   adminUrl::apiUpdate);
             config.routes.delete("/api/wsa/hosts/url/{urlId}",  adminUrl::apiDelete);
             config.routes.put("/api/wsa/hosts/url/order",       adminUrl::apiReorder);
+            // Workspace admin: publish one of their own hosts profiles to every member ('managed'
+            // share scope), or remove a managed profile from everyone.
+            config.routes.post("/api/wsa/hosts/{hostsId}/managed",   hosts::apiConvertToManaged);
+            config.routes.delete("/api/wsa/hosts/{hostsId}/managed", hosts::apiDeleteManaged);
 
             // Admin: hosts user-agent presets
             config.routes.get("/api/adm/hosts/ua",              adminUa::apiList);
@@ -770,6 +774,14 @@ public class OeHubApplication {
     public static void main(String[] args) throws Exception {
 
         Security.addProvider(new BouncyCastleProvider());
+
+        // Bind every H2 server socket (the web console and the AUTO_SERVER TCP port) to loopback
+        // only. H2's web server has no bind-address option of its own; it reads this property once,
+        // when its SysProperties class initializes, so it must be set before any H2 class is used.
+        // An explicit -Dh2.bindAddress on the command line still wins.
+        if (System.getProperty("h2.bindAddress") == null) {
+            System.setProperty("h2.bindAddress", "127.0.0.1");
+        }
 
         // -Doe.migrate=<name>: apply one bundled schema migration to the existing database and exit,
         // before anything (H2 console, schema init, servers) opens the database - see DbMigration.

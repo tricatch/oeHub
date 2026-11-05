@@ -115,7 +115,9 @@ public class UserController {
         var hubUser = AuthController.currentUser(ctx);
         var userNo = hubUser.getUserNo();
 
-        var hostsProfiles = hostsProfService.list(userNo);
+        var hostsProfiles = new java.util.ArrayList<>(hostsProfService.list(userNo));
+        // Same exclusion as HostsController.apiExport - managed profiles belong to the workspace.
+        hostsProfiles.removeIf(HostsProfService::isManaged);
         // Same exclusion as HostsController.apiExport - the public link is per-workspace derived
         // data and meaningless (wrappedLinkKey can't be unwrapped) outside it (design doc §6).
         hostsProfiles.forEach(p -> { p.setLinkContent(null); p.setWrappedLinkKey(null); });

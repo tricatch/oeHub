@@ -10,6 +10,8 @@ import tricatch.oe.hosts.service.HostConfService;
 import tricatch.oe.hosts.service.HostsProfService;
 import tricatch.oe.hub.controller.AuthController;
 import tricatch.oe.hub.controller.SettingsController;
+import tricatch.oe.hub.config.Role;
+import tricatch.oe.hub.mapper.HubUserMapper;
 import tricatch.oe.hub.util.NameTakenException;
 import tricatch.oe.fwdproxy.ForwardProxyServer;
 
@@ -45,7 +47,12 @@ public class HostsController {
 
     public void showHosts(Context ctx) {
         var model = new HashMap<String, Object>();
-        model.put("user", AuthController.currentUser(ctx));
+        var user = AuthController.currentUser(ctx);
+        model.put("user", user);
+        // share-scope-select.pebble: this page offers the 'managed' scope, which only a workspace
+        // admin may pick.
+        model.put("managedScope", true);
+        model.put("canManageScope", Role.isWorkspaceAdmin(user));
         model.put("proxyIp", proxyIpFor(ctx));
         model.put("fwdproxyPort", ForwardProxyServer.getPort());
         ctx.render("templates/oehub/hosts.pebble", model);
@@ -90,6 +97,9 @@ public class HostsController {
         if (updated.isSelected()) {
             ForwardProxyServer.refreshUserHosts(hubUser);
         }
+        if (HostsProfService.isManaged(updated)) {
+            refreshForwardProxy(hostsProfService.selectedReferenceUserNos(updated.getParentId(), hubUser.getUserNo()));
+        }
         ctx.json(updated);
     }
 
@@ -127,8 +137,45 @@ public class HostsController {
     public void apiDelete(Context ctx) {
         var hubUser = AuthController.currentUser(ctx);
         var hostId = ctx.pathParam("hostsId");
-        hostsProfService.delete(hostId, hubUser.getUserNo());
+        if (!hostsProfService.delete(hostId, hubUser.getUserNo())) { ctx.status(403); return; }
         ctx.status(204);
+    }
+
+    // POST /api/wsa/hosts/{hostsId}/managed - publishes one of the admin's own profiles to every
+    // member of the workspace. Body: {"wrappedContentKey": ...} (workspace mode; the DEK wrapped
+    // with the workspace key).
+    public void apiConvertToManaged(Context ctx) throws Exception {
+        var hubUser = AuthController.currentUser(ctx);
+        var hostId = ctx.pathParam("hostsId");
+        String wrappedContentKey = null;
+        if (ctx.body() != null && !ctx.body().isBlank()) {
+            @SuppressWarnings("unchecked")
+            var body = objectMapper.readValue(ctx.body(), Map.class);
+            wrappedContentKey = (String) body.get("wrappedContentKey");
+        }
+        var updated = hostsProfService.convertToManaged(hostId, hubUser.getUserNo(), wrappedContentKey);
+        if (updated == null) { ctx.status(404); return; }
+        ctx.json(updated);
+    }
+
+    // DELETE /api/wsa/hosts/{hostsId}/managed - removes a managed profile from every member.
+    public void apiDeleteManaged(Context ctx) {
+        var hubUser = AuthController.currentUser(ctx);
+        var selected = hostsProfService.deleteManaged(ctx.pathParam("hostsId"), hubUser.getUserNo());
+        if (selected == null) { ctx.status(404); return; }
+        refreshForwardProxy(selected);
+        ctx.status(204);
+    }
+
+    // Rebuilds the forward-proxy host map of members whose selected profiles just changed under them.
+    private void refreshForwardProxy(List<Long> userNos) {
+        if (userNos.isEmpty()) return;
+        try (var session = sqlSessionFactory.openSession()) {
+            var userMapper = session.getMapper(HubUserMapper.class);
+            for (var userNo : userNos) {
+                ForwardProxyServer.refreshUserHosts(userMapper.findByUserNo(userNo));
+            }
+        }
     }
 
     public void apiDeleteAll(Context ctx) {
@@ -325,7 +372,9 @@ public class HostsController {
 
     public void apiExport(Context ctx) throws Exception {
         var hubUser = AuthController.currentUser(ctx);
-        var profiles = hostsProfService.list(hubUser.getUserNo());
+        var profiles = new java.util.ArrayList<>(hostsProfService.list(hubUser.getUserNo()));
+        // Managed profiles belong to the workspace, not the user, and come back on their own.
+        profiles.removeIf(HostsProfService::isManaged);
         // The public link (linkContent/wrappedLinkKey) is per-workspace derived data - wrappedLinkKey
         // can never be unwrapped outside the workspace it was wrapped in, so it's meaningless (and
         // potentially misleading) in an export (e2eEncryption design doc §6).

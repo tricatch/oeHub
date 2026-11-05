@@ -15,6 +15,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.List;
 import java.util.regex.Pattern;
+import tricatch.oe.hub.config.AuditLogger;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -245,10 +246,12 @@ class AccountSelfDeleteTest {
 
         assertThat((String) api(founderPage, "GET", "/api/wsa/users", null).get(1)).doesNotContain(MEMBER_ID);
         var audit = (String) api(founderPage, "GET", "/api/wsa/audit-log", null).get(1);
-        // Withdrawal entry present, the ID string gone everywhere (including the older approval
-        // entry), the member number kept as the target.
+        // Withdrawal entry present, the full ID gone everywhere (including the older approval
+        // entry), the member number kept as the target, and the withdrawal's own actor shown as
+        // the masked ID rather than a bare member number.
         assertThat(audit).contains("user.withdraw").contains("user.approve");
         assertThat(audit).doesNotContain(MEMBER_ID);
+        assertThat(audit).contains("\"actor\":\"" + AuditLogger.maskUserId(MEMBER_ID) + "\"");
         assertThat(audit).contains("\"targetId\":\"" + memberNo + "\"");
     }
 

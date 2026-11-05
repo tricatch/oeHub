@@ -32,6 +32,16 @@ public class AuditLogger {
         session.getMapper(HubAuditLogMapper.class).insert(row);
     }
 
+    /**
+     * Masks a removed account's user ID for the audit log: the first half (rounded up) stays
+     * visible and the rest becomes a fixed "***", so the original length is not revealed either
+     * (e.g. "tricatch" -> "tric***", "abcd" -> "ab***").
+     */
+    public static String maskUserId(String userId) {
+        if (userId == null || userId.isEmpty()) return userId;
+        return userId.substring(0, (userId.length() + 1) / 2) + "***";
+    }
+
     /** Builds a small flat JSON object for the `detail` column - insertion order preserved. */
     public static String detail(Object... keyValuePairs) {
         if (keyValuePairs.length % 2 != 0) {

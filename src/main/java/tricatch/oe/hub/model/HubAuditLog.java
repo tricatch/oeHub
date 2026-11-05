@@ -10,6 +10,8 @@ public class HubAuditLog extends Auditable {
     // Display-only join field (like HostsProf.updatedByUserId), populated only by
     // HubAuditLogMapper.findByWsNo's LEFT JOIN HUB_USR on created_by.
     private String actorUserId;
+    // Display-only join field, the actor's HUB_USR.role from the same LEFT JOIN.
+    private String actorRole;
 
     public Long getAuditId() { return auditId; }
     public void setAuditId(Long auditId) { this.auditId = auditId; }
@@ -31,4 +33,7 @@ public class HubAuditLog extends Auditable {
 
     public String getActorUserId() { return actorUserId; }
     public void setActorUserId(String actorUserId) { this.actorUserId = actorUserId; }
+
+    public String getActorRole() { return actorRole; }
+    public void setActorRole(String actorRole) { this.actorRole = actorRole; }
 }

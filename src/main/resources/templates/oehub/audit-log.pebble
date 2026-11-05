@@ -86,7 +86,7 @@
         var target = r.targetType ? (escHtml(r.targetType) + (r.targetId ? ' #' + escHtml(r.targetId) : '')) : '';
         return '<tr>' +
           '<td class="small text-muted">' + escHtml(r.createAt) + '</td>' +
-          '<td class="small">' + escHtml(r.actor) + '</td>' +
+          '<td class="small">' + escHtml(r.actorSystem ? MSG['audit.log.actor.system'] : r.actor) + '</td>' +
           '<td class="small">' + escHtml(actionLabel) + '</td>' +
           '<td class="small text-muted">' + target + '</td>' +
           '<td class="small text-muted setup-mono">' + renderAuditLogDetail(r.detail) + '</td>' +

@@ -18,9 +18,10 @@ public interface HubAuditLogMapper {
 
     // created_by resolved to a display user_id (CLAUDE.md rule) - a departed member's row still
     // shows via the fallback in AuditLogController (raw created_by number) since the LEFT JOIN
-    // simply yields a null actorUserId for them.
+    // simply yields a null actorUserId for them. actor_role lets the controller show a
+    // workspace-mode instance admin's action as "System" rather than their personal ID.
     @Select("SELECT l.audit_id, l.ws_no, l.action, l.target_type, l.target_id, l.detail, "
-        + "l.created_by, l.updated_by, l.create_at, l.updated_at, u.user_id AS actor_user_id "
+        + "l.created_by, l.updated_by, l.create_at, l.updated_at, u.user_id AS actor_user_id, u.role AS actor_role "
         + "FROM HUB_AUDIT_LOG l LEFT JOIN HUB_USR u ON u.user_no = l.created_by "
         + "WHERE l.ws_no = #{wsNo} ORDER BY l.create_at DESC LIMIT #{limit} OFFSET #{offset}")
     List<HubAuditLog> findByWsNo(@Param("wsNo") Long wsNo, @Param("limit") int limit, @Param("offset") int offset);

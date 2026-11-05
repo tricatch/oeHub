@@ -161,10 +161,10 @@ public class AdminUserController {
                 ctx.status(404).result("User not found");
                 return;
             }
-            // No userId in detail: the applicant's account is deleted right below, and a deleted
-            // account's ID must not outlive it in the audit log (same rule as AccountRemovalService).
+            // Masked userId only: the applicant's account is deleted right below, and a deleted
+            // account's full ID must not outlive it in the audit log (same rule as AccountRemovalService).
             AuditLogger.record(session, target.getWsNo(), "user.reject", "user", String.valueOf(target.getUserNo()),
-                null, currentUser.getUserNo());
+                AuditLogger.detail("userId", AuditLogger.maskUserId(target.getUserId())), currentUser.getUserNo());
             mapper.deleteByUserNo(userNo);
             session.commit();
             ctx.status(200).result("OK");
