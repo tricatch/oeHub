@@ -4,8 +4,6 @@
 
 하나의 로그인으로 두 도구를 씁니다. **oeHosts**는 프로필별 호스트 규칙으로 Chrome을 실행하고, **oeProxy**는 가상 호스트의 HTTPS를 받아 로컬 또는 원격 개발 서버로 프록시합니다. OS의 hosts 파일이나 인증서를 직접 관리하지 않고도 실제 도메인을 원하는 백엔드로 연결할 수 있습니다.
 
-**서비스:** [https://oehub.dpdns.org](https://oehub.dpdns.org) — `workspace` 모드로 운영 중이며, oeHosts를 사용할 수 있습니다.
-
 ## 스크린샷
 
 <a href="https://velog.velcdn.com/images/tricatch/post/7f21857d-9ac5-439b-b371-35c92faac773/image.png"><img src="https://velog.velcdn.com/images/tricatch/post/7f21857d-9ac5-439b-b371-35c92faac773/image.png" width="200" alt="oeHub screenshot 1"></a>
