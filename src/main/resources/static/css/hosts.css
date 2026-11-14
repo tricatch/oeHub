@@ -203,7 +203,23 @@
   line-height: 1;
 }
 .ua-preset-menu { font-size: 0.82rem; min-width: 260px; max-height: 320px; overflow-y: auto; }
-.ua-preset-menu .dropdown-item { display: flex; align-items: center; gap: 6px; }
+.ua-preset-menu .dropdown-item { display: flex; align-items: center; gap: 6px; width: auto; margin: 0 6px; border-radius: 6px; }
+.ua-preset-preview {
+  display: none;
+  position: fixed;
+  z-index: 1080;
+  padding: 0.4rem 0.6rem;
+  background: #fff;
+  border: 1px solid #a8d878;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  color: #495057;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  word-break: break-all;
+  pointer-events: none;
+}
 .ua-preset-menu .dropdown-item:hover,
 .ua-preset-menu .dropdown-item:focus { background-color: #dff2b8; color: #3a6b10; }
 .ua-preset-menu .dropdown-item:active { background-color: #a8d878; color: #2d5010; }

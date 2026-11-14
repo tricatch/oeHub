@@ -1477,6 +1477,24 @@ function proxyServerOn() {
     updateSchemePreview();
   });
 
+  // ── Preset value preview ────────────────────────────────────
+  // A fixed box pinned just above the open preset menu shows the hovered item's full value
+  // (replaces the native title tooltip). Lives on <body> so the menu's scroll box doesn't clip it.
+  const presetPreview = document.createElement('div');
+  presetPreview.className = 'ua-preset-preview';
+  document.body.appendChild(presetPreview);
+  function showPresetPreview(menu, value) {
+    const r = menu.getBoundingClientRect();
+    presetPreview.textContent = value;
+    presetPreview.style.left  = r.left + 'px';
+    presetPreview.style.width = r.width + 'px';
+    presetPreview.style.display = 'block';
+    presetPreview.style.top = (r.top - presetPreview.offsetHeight - 4) + 'px';
+  }
+  function hidePresetPreview() { presetPreview.style.display = 'none'; }
+  ['btnUaPreset', 'btnUrlPreset'].forEach(id =>
+    document.getElementById(id).addEventListener('hide.bs.dropdown', hidePresetPreview));
+
   // ── UA Preset dropdown ─────────────────────────────────────
   function renderUaPresetMenu() {
     const menu = document.getElementById('uaPresetMenu');
@@ -1501,7 +1519,8 @@ function proxyServerOn() {
       const a = document.createElement('a');
       a.className = 'dropdown-item';
       a.href = '#';
-      a.title = p.uaValue;
+      a.addEventListener('mouseenter', () => showPresetPreview(menu, p.uaValue));
+      a.addEventListener('mouseleave', hidePresetPreview);
       const name = document.createElement('span');
       name.className = 'ua-preset-item-name';
       name.textContent = p.uaName;
@@ -1553,7 +1572,8 @@ function proxyServerOn() {
       const a = document.createElement('a');
       a.className = 'dropdown-item';
       a.href = '#';
-      a.title = p.urlValue;
+      a.addEventListener('mouseenter', () => showPresetPreview(menu, p.urlValue));
+      a.addEventListener('mouseleave', hidePresetPreview);
       const name = document.createElement('span');
       name.className = 'ua-preset-item-name';
       name.textContent = p.urlName;
